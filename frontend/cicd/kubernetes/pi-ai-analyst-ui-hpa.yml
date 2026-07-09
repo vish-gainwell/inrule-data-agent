@@ -1,0 +1,27 @@
+apiVersion: autoscaling/v2  # or v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: $(PIAI.Analyst.UI.EKS.AppName)
+  namespace: $(PIAI.Analyst.UI.EKS.Namespace)
+  labels:
+    app: $(PIAI.Analyst.UI.EKS.AppName)
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: $(PIAI.Analyst.UI.EKS.AppName)
+  minReplicas: $(PIAI.Analyst.UI.Pod.Min.Replicas)  # Minimum number of replicas
+  maxReplicas: $(PIAI.Analyst.UI.Pod.Max.Replicas)  # Maximum number of replicas
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: $(PIAI.Analyst.UI.Pod.CPU.Utilization)  # Scale when CPU utilization exceeds 70%
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: $(PIAI.Analyst.UI.Pod.Memory.Utilization)  # Scale when memory utilization exceeds 70%

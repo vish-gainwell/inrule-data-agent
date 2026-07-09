@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PI AI analyst: Concept Development - User Manual</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        .cover-page {
+            text-align: center;
+            padding: 80px 20px;
+            page-break-after: always;
+            min-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .cover-page h1 { font-size: 38px; color: #1a5f7a; margin-bottom: 15px; }
+        .cover-page h2 { font-size: 24px; color: #666; font-weight: normal; margin-bottom: 40px; }
+        .cover-page .version { font-size: 14px; color: #888; }
+        h1 {
+            font-size: 26px;
+            color: #1a5f7a;
+            margin: 35px 0 15px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #1a5f7a;
+            page-break-before: always;
+        }
+        h1:first-of-type { page-break-before: avoid; }
+        h2 { font-size: 20px; color: #2980b9; margin: 20px 0 10px 0; }
+        h3 { font-size: 16px; color: #444; margin: 15px 0 8px 0; }
+        .step {
+            background: linear-gradient(135deg, #1a5f7a 0%, #2980b9 100%);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 15px 0 10px 0;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        p { margin: 10px 0; font-size: 14px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 13px;
+        }
+        th {
+            background-color: #1a5f7a;
+            color: white;
+            padding: 10px;
+            text-align: left;
+        }
+        td { padding: 8px 10px; border-bottom: 1px solid #ddd; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        .screenshot {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .screenshot img {
+            max-width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            cursor: pointer;
+            image-rendering: -webkit-optimize-contrast;
+        }
+        .screenshot img:hover { box-shadow: 0 5px 15px rgba(0,0,0,0.15); }
+        .screenshot-caption {
+            font-style: italic;
+            color: #666;
+            margin-top: 8px;
+            font-size: 12px;
+        }
+        .click-hint { font-size: 11px; color: #888; }
+        ul, ol { margin: 10px 0 10px 20px; font-size: 14px; }
+        li { margin: 5px 0; }
+        .info-box {
+            background-color: #e8f4f8;
+            border-left: 4px solid #1a5f7a;
+            padding: 12px 15px;
+            margin: 15px 0;
+            border-radius: 0 4px 4px 0;
+            font-size: 13px;
+        }
+        .warning-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 12px 15px;
+            margin: 15px 0;
+            border-radius: 0 4px 4px 0;
+            font-size: 13px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .badge-notstarted { background-color: #f8d7da; color: #721c24; }
+        .badge-inprogress { background-color: #fff3cd; color: #856404; }
+        .badge-readytoreview { background-color: #17a2b8; color: #ffffff; }
+        .badge-notfeasible { background-color: #f5c6cb; color: #721c24; }
+        .badge-onhold { background-color: #adb5bd; color: #212529; }
+        .badge-accept { background-color: #d4edda; color: #155724; border: 1px solid #28a745; }
+        .badge-reject { background-color: #6c757d; color: #ffffff; }
+        .workflow-diagram {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 20px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 15px;
+            border-top: 2px solid #ddd;
+            text-align: center;
+            color: #888;
+            font-size: 12px;
+        }
+        .lightbox {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
+        .lightbox.active { display: flex; }
+        .lightbox img {
+            max-width: 95%;
+            max-height: 95%;
+            border-radius: 6px;
+        }
+        .lightbox-close {
+            position: fixed;
+            top: 15px; right: 25px;
+            color: white;
+            font-size: 35px;
+            cursor: pointer;
+        }
+        @media print {
+            h1 { page-break-before: always; }
+            .screenshot img { max-height: 350px; object-fit: contain; }
+            table { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Cover Page -->
+<div class="cover-page">
+    <h1>PI AI Analyst: Concept Development</h1>
+    <h2>User Manual</h2>
+    <div class="version">
+        <p>Version 2.1 | May 2026</p>
+    </div>
+</div>
+
+<!-- Table of Contents -->
+<div style="page-break-after: always; padding: 30px 0;">
+    <h2 style="font-size: 24px; color: #1a5f7a; margin-bottom: 25px; border-bottom: 2px solid #1a5f7a; padding-bottom: 10px;">Table of Contents</h2>
+    <ul style="list-style: none; margin: 0; padding: 0;">
+        <li style="padding: 8px 0; border-bottom: 1px dotted #ddd;"><a href="#section1" style="color: #333; text-decoration: none;">1. Getting Started</a></li>
+        <li style="padding: 8px 0; border-bottom: 1px dotted #ddd;"><a href="#section2" style="color: #333; text-decoration: none;">2. Client Policy Insights (Landing Page)</a></li>
+        <li style="padding: 8px 0; border-bottom: 1px dotted #ddd;"><a href="#section3" style="color: #333; text-decoration: none;">3. Working with Rules</a></li>
+        <li style="padding: 8px 0; border-bottom: 1px dotted #ddd;"><a href="#section4" style="color: #333; text-decoration: none;">4. Reviewing & Finalizing Queries</a></li>
+        <li style="padding: 8px 0; border-bottom: 1px dotted #ddd;"><a href="#section5" style="color: #333; text-decoration: none;">5. Accepting or Rejecting Rules</a></li>
+        <li style="padding: 8px 0; border-bottom: 1px dotted #ddd;"><a href="#section6" style="color: #333; text-decoration: none;">6. Workflow Summary</a></li>
+    </ul>
+</div>
+
+<!-- Section 1: Getting Started -->
+<h1 id="section1">1. Getting Started</h1>
+
+<p><strong>Application URL:</strong> <a href="https://pi-ai-analyst.ensou.xaipp.pgwproper.net/">https://pi-ai-analyst.ensou.xaipp.pgwproper.net/</a></p>
+
+<div class="info-box">
+    <strong>UAT Environment:</strong> Users are automatically logged in. Your name appears in the top-right corner.
+</div>
+
+<p>The application has two main tabs:</p>
+<ul>
+    <li><strong>Data Agent</strong> — Text-to-SQL tool for data queries</li>
+    <li><strong>Concept Development</strong> — Policy and rule analysis (this manual)</li>
+</ul>
+
+<!-- Section 2: Landing Page -->
+<h1 id="section2">2. Client Policy Insights</h1>
+
+<div class="screenshot">
+    <img src="images/01_landing_page.png.png" alt="Landing Page">
+    <div class="screenshot-caption">Figure 2.1: Landing Page<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<h2>Key Elements</h2>
+<table>
+    <tr><th>Element</th><th>Description</th></tr>
+    <tr><td><strong>Client Context</strong></td><td>Dropdown (left sidebar) to switch clients (NC RAC, NV, Amerihealth, etc.)</td></tr>
+    <tr><td><strong>Filters</strong></td><td>State_LOB, Policy, Rule Category, Assigned To, Status</td></tr>
+    <tr><td><strong>Summary Cards</strong></td><td>Number of Policies, Number of Rules, Opportunity Size</td></tr>
+    <tr><td><strong>Policy Rules Table</strong></td><td>Main table showing all policies and rules</td></tr>
+</table>
+
+<div class="step">Using Filters</div>
+<ol>
+    <li>Select values from filter dropdowns</li>
+    <li>Click <strong>Apply</strong> to filter | Click <strong>Clear</strong> to reset</li>
+</ol>
+
+<!-- Section 3: Working with Rules -->
+<h1 id="section3">3. Working with Rules</h1>
+
+<h2>3.1 Expand Policy to View Rules</h2>
+<p>Click the <strong>+</strong> icon next to a policy to expand and view individual rules.</p>
+
+<div class="screenshot">
+    <img src="images/02_expanded_policy_rules.png.png" alt="Expanded Policy">
+    <div class="screenshot-caption">Figure 3.1: Expanded Policy View<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<h2>3.2 Search Rules by Description</h2>
+<p>Use the <strong>Search description</strong> box to filter rules by keywords in their description.</p>
+
+<div class="screenshot">
+    <img src="images/24_search_description_box.png.png.png" alt="Search Description Box">
+    <div class="screenshot-caption">Figure 3.2a: Search Description Box<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<div class="step">How to Search</div>
+<ol>
+    <li>Locate the <strong>Search description</strong> box (above the Policy Rules table)</li>
+    <li>Enter keyword(s) to search for (e.g., "outpatient")</li>
+    <li>The table filters to show only rules with matching descriptions</li>
+    <li>Matching keywords are highlighted in yellow</li>
+    <li>Click the <strong>X</strong> to clear the search</li>
+</ol>
+
+<div class="screenshot">
+    <img src="images/25_search_results_highlighted.png.png" alt="Search Results with Highlighting">
+    <div class="screenshot-caption">Figure 3.2b: Search Results with Keyword Highlighting<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<div class="info-box">
+    <strong>Note:</strong> This is an exact match search. Enter the keyword(s) exactly as they appear in the rule descriptions.
+</div>
+
+<h2>3.3 Customize Columns</h2>
+<p>Click <strong>Columns</strong> button (top-right) to show/hide columns like Claims in Scope, Paid Amount, Status Reason.</p>
+
+<div class="screenshot">
+    <img src="images/17_column_toggle.png.png" alt="Column Toggle">
+    <div class="screenshot-caption">Figure 3.2: Column Toggle<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<h2>3.4 Status Values</h2>
+
+<div class="screenshot">
+    <img src="images/03_status_dropdown.png.png" alt="Status Dropdown">
+    <div class="screenshot-caption">Figure 3.3: Status Options<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<table>
+    <tr><th>Status</th><th>Type</th><th>Notes</th></tr>
+    <tr><td><span class="badge badge-notstarted">Not Started</span></td><td>Manual</td><td>Default state</td></tr>
+    <tr><td><span class="badge badge-inprogress">In Progress</span></td><td>Manual</td><td>Work begun</td></tr>
+    <tr><td><span class="badge badge-onhold">On Hold</span></td><td>Manual</td><td>Requires reason (view in Status Reason column via Column selector)</td></tr>
+    <tr><td><span class="badge badge-notfeasible">Not Feasible</span></td><td>Manual</td><td>Cannot implement</td></tr>
+    <tr><td><span class="badge badge-readytoreview">Ready to Review</span></td><td>Automatic</td><td>Set on finalization from Rule Insights page</td></tr>
+    <tr><td><span class="badge badge-accept">Accept</span></td><td>Automatic</td><td>Appears in Rule Details page only after rule finalization</td></tr>
+    <tr><td><span class="badge badge-reject">Reject</span></td><td>Automatic</td><td>Appears in Rule Details page only after rule finalization</td></tr>
+</table>
+
+<h2>3.5 Edit Rule Assignment & Status</h2>
+
+<div class="step">Steps</div>
+<ol>
+    <li>Click the <strong>edit icon</strong> (pencil) on the rule row</li>
+    <li>Select <strong>Assigned To</strong> from dropdown</li>
+    <li>Select <strong>Status</strong> from dropdown</li>
+    <li>Click <strong>Save Changes</strong></li>
+    <li>Review changes in confirmation dialog and click <strong>Confirm</strong></li>
+</ol>
+
+<div class="info-box">
+    <strong>Email Notification:</strong> When a rule is assigned to a user, they will automatically receive a notification email alerting them of the new assignment.
+</div>
+
+<div class="screenshot">
+    <img src="images/04_confirm_changes_dialog.png.png" alt="Confirm Dialog">
+    <div class="screenshot-caption">Figure 3.4: Confirm Changes Dialog<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<h2>3.6 Status Restrictions</h2>
+
+<div class="warning-box">
+    <strong>Ready to Review:</strong> Cannot be manually selected. Auto-set when query is finalized.<br>
+    <strong>Accept/Reject:</strong> Only available on Rule Details page for finalized rules.
+</div>
+
+<h3>On Hold Status</h3>
+<p>When selecting "On hold", you must provide a reason from the following options:</p>
+
+<div class="screenshot">
+    <img src="images/05_on_hold_reasons.png.png" alt="On Hold Reasons">
+    <div class="screenshot-caption">Figure 3.5: On Hold Reason Selection<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<ul>
+    <li>Awaiting additional data/response from third party</li>
+    <li>Potential duplicate case</li>
+    <li>External dependency pending</li>
+    <li>Requires additional research/analysis</li>
+    <li>Deferred to next fiscal year</li>
+    <li>Under investigation</li>
+    <li>Waiting for approval/authorization</li>
+    <li>Requires further validation</li>
+</ul>
+
+<div class="info-box">
+    <strong>Viewing On Hold Reasons:</strong> The selected reason is captured in the <strong>Status Reason</strong> column. To view this column, click the <strong>Columns</strong> button and enable "Status Reason" from the column selector.
+</div>
+
+<!-- Section 4: Reviewing & Finalizing Queries -->
+<h1 id="section4">4. Reviewing & Finalizing Queries</h1>
+
+<p>Click any rule row to open Rule Details with three tabs: <strong>Rule Details</strong> | <strong>Rule Insights</strong> | <strong>Rule Documentation</strong></p>
+
+<h2>4.1 Rule Details Tab</h2>
+
+<div class="screenshot">
+    <img src="images/11_rule_details_before.png.png" alt="Rule Details">
+    <div class="screenshot-caption">Figure 4.1: Rule Details Tab<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<table>
+    <tr><th>Element</th><th>Description</th></tr>
+    <tr><td><strong>View Policy PDF</strong></td><td>Open source policy document</td></tr>
+    <tr><td><strong>Description</strong></td><td>Full rule text</td></tr>
+    <tr><td><strong>Rule Evidence</strong></td><td>Supporting context from policy</td></tr>
+    <tr><td><strong>Financial Impact</strong></td><td>Opportunity Sizing value</td></tr>
+</table>
+
+<h2>4.2 Rule Documentation Tab</h2>
+
+<p>Use the <strong>Rule Documentation</strong> tab to add notes and research for collaboration during the review process.</p>
+
+<div class="screenshot">
+    <img src="images/15_rule_documentation.png.png" alt="Add Note">
+    <div class="screenshot-caption">Figure 4.2: Adding a Note<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<div class="step">Add a Note</div>
+<ol>
+    <li>Click <strong>+ Add Note</strong></li>
+    <li>Enter text (max 500 characters) — can include URLs</li>
+    <li>Click <strong>Save Note</strong></li>
+</ol>
+
+<div class="screenshot">
+    <img src="images/16_rule_documentation_list.png.png" alt="Notes List">
+    <div class="screenshot-caption">Figure 4.3: Notes List<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<div class="info-box">
+    <strong>Tip:</strong> Document research findings and add reference URLs before finalizing the query. Notes become part of the rule finalization package and help other team members understand the review decisions.
+</div>
+
+<h2>4.3 Rule Insights Tab</h2>
+
+<div class="screenshot">
+    <img src="images/08_rule_insights_query.png.png" alt="Rule Insights">
+    <div class="screenshot-caption">Figure 4.4: Rule Insights with Decomposed Query<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<p>Each query card shows:</p>
+<ul>
+    <li><strong>Natural Language Prompt</strong> — Human-readable explanation</li>
+    <li><strong>SQL Query</strong> — Generated SQL code</li>
+    <li><strong>Opportunity Size</strong> — Dollar value</li>
+    <li><strong>Use Content</strong> — Copy to final query form</li>
+</ul>
+
+<h2>4.4 QA and Validate Query Before Finalizing</h2>
+
+<p>Before finalizing a query, validate and test it using the Data Agent tool. There are two approaches depending on your needs:</p>
+
+<h3>Option 1: Test Existing SQL Query</h3>
+<p>Use this approach to validate the generated SQL without making changes.</p>
+
+<div class="step">Step 1: Copy SQL Query from Rule Insights</div>
+<p>On the Rule Insights page, locate the SQL Query section and copy the query code.</p>
+
+<div class="screenshot">
+    <img src="images/19_rule_insights_sql_copy.png.png" alt="Copy SQL from Rule Insights">
+    <div class="screenshot-caption">Figure 4.4a: SQL Query on Rule Insights Page<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<div class="step">Step 2: Navigate to Data Agent</div>
+<p>Click the <strong>Data Agent</strong> tab in the application header.</p>
+
+<div class="step">Step 3: Paste Query with Instructions</div>
+<p>In the Data Agent, paste the SQL query with instructions to test it:</p>
+<code style="background:#f4f4f4;padding:8px 12px;display:block;margin:10px 0;border-radius:4px;font-size:12px;">Show me some claim example outputs from this query: [paste SQL here]</code>
+
+<div class="screenshot">
+    <img src="images/20_data_agent_query_test.png.png" alt="Data Agent Query Test">
+    <div class="screenshot-caption">Figure 4.4b: Testing Query in Data Agent<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<div class="step">Step 4: Review Results</div>
+<p>Review the generated results to verify:</p>
+<ul>
+    <li>Query returns expected claim data</li>
+    <li>Filters and modifiers are working correctly</li>
+    <li>Date ranges are appropriate</li>
+    <li>Results align with rule requirements</li>
+</ul>
+
+<div class="screenshot">
+    <img src="images/21_data_agent_results.png.png" alt="Data Agent Results">
+    <div class="screenshot-caption">Figure 4.4c: Query Results in Data Agent<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<div class="info-box">
+    <strong>Tip:</strong> Use Data Agent to explore edge cases, validate modifiers, date ranges, and claim types before finalizing the query.
+</div>
+
+<h3>Option 2: Modify Prompt to Generate New SQL</h3>
+
+<p>Use this approach when you need to make changes to the rule logic (e.g., update modifiers, change filters). Modify the Natural Language Prompt and generate a fresh SQL query:</p>
+
+<div class="step">Step 1: Copy the Natural Language Prompt</div>
+<p>On the Rule Insights page, copy the Natural Language Prompt (the numbered steps describing the query logic).</p>
+
+<div class="screenshot">
+    <img src="images/22_copy_natural_language_prompt.png.png" alt="Copy Natural Language Prompt">
+    <div class="screenshot-caption">Figure 4.4d: Copy Natural Language Prompt from Rule Insights<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<div class="step">Step 2: Modify and Run in Data Agent</div>
+<p>Paste the prompt in Data Agent and make your changes (e.g., update modifier list, adjust filters). The Data Agent will generate a new SQL query based on your modified prompt.</p>
+
+<div class="screenshot">
+    <img src="images/23_data_agent_modified_prompt.png.png" alt="Modified Prompt in Data Agent">
+    <div class="screenshot-caption">Figure 4.4e: Modified Prompt Generates New SQL in Data Agent<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<div class="step">Step 3: Test and Validate</div>
+<p>Use <strong>Preview (10 rows)</strong> or <strong>Run full query</strong> to test the generated SQL and verify the results match your expectations.</p>
+
+<div class="info-box">
+    <strong>Use Case:</strong> This approach is useful when you want to experiment with rule changes (e.g., testing different modifier combinations) before updating the final query.
+</div>
+
+<h2>4.5 Create Final Query</h2>
+
+<div class="step">Steps</div>
+<ol>
+    <li>Click <strong>Create Final Query</strong> button</li>
+    <li>Click <strong>Use Content</strong> on a query to auto-populate, or enter manually</li>
+    <li>Fill in all required fields:
+        <ul>
+            <li><strong>Natural Language Prompt</strong> — Description of the query</li>
+            <li><strong>SQL Query</strong> — The final SQL code</li>
+            <li><strong>Opportunity Size ($)</strong> — Dollar value</li>
+            <li><strong>Document URL</strong> — Link to associated file/details (required)</li>
+        </ul>
+    </li>
+    <li>Click <strong>Finalize Query</strong></li>
+</ol>
+
+<div class="screenshot">
+    <img src="images/09_create_final_query_form.png.png" alt="Final Query Form">
+    <div class="screenshot-caption">Figure 4.5: Create Final Query Form<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<h2>4.5 After Finalization</h2>
+
+<div class="screenshot">
+    <img src="images/10_finalized_rule_insights.png.png" alt="Finalized View">
+    <div class="screenshot-caption">Figure 4.6: Finalized Rule Insights<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<div class="info-box">
+    After finalization: Badge changes to <span class="badge badge-accept" style="text-transform:none;">Finalized</span>, status auto-changes to <span class="badge badge-readytoreview">Ready to Review</span>, and <strong>Return to Review</strong> button appears for editing.
+</div>
+
+<!-- Section 5: Accept/Reject -->
+<h1 id="section5">5. Accepting or Rejecting Rules</h1>
+
+<p>When status is "Ready to Review", Accept/Reject buttons appear on Rule Details page.</p>
+
+<div class="screenshot">
+    <img src="images/12_rule_details_after.png.png" alt="Accept Reject Buttons">
+    <div class="screenshot-caption">Figure 5.1: Accept/Reject Buttons<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<h2>Accept Rule</h2>
+<div class="screenshot">
+    <img src="images/14_accept_dialog.png.png" alt="Accept Dialog">
+    <div class="screenshot-caption">Figure 5.2: Accept Dialog<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<table>
+    <tr><th>Field</th><th>Required</th></tr>
+    <tr><td>Feedback Notes</td><td>Yes</td></tr>
+    <tr><td>Document URL</td><td>No</td></tr>
+    <tr><td>QID (Query Identifier)</td><td>No — links to production</td></tr>
+</table>
+
+<h2>Reject Rule</h2>
+<div class="screenshot">
+    <img src="images/13_reject_dialog.png.png" alt="Reject Dialog">
+    <div class="screenshot-caption">Figure 5.3: Reject Dialog<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<table>
+    <tr><th>Field</th><th>Required</th></tr>
+    <tr><td>Feedback Notes</td><td>Yes</td></tr>
+    <tr><td>Document URL</td><td>No</td></tr>
+</table>
+
+<h2>Final State</h2>
+<div class="screenshot">
+    <img src="images/18_accepted_rule_final.png.png" alt="Final State">
+    <div class="screenshot-caption">Figure 5.4: Accepted Rule (Locked)<br><span class="click-hint">(Click to enlarge)</span></div>
+</div>
+
+<div class="warning-box">
+    Once accepted/rejected: Status shows <span class="badge badge-accept">Accept</span> or <span class="badge badge-reject">Reject</span>, edit icon is disabled, no further changes allowed.
+</div>
+
+<!-- Section 6: Workflow -->
+<h1 id="section6">6. Workflow Summary</h1>
+
+<div class="workflow-diagram">
+<pre>
+  NOT STARTED  →  IN PROGRESS  →  Finalize Query  →  READY TO REVIEW  →  ACCEPT / REJECT
+      ↓                                                                      (locked)
+   ON HOLD ←──────────────────────────────────────────────────────────→  NOT FEASIBLE
+</pre>
+</div>
+
+<table>
+    <tr><th>Role</th><th>Actions</th></tr>
+    <tr><td><strong>Reviewer</strong></td><td>Set In Progress → Review Rule Insights → Finalize Query → Add Documentation</td></tr>
+    <tr><td><strong>Approver</strong></td><td>Filter by Ready to Review → Review finalized query → Accept or Reject with feedback</td></tr>
+</table>
+
+<div class="info-box">
+    <strong>Why Feedback Matters:</strong> Your feedback helps improve the platform, prioritize development, and adds explainability to rule decisions.
+</div>
+
+<!-- Footer -->
+<div class="footer">
+    <p><strong>Concept Development Tool - User Manual v2.0</strong> | April 2026</p>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox">
+    <span class="lightbox-close">&times;</span>
+    <img src="" alt="Enlarged view" id="lightbox-img">
+</div>
+
+<script>
+    const lightbox = document.getElementById('lightbox');
+    const lightboxImg = document.getElementById('lightbox-img');
+    document.querySelectorAll('.screenshot img').forEach(img => {
+        img.addEventListener('click', () => {
+            lightboxImg.src = img.src;
+            lightbox.classList.add('active');
+        });
+    });
+    lightbox.addEventListener('click', () => lightbox.classList.remove('active'));
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') lightbox.classList.remove('active');
+    });
+</script>
+
+</body>
+</html>

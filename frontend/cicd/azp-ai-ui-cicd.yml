@@ -1,0 +1,242 @@
+trigger:
+  branches:
+    include:
+      - dev-aws
+
+pr: none
+
+parameters:
+  - name: 'PushToProdJfrog'
+    type: boolean
+    default: false
+    displayName: 'Select to Push to Prod Repo'
+
+variables:
+- template: ./variables-cicd.yml
+- group: ADO-Secrets 
+- group: PG-DEV-Global-Variables
+- group: PI-AI-Analyst-DEV
+- name: DEPLOY_FLAG_DEV
+  value: 'TRUE'
+- name: PushToProdJfrog
+  value: ${{ parameters.PushToProdJfrog }}
+
+pool:
+  name: 'PG-NonProd'
+
+resources:
+  repositories:
+    - repository: TEMPLATE_REPOSITORY
+      name: mygainwell/ado-templates
+      type: GitHub
+      connection: mygainwell
+      endpoint: mygainwell
+      ref: 'refs/heads/pradheep-ci-msbuild'
+
+    - repository: SOURCE_REPOSITORY
+      name: mygainwell/ai-solutions-aianalyst-ui
+      type: GitHub
+      connection: mygainwell
+      endpoint: mygainwell
+      ref: 'refs/heads/dev-aws'
+
+stages:
+
+- stage: Version
+  displayName: 'Version Stage'
+  jobs:
+  - job: VersionJob
+    steps:
+    - script: echo "Version stage to ensure no dependency issues"
+      displayName: 'Ensure Version Stage'
+
+- template: cicd/templates/static-code-analysis.yml@TEMPLATE_REPOSITORY
+  parameters:
+    PROJECT_NAME: '$(Project.Name)'
+    APPLICATION_NAME: '$(Application.Name)'
+    STAGE_NAME: 'StaticScanAnalysis'
+    DEPENDS_ON: 'Version'
+    POOL_NAME: $(Agent.PoolNameSchedule)
+    PROJECT_PATH: $(Solution.Path)
+    SOLUTION_NAME: $(Solution.Name)
+    BUILD_TYPE: $(Build.Type)
+    BUILD_CLEAN: true
+    DEVOPS_ENV:
+      PROJECT_NAME:  $(Project.Name)
+      APPLICATION_NAME: $(Application.Name)
+      ARTIFACT_DIRECTORY: $(Build.ArtifactStagingDirectory)
+      SOURCES_DIRECTORY: $(Build.SourcesDirectory)
+      BUILD_NUMBER: $(Build.BuildNumber)
+    SONARQUBE_ON: false
+    SONARQUBE_SCAN_MODE: 'MSBUILD'
+    SONARQUBE_SC: $(SonarQube.ServiceConnection)
+    SONARQUBE_PROJECT_KEY: $(SonarQube.ProjectKey)
+    SONARQUBE_PROJECT_NAME: $(SonarQube.ProjectName)
+    SONARQUBE_PROPERTIES: |
+        # Additional properties that will be passed to the scanner,
+        # Put one key=value per line:
+        sonar.projectVersion=$(Version.Major).$(Version.Minor).$(Version.Patch).$(Version.Revision)
+        sonar.buildString=$(Build.BuildNumber)
+        sonar.projectKey=$(SonarQube.ProjectKey)
+        sonar.projectName=$(SonarQube.ProjectName)        
+        sonar.language=c#
+        sonar.inclusions=$(Solution.Path)/**
+        sonar.exclusions=$(Solution.Path)/*.config, $(Solution.Path)/bin/**, $(Solution.Path)/obj/**
+    VERACODE_PIPELINE: true
+    VERACODE_POLICY: false
+    VERACODE_SC: $(VeraCode.ServiceConnection)
+    VERACODE_APPLICATION_PROFILE: $(VeraCode.ApplicationProfile)
+    VERACODE_API_ID: $(ADO.VeraCode.API.ID)
+    VERACODE_API_KEY: $(ADO.VeraCode.API.KEY)
+    VERACODE_WAIT_TIME_IN_MINS: 180
+
+- stage: AI_SOLUTIONS_AIANALYST_UI_DOCKER
+  displayName: 'Create Docker Image - AI Solutions AIAnalyst UI'
+  pool:
+   name: 'PG-Linux-AI-Analytics'
+
+  dependsOn: Version
+  jobs:
+  - job: AI_SOLUTIONS_AIANALYST_UI_DOCKER
+    timeoutInMinutes: 0
+    displayName: 'AI_SOLUTIONS_AIANALYST_UI_DOCKER'
+    steps:
+
+    - checkout: self
+      clean: true
+      persistCredentials: true
+      
+    - task: Docker@2
+      displayName: 'Building Docker Image'
+      inputs:
+        command: build
+        Dockerfile: 'client/Dockerfile'
+        buildContext: client/
+        tags: '$(Build.BuildNumber)'
+        arguments: '--rm -t $(PI.AI.Analyst.UI.Image.Name) --no-cache --build-arg ENVIRONMENT=$(PIAI.Analyst.UI.EKS.Environment)'
+
+    - task: powershell@2
+      displayName: 'Docker Tag to Dev Repo'
+      continueOnError: true
+      inputs:
+        targetType: 'inline'
+        script: |
+          docker tag $(PI.AI.Analyst.UI.Image.Name):latest gwproductengineering.jfrog.io/$(JFROGDOCKERREGISTRY)/$(PI.AI.Analyst.UI.Image.Name):$(Build.BuildNumber)   
+      
+    - task: JFrog.jfrog-artifactory-vsts-extension.artifactory-docker.ArtifactoryDocker@1
+      displayName: 'Upload Image to JFROG Dev Repo'
+      inputs:
+        artifactoryService: JFROG
+        targetRepo: '$(JFROGDOCKERREGISTRY)'
+        imageName: 'gwproductengineering.jfrog.io/$(JFROGDOCKERREGISTRY)/$(PI.AI.Analyst.UI.Image.Name):$(Build.BuildNumber)'
+
+    - task: powershell@2
+      displayName: 'Docker Tag to Prod Repo'
+      condition: eq(variables['PushToProdJfrog'], 'true')
+      continueOnError: true
+      inputs:
+        targetType: 'inline'
+        script: |
+          docker tag $(PI.AI.Analyst.UI.Image.Name):latest gwproductengineering.jfrog.io/$(JFROGDOCKERREGISTRYPROD)/$(PI.AI.Analyst.UI.Image.Name):$(Build.BuildNumber)   
+      
+    - task: JFrog.jfrog-artifactory-vsts-extension.artifactory-docker.ArtifactoryDocker@1
+      displayName: 'Upload Image to JFROG Prod Repo'
+      condition: eq(variables['PushToProdJfrog'], 'true')
+      inputs:
+        artifactoryService: JFROG
+        targetRepo: '$(JFROGDOCKERREGISTRYPROD)'
+        imageName: 'gwproductengineering.jfrog.io/$(JFROGDOCKERREGISTRYPROD)/$(PI.AI.Analyst.UI.Image.Name):$(Build.BuildNumber)'
+
+
+- stage: Deploy_AI_SOLUTIONS_AIANALYST_UI_PG_DEV
+  condition: and(succeeded(),  eq(variables['DEPLOY_FLAG_DEV'], 'TRUE'))
+  pool:
+   name: 'PG-Linux-AI-Analytics'
+  dependsOn: AI_SOLUTIONS_AIANALYST_UI_DOCKER
+  variables:
+  #- group: TBD
+  - name: imageTag
+    value: '$(Build.BuildNumber)'
+  jobs:
+   - deployment: deploy_ai_solutions_aianalyst_ui_ecr_push_and_k8s_deployment
+     displayName: 'Push AI Solutions AIAnalyst UI image to ECR'
+     environment: AI-SOLUTIONS-AIANALYST-UI-PG-DEV
+     strategy:
+       runOnce:
+         deploy:
+           steps:
+             - checkout: self
+               clean: true
+               persistCredentials: true
+               
+             - script: docker version
+               displayName: Verify Docker CLI
+                   
+             - task: JFrogDocker@1
+               inputs:
+                 command: 'Pull'
+                 artifactoryConnection: 'JFROGDOCKER'
+                 imageName: 'gwproductengineering.jfrog.io/$(JFROGDOCKERREGISTRY)/$(PI.AI.Analyst.UI.Image.Name):$(Build.BuildNumber)'
+                 skipLogin: false
+            
+             - task: ECRPushImage@1
+               inputs:
+                 awsCredentials: 'pg-dev'
+                 regionName: 'us-east-1'
+                 imageSource: 'imagename'
+                 sourceImageName: 'gwproductengineering.jfrog.io/$(JFROGDOCKERREGISTRY)/$(PI.AI.Analyst.UI.Image.Name)'
+                 sourceImageTag: '$(Build.BuildNumber)'
+                 repositoryName: '$(ECR.Target.Name)'
+                 pushTag: '$(PI.AI.Analyst.UI.Image.Name)_$(Build.BuildNumber)'
+
+             - task: replacetokens@5
+               inputs:
+                 rootDirectory: 'cicd/kubernetes'
+                 targetFiles: |
+                   pi-ai-analyst-ui.yml
+                   pi-ai-analyst-ui-hpa.yml
+                  #  pi-ai-analyst-ui-secrets.yml
+                 encoding: 'auto'
+                 tokenPattern: 'azpipelines'
+                 writeBOM: true
+                 actionOnMissing: 'warn'
+                 keepToken: false
+                 actionOnNoFiles: 'continue'
+                 enableTransforms: false
+                 enableRecursion: false
+                 useLegacyPattern: false
+                 enableTelemetry: true
+
+             - task: KubectlInstaller@0
+               inputs:
+                 kubectlVersion: 'latest'
+
+            #  - task: Kubernetes@1
+            #    displayName: Deploy AI Solutions AIAnalyst UI Secrets
+            #    inputs:
+            #      connectionType: 'Kubernetes Service Connection'
+            #      kubernetesServiceEndpoint: 'pg-dev-enso-concept-agent-app'
+            #      namespace: '$(PIAI.Analyst.UI.EKS.Namespace)'
+            #      command: 'apply'
+            #      useConfigurationFile: true
+            #      configuration: 'cicd/kubernetes/pi-ai-analyst-ui-secrets.yml'
+             
+             - task: Kubernetes@1
+               displayName: Deploy AI Solutions AIAnalyst UI application
+               inputs:
+                 connectionType: 'Kubernetes Service Connection'
+                 kubernetesServiceEndpoint: 'pg-dev-enso-concept-agent-app'
+                 namespace: '$(PIAI.Analyst.UI.EKS.Namespace)'
+                 command: 'apply'
+                 useConfigurationFile: true
+                 configuration: 'cicd/kubernetes/pi-ai-analyst-ui.yml'
+             
+             - task: Kubernetes@1
+               displayName: Deploy AI Solutions AIAnalyst UI HPA (Autoscaling)
+               inputs:
+                 connectionType: 'Kubernetes Service Connection'
+                 kubernetesServiceEndpoint: 'pg-dev-enso-concept-agent-app'
+                 namespace: '$(PIAI.Analyst.UI.EKS.Namespace)'
+                 command: 'apply'
+                 useConfigurationFile: true
+                 configuration: 'cicd/kubernetes/pi-ai-analyst-ui-hpa.yml'

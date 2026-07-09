@@ -1,0 +1,37 @@
+
+#Variables for AI Solutions AIAnalyst UI CICD Pipeline
+variables: 
+  Project.Name: 'AISOLUTIONSAIANALYST'
+  Application.Name: 'UI'
+  Version.Major: 31
+  Version.Minor: 0
+  Version.Patch: 0
+  Version.Revision: 0
+  AI.Solutions.AIAnalyst.UI.Image.Name: 'pi-ai-analyst-ui'
+
+  #Variables For Verocode Scan
+  Agent.PoolName: 'PHM'
+  Agent.PoolNameSchedule: 'PHM'
+  GitHub.Repository: 'ai-solutions-aianalyst-ui'
+  GitHub.TemplateRepository: 'ado-templates'  
+  Solution.Path: '/client'
+  Solution.Name: 'index.html'
+  # Build Types: GRADLE | ANGULAR | HADOOP | INFORMATICA | DOTNET
+  Build.Type: 'npm'
+  
+  Artifact.Location: $(System.ArtifactsDirectory)
+  Copy.FlattenFolders: false
+  Artifact.Name: |
+    **\*.*
+    !**\_PublishedWebsites\**    
+  JFrog.ServiceConnection: 'https://gwproductengineering.jfrog.io/artifactory'
+  JFrog.Properties: ''
+  VeraCode.ServiceConnection: 'Veracode Connection'
+  VeraCode.ApplicationProfile: 'ai-solutions-aianalyst-ui'
+  PI.AI.Analyst.UI.Image.Name: 'pi-ai-analyst-ui'
+  JFROGDOCKERREGISTRY: 'pi-ai-analyst-docker-dev'
+  JFROGDOCKERREGISTRYPROD: 'pi-ai-analyst-docker-prod'
+  SonarQube.ScanMode: 'CLI'
+  SonarQube.ServiceConnection: 'GWTSQ'
+  SonarQube.ProjectKey: 'pi-ai-analyst-ui'
+  SonarQube.ProjectName: 'pi-ai-analyst-ui'

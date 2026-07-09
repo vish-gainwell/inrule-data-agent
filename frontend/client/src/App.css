@@ -1,0 +1,11 @@
+/* app.css – keep this very light, Tailwind handles layout */
+
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+
+/* (You can keep or delete the logo/card styles if you don't use them anymore) */

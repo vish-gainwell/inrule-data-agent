@@ -1,0 +1,93 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: $(PIAI.Analyst.UI.EKS.AppName)
+  namespace: $(PIAI.Analyst.UI.EKS.Namespace)
+  labels:
+    app: $(PIAI.Analyst.UI.EKS.AppName)
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: $(PIAI.Analyst.UI.EKS.AppName)
+  template:
+    metadata:
+      labels:
+        app: $(PIAI.Analyst.UI.EKS.AppName)
+        Account: $(PIAI.Analyst.UI.EKS.Account)
+        Environment: $(PIAI.Analyst.UI.EKS.Environment)
+        ServiceOffering: $(PIAI.Analyst.UI.EKS.ServiceOffering)
+    spec:
+      containers:
+      - name: $(PIAI.Analyst.UI.EKS.AppName)
+        image: $(ECR.Target.Url)/$(ECR.Target.Name):$(PI.AI.Analyst.UI.Image.Name)_$(imageTag)
+        resources:
+          requests:
+            cpu: $(PIAI.Analyst.UI.Container.CPU)
+            memory: $(PIAI.Analyst.UI.Container.Memory)
+          limits:
+            memory: $(PIAI.Analyst.UI.Container.Memory.Limit)
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+
+        env:
+          - name: VITE_MSAL_CLIENT_ID
+            value: '$(PIAI.Analyst.UI.VITE_MSAL_CLIENT_ID)'
+          - name: VITE_MSAL_TENANT_ID
+            value: '$(PIAI.Analyst.UI.VITE_MSAL_TENANT_ID)'
+          - name: ENVIRONMENT
+            value: '$(PIAI.Analyst.UI.EKS.Environment)'
+          - name: DEPLOYMENT_TYPE
+            value: '$(PIAI.Analyst.UI.EKS.DEPLOYMENT_TYPE)'
+
+---
+kind: Service
+apiVersion: v1
+metadata:
+  namespace: $(PIAI.Analyst.UI.EKS.Namespace)
+  name: $(PIAI.Analyst.UI.EKS.AppName)
+spec:
+  selector:
+    app: $(PIAI.Analyst.UI.EKS.AppName)
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: $(PIAI.Analyst.UI.EKS.IngressName)
+  namespace: $(PIAI.Analyst.UI.EKS.Namespace)
+  annotations:    
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "32k"
+    nginx.ingress.kubernetes.io/proxy-buffers: "8 32k"
+    nginx.ingress.kubernetes.io/proxy-busy-buffers-size: "32k"
+    nginx.ingress.kubernetes.io/server-snippet: |
+      large_client_header_buffers 8 100k;
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/enable-websockets: "true"
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "pi-ai-analyst-ui-session"
+    nginx.ingress.kubernetes.io/session-cookie-hash: "sha1"
+spec:
+  ingressClassName: $(PIAI.Analyst.UI.EKS.IngressClassName)
+  rules:
+  - host: $(PIAI.Analyst.UI.EKS.IngressHost)
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: $(PIAI.Analyst.UI.EKS.AppName)
+            port:
+              number: 80

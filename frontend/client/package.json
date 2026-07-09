@@ -1,0 +1,57 @@
+{
+  "name": "client",
+  "private": true,
+  "version": "1.0.0",
+  "author": "Gainwell Technologies",
+  "type": "module",
+  "scripts": {
+    "a-Dev": "vite --mode a-Dev",
+    "a-UAT": "vite --mode a-UAT",
+    "a-SIT": "vite --mode a-SIT",
+    "a-Prod": "vite --mode a-Prod",
+    "o-Dev": "vite --mode o-Dev",
+    "o-UAT": "vite --mode o-UAT",
+    "o-Prod": "vite --mode o-Prod",
+    "local": "vite --mode localhost",
+
+    "build": "vite build",
+    "build:a-Dev": "vite build --mode a-Dev",
+    "build:a-UAT": "vite build --mode a-UAT",
+    "build:a-SIT": "vite build --mode a-SIT",
+    "build:a-Prod": "vite build --mode a-Prod",
+    "build:o-Dev": "vite build --mode o-Dev",
+    "build:o-UAT": "vite build --mode o-UAT",
+    "build:o-Prod": "vite build --mode o-Prod",
+    "build:local": "vite build --mode localhost",
+
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@azure/msal-browser": "^4.27.0",
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
+    "@mui/icons-material": "^5.15.16",
+    "@mui/material": "^5.15.16",
+    "@mui/x-data-grid": "^6.17.0",
+    "@reduxjs/toolkit": "^1.9.3",
+    "axios": "^1.3.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-redux": "^8.0.5",
+    "react-router-dom": "^6.9.0",
+    "sass": "^1.59.3",
+    "sql-formatter": "^15.6.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.17",
+    "@types/react": "^18.0.28",
+    "@types/react-dom": "^18.0.11",
+    "@vitejs/plugin-react": "^3.1.0",
+    "autoprefixer": "^10.4.22",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.17",
+    "vite": "^4.2.0",
+    "vite-plugin-pwa": "^0.14.7",
+    "yaml": "^2.5.1"
+  }
+}

@@ -1,0 +1,74 @@
+# ── Internal / private directories ──────────────────────────────────────────
+cc-bridge/
+ado-toolkit/
+/DB_Tables/
+/Schema/
+backend/docs/
+
+# ── Codex planning docs (internal) ───────────────────────────────────────────
+CODEX_*.md
+CODEX.MD
+**/CODEX.MD
+**/CODEX_*.md
+**/docs/superpowers/
+
+# ── SSL certificates / keys (never commit) ───────────────────────────────────
+*.key
+*.crt
+*.cer
+*.pem
+**/Certs/
+
+# ── Agent instruction files ───────────────────────────────────────────────────
+CLAUDE.md
+claude.md
+AGENTS.md
+agents.md
+
+# ── One-off / scratch files ───────────────────────────────────────────────────
+Core Edits Query.sql
+*.zip
+*.xlsx
+~$*
+
+# ── Secrets / environment ─────────────────────────────────────────────────────
+.env
+.env.*
+!backend/.env.example
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+*.err.log
+*.out.log
+
+# ── Node ──────────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+.vite/
+pnpm-lock.yaml
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+*.egg-info/
+build/
+
+# ── Vite timestamps ───────────────────────────────────────────────────────────
+*.timestamp-*.mjs
+
+# ── OS / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.zed/
+.vscode/
+.idea/
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+nul

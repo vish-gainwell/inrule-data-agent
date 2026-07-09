@@ -1,0 +1,239 @@
+openapi: 3.1.0
+info:
+  title: Healthcare Claims NL→SQL API
+  version: 0.1.0
+
+paths:
+  /generate_query:
+    post:
+      summary: Generate Query Only
+      description: Generate and validate SQL from natural language query WITHOUT execution.
+      operationId: generate_query_only_generate_query_post
+      parameters:
+        - name: X-Session-ID
+          in: header
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: X-Session-Id
+        - name: X-Tenant-Id
+          in: header
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: X-Tenant-Id
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: X-User-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateQueryRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateQueryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  /execute_query:
+    post:
+      summary: Execute Query Endpoint
+      description: Execute a pre-generated SQL query with full execution limits.
+      operationId: execute_query_endpoint_execute_query_post
+      parameters:
+        - name: X-Session-ID
+          in: header
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: X-Session-Id
+        - name: X-Tenant-Id
+          in: header
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: X-Tenant-Id
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: X-User-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteQueryRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteQueryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+components:
+  schemas:
+    ExecuteQueryRequest:
+      type: object
+      title: ExecuteQueryRequest
+      description: Request model for SQL query execution with optional preview mode.
+      required:
+        - sql_query
+      properties:
+        sql_query:
+          type: string
+          title: Sql Query
+        user_id:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: User Id
+          default: default_user
+        is_preview:
+          anyOf:
+            - type: boolean
+            - type: 'null'
+          title: Is Preview
+          default: false
+
+    ExecuteQueryResponse:
+      type: object
+      title: ExecuteQueryResponse
+      description: Response model for SQL query execution results (handles both full and preview).
+      required:
+        - sql_query
+        - columns
+        - sql_result
+      properties:
+        sql_query:
+          type: string
+          title: Sql Query
+        columns:
+          type: array
+          title: Columns
+          items:
+            type: string
+        sql_result:
+          type: array
+          title: Sql Result
+          items:
+            type: object
+            additionalProperties: true
+        execution_metadata:
+          anyOf:
+            - type: object
+              additionalProperties: true
+            - type: 'null'
+          title: Execution Metadata
+        session_info:
+          anyOf:
+            - type: object
+              additionalProperties: true
+            - type: 'null'
+          title: Session Info
+
+    GenerateQueryRequest:
+      type: object
+      title: GenerateQueryRequest
+      description: Request model for SQL query generation only (no execution).
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          title: Query
+        user_id:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: User Id
+          default: default_user
+
+    GenerateQueryResponse:
+      type: object
+      title: GenerateQueryResponse
+      description: Response model for SQL query generation only (no execution).
+      required:
+        - generated_sql
+        - validated_sql
+        - validation_feedback
+      properties:
+        generated_sql:
+          type: string
+          title: Generated Sql
+        validated_sql:
+          type: string
+          title: Validated Sql
+        validation_feedback:
+          title: Validation Feedback
+        session_info:
+          anyOf:
+            - type: object
+              additionalProperties: true
+            - type: 'null'
+          title: Session Info
+
+    HTTPValidationError:
+      type: object
+      title: HTTPValidationError
+      properties:
+        detail:
+          type: array
+          title: Detail
+          items:
+            $ref: '#/components/schemas/ValidationError'
+
+    ValidationError:
+      type: object
+      title: ValidationError
+      required:
+        - loc
+        - msg
+        - type
+      properties:
+        loc:
+          type: array
+          title: Location
+          items:
+            anyOf:
+              - type: string
+              - type: integer
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type

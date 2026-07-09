@@ -1,0 +1,43 @@
+{
+  "$comment": "Real (templateId, QueryParams) pairs extracted verbatim from Sample text2sql Groundtruth.xlsx. These MUST validate green (level != blocked) against the dev-seed templates. Runtime-variable {{...}} values are known vars; environment=prod.",
+  "pairs": [
+    {
+      "templateId": "DrugoverridesByTypeTermdate_242",
+      "queryParams": {
+        ":output": "distinct GCN_SeqNo",
+        ":Type": "3015_Benzo",
+        ":fcDateOfService": "{{DateOfService}}"
+      }
+    },
+    {
+      "templateId": "NDCParams_ValueByNameAndDOS",
+      "queryParams": {
+        ":output": "parameter_value",
+        ":ParamName": "3015_Benzo_LookBack_Days",
+        ":DateOfService": "{{DateOfService}}"
+      }
+    },
+    {
+      "templateId": "ClaimHistory_By_Status_And_LookBkDate",
+      "queryParams": {
+        ":output": "count(1)",
+        ":Provid": "{{ProviderId}}",
+        ":Memid": "{{MemberId}}",
+        ":Status": ["Deny"],
+        ":Ndckey": "{{ClaimTransaction.Ndc}}",
+        ":LookBackDate": "{{LookBackDate}}"
+      }
+    },
+    {
+      "templateId": "ClaimHistory_Reversed_And_LookBkDate",
+      "queryParams": {
+        ":output": "count(1)",
+        ":Provid": "{{ProviderId}}",
+        ":Memid": "{{MemberId}}",
+        ":Status": ["PAID", "PAY", "WAITPAY"],
+        ":Ndckey": "{{ClaimTransaction.Ndc}}",
+        ":LookBackDate": "{{Additional_LookBackDate}}"
+      }
+    }
+  ]
+}

@@ -1,0 +1,240 @@
+/* client/src/index.css */
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #007cad;
+  --color-secondary: #757575;
+  --color-softblack: #2B3A44;
+  --color-userbubble: #deeff7;
+  --color-systembubble: #e6e6e6;
+  --color-success: #007958;
+  --color-error: #f2dede;
+  --color-errorText: #672822;
+  --color-sqlKeyword: #00a1df;
+  --color-cream: #fffde1;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  color: #2B3A44;
+  background-color: #f4f6f8;
+}
+
+.sql-keyword {
+  color: #00a1df;
+  font-weight: bold;
+}
+
+.sql-edit-textarea {
+  width: 100%;
+  min-height: 200px;
+  padding: 1rem;
+  background-color: #2B3A44;
+  color: #fffde1;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.875rem;
+  border: 1px solid #4a5568;
+  border-radius: 0.5rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.sql-edit-textarea:focus {
+  outline: none;
+  border-color: #007cad;
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  background-color: white;
+  border: 1px solid #d1d5db;
+}
+
+.results-table th {
+  background-color: #f8f9fa;
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border: 1px solid #d1d5db;
+}
+
+.results-table td {
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  font-size: 0.875rem;
+  background-color: white;
+}
+
+.results-table tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+.results-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.btn-export-csv {
+  background-color: #007958;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-export-csv:hover {
+  opacity: 0.9;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.pagination-controls select {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.pagination-controls button {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+  background-color: white;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.pagination-controls button:hover {
+  background-color: #f9fafb;
+}
+
+.pagination-controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Validation / status banner (e.g., "Query is valid and ready to run.") */
+.status-banner {
+  background-color: #e6f6e6;
+  /* light green */
+  border: 1px solid #9ad29a;
+  /* darker green border */
+  color: #215d21;
+  /* dark green text */
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background-color: #3cb371;
+  color: white;
+  font-size: 0.8rem;
+}
+
+.query-disclaimer {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin-top: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 0.5rem;
+  color: #6d5a00;
+}
+
+.query-disclaimer-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: 0 0 0.95rem;
+  margin-top: 0.17rem;
+  line-height: 1;
+  color: #f9a825;
+}
+
+.query-disclaimer-text {
+  flex: 1;
+}
+
+.query-disclaimer-text strong {
+  color: #e65100;
+}
+
+.sql-faithfulness-suggestion {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin-top: 0.75rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid #b9e3cb;
+  border-left: 4px solid #28a745;
+  border-radius: 0.5rem;
+  background: linear-gradient(135deg, #eefaf2 0%, #f7fcff 100%);
+  color: #1f5132;
+}
+
+.sql-faithfulness-suggestion-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: 0 0 0.95rem;
+  margin-top: 0.17rem;
+  line-height: 1;
+  color: #20a05a;
+}
+
+.sql-faithfulness-suggestion-title {
+  flex: 1;
+  color: #1e7e34;
+}
+
+.query-disclaimer-text,
+.sql-faithfulness-suggestion-title {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  font-weight: 400;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+
+.sql-faithfulness-suggestion-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+

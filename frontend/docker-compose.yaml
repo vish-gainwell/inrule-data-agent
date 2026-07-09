@@ -1,0 +1,33 @@
+
+services:
+  chat-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chat-backend
+    ports:
+      - "8001:8000"
+    environment:
+      - SITE_URL=http://localhost:8080
+      - PORT=8000
+      - JWT_PRIVATE_KEY=changeKey12345
+      - DUMMY_LOGIN_EMAIL=dummy.user@example.com
+      - DUMMY_LOGIN_PASSWORD=changeme123
+    networks:
+      - chat-network
+
+  chat-ui:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: chat-ui
+    ports:
+      - "8080:80"
+    depends_on:
+      - chat-backend
+    networks:
+      - chat-network
+
+networks:
+  chat-network:
+    driver: bridge

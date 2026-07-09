@@ -1,0 +1,13 @@
+{
+  "$comment": "Closed set of runtime variables (contract §3), from consolidated context + groundtruth QueryParams values. Adding a variable is a governed change to this file. The computed.* namespace is handled by the registry, not enumerated here.",
+  "variables": [
+    "ClaimTransaction.Ndc",
+    "ClaimRequest.DrugRequested.GCNSeqNo.Code",
+    "ClaimRequest.DrugRequested.HIC3.Code",
+    "DateOfService",
+    "MemberId",
+    "ProviderId",
+    "LookBackDate",
+    "Additional_LookBackDate"
+  ]
+}
