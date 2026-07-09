@@ -10,7 +10,7 @@ A pharmacy claim-edit data agent that accepts Criteria Analyzer JSON, generates 
 inrule-data-agent/
 ├── backend/                          ← Python / FastAPI backend
 │   ├── src/inrules_data_agent/
-│   │   ├── app.py                    FastAPI app  (/generate_queries, /execute_query, /health)
+│   │   ├── app.py                    FastAPI app  (/generate_queries, /generate_queries/bulk, /execute_query, /health)
 │   │   ├── generator/generate.py     LLM-driven SQL generation
 │   │   └── schema/                   25 DDL schema files (SQL Server)
 │   ├── tests/                        Backend tests (pytest)
@@ -94,6 +94,7 @@ The API will be available at `http://localhost:8000`.
 |---|---|---|
 | `GET` | `/health` | Health check |
 | `POST` | `/generate_queries` | Generate SQL from Criteria Analyzer JSON |
+| `POST` | `/generate_queries/bulk` | Generate SQL for multiple Criteria Analyzer JSON payloads |
 | `POST` | `/execute_query` | Execute a SELECT query against the live DB |
 
 ### 4. Run backend tests

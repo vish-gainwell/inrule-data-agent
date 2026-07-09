@@ -33,9 +33,30 @@ class GenerateQueriesRequest(BaseModel):
     steps: list[Step]
 
 
+class BulkGenerateQueriesRequest(BaseModel):
+    items: list[GenerateQueriesRequest]
+
+
 class ExecuteQueryRequest(BaseModel):
     sql: str
     params: dict[str, str] = Field(default_factory=dict)
+
+
+def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str, Any]:
+    queries = []
+    for step in request.steps:
+        if not step.requires_data_query:
+            continue
+        assembled = generate_queries_for_step(step.business_meaning)
+        queries.append(
+            {
+                "step_number": step.step_number,
+                "business_meaning": step.business_meaning,
+                "queries": assembled,
+                "matched": len(assembled) > 0,
+            }
+        )
+    return {"edit_id": request.edit_id, "queries": queries}
 
 
 def substitute_placeholders(sql: str, params: dict[str, str]) -> str:
@@ -110,20 +131,16 @@ def create_app() -> FastAPI:
 
     @app.post("/generate_queries")
     def generate_queries(request: GenerateQueriesRequest) -> dict[str, Any]:
-        queries = []
-        for step in request.steps:
-            if not step.requires_data_query:
-                continue
-            assembled = generate_queries_for_step(step.business_meaning)
-            queries.append(
-                {
-                    "step_number": step.step_number,
-                    "business_meaning": step.business_meaning,
-                    "queries": assembled,
-                    "matched": len(assembled) > 0,
-                }
-            )
-        return {"edit_id": request.edit_id, "queries": queries}
+        return build_generate_queries_response(request)
+
+    @app.post("/generate_queries/bulk")
+    def bulk_generate_queries(request: BulkGenerateQueriesRequest) -> dict[str, Any]:
+        return {
+            "items": [
+                build_generate_queries_response(item)
+                for item in request.items
+            ]
+        }
 
     @app.post("/execute_query")
     def execute_query(request: ExecuteQueryRequest) -> dict[str, Any]:

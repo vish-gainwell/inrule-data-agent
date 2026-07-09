@@ -16,6 +16,10 @@ import {
 import { generateQueries } from "../api/sqlClient";
 import { getTypedBackendMessage } from "../api/queryParamsAdapter.js";
 import {
+  buildExecuteQueryRequest,
+  normalizeExecuteQueryResponse,
+} from "../api/executeQueryAdapter.js";
+import {
   createSession,
   saveSessionState,
   ensureSessionCreated,
@@ -1821,11 +1825,17 @@ const Analyst = ({ isActive = true }) => {
     try {
       lockAutoScroll();
 
-      if (message?.isTemplate || message?.isPartASql) {
+      const isDirectSqlExecution = Boolean(
+        message?.isGeneratedQuerySql ||
+          message?.isPartASql ||
+          (message?.isSql && sqlToRun),
+      );
+
+      if (isDirectSqlExecution) {
         const op_id =
           message?.op_id ||
           createOperationId(
-            message?.isPartASql ? "execute-parta" : "execute-template",
+            message?.isPartASql ? "execute-parta" : "execute-generated-sql",
           );
         const response = await fetch(API_ENDPOINTS.EXECUTE_SQL, {
           method: "POST",
@@ -1834,17 +1844,10 @@ const Analyst = ({ isActive = true }) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(
-            message?.isPartASql
-              ? {
-                  queryText: message.generated_sql || message.content,
-                  environment: import.meta.env.VITE_VALIDATION_ENV || "prod",
-                }
-              : {
-                  templateId: message.templateId,
-                  queryText: message.queryText,
-                  queryParams: message.queryParams || {},
-                  environment: import.meta.env.VITE_VALIDATION_ENV || "prod",
-                },
+            buildExecuteQueryRequest({
+              sql: sqlToRun,
+              params: message?.params || {},
+            }),
           ),
         });
 
@@ -1854,7 +1857,13 @@ const Analyst = ({ isActive = true }) => {
         const typedMessage = getTypedBackendMessage(data);
 
         if (!response.ok) {
-          throw new Error(typedMessage || `HTTP ${response.status}: ${raw}`);
+          throw new Error(
+            typedMessage ||
+              data?.detail ||
+              data?.error ||
+              data?.message ||
+              `HTTP ${response.status}: ${raw}`,
+          );
         }
 
         if (typedMessage || Array.isArray(data.blocking_errors)) {
@@ -1870,9 +1879,7 @@ const Analyst = ({ isActive = true }) => {
               id: Date.now() + 4,
               role: "system",
               user_query: null,
-              generated_sql: message?.isPartASql
-                ? message.generated_sql || message.content
-                : message.queryText,
+              generated_sql: sqlToRun,
               execution_summary: null,
               content,
               timestamp: nowIso(),
@@ -1882,20 +1889,19 @@ const Analyst = ({ isActive = true }) => {
           return;
         }
 
-        setMessages((prev) =>
-          insertAfterLastOpId(prev, op_id, {
-            id: Date.now() + 4,
-            role: "system",
-            user_query: null,
-            generated_sql: message?.isPartASql
-              ? message.generated_sql || message.content
-              : message.queryText,
-            execution_summary: null,
-            content: isPreview ? "Preview completed." : "Execution completed.",
-            timestamp: nowIso(),
-            op_id,
-          }),
-        );
+        const { columns, rows } = normalizeExecuteQueryResponse(data);
+        setLastExecution({ isPreview, columns, rows });
+
+        const executionMessage = buildExecutionMessage({
+          rowsLength: rows.length,
+          lastSql: sqlToRun,
+          isPreview,
+          resultsData: { isPreview, columns, rows },
+          opId: op_id,
+          nowIso,
+        });
+        setMessages((prev) => insertAfterLastOpId(prev, op_id, executionMessage));
+        unlockAutoScrollNextFrame();
         return;
       }
 

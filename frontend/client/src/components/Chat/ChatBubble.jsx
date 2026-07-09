@@ -507,7 +507,13 @@ const ChatBubble = ({
                               <button
                                 className="mt-2 bg-primary text-white px-3 py-1.5 rounded text-xs font-semibold hover:opacity-90 disabled:opacity-60"
                                 disabled={isLoading}
-                                onClick={() => executeQuery(false, { generated_sql: query })}
+                                onClick={() =>
+                                  executeQuery(false, {
+                                    generated_sql: query,
+                                    isGeneratedQuerySql: true,
+                                    op_id: message.op_id,
+                                  })
+                                }
                               >
                                 Execute
                               </button>
