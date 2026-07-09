@@ -93,6 +93,53 @@ def test_matched_false_when_openai_returns_none():
     assert result["queries"] == []
 
 
+def test_bulk_generate_queries_returns_result_per_item_in_order():
+    with patch("inrules_data_agent.generator.generate._call_openai", return_value=MOCK_SQL):
+        client = TestClient(create_app())
+        response = client.post(
+            "/generate_queries/bulk",
+            json={
+                "items": [
+                    {
+                        "edit_id": "3015",
+                        "steps": [
+                            {
+                                "step_number": 1,
+                                "business_meaning": "global check only",
+                                "requires_data_query": False,
+                            },
+                            {
+                                "step_number": 4,
+                                "business_meaning": "Query DrugOverrides WHERE ndc = incoming_ndc",
+                                "requires_data_query": True,
+                            },
+                        ],
+                    },
+                    {
+                        "edit_id": "3002",
+                        "steps": [
+                            {
+                                "step_number": 3,
+                                "business_meaning": "Query DrugOverrides WHERE hic3 = incoming_hic3",
+                                "requires_data_query": True,
+                            }
+                        ],
+                    },
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["edit_id"] for item in body["items"]] == ["3015", "3002"]
+    assert len(body["items"][0]["queries"]) == 1
+    assert body["items"][0]["queries"][0]["step_number"] == 4
+    assert body["items"][0]["queries"][0]["queries"] == [MOCK_SQL]
+    assert len(body["items"][1]["queries"]) == 1
+    assert body["items"][1]["queries"][0]["step_number"] == 3
+    assert body["items"][1]["queries"][0]["queries"] == [MOCK_SQL]
+
+
 def test_select_ddls_drugoverrides():
     ddls = select_ddls("Query DrugOverrides where NDC matches incoming ndc")
     assert any("DrugOverrides" in ddl for ddl in ddls)
