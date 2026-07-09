@@ -772,6 +772,23 @@ const ChatBubble = ({
               ))}
             </div>
           </div>
+        ) : isUser ? (
+          <div className="rounded-lg border border-blue-200 bg-white/80 p-4 text-softblack shadow-sm">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3 border-b border-blue-100 pb-3">
+              <div>
+                <div className="text-sm font-semibold">User Request</div>
+                <div className="mt-1 text-xs text-secondary">
+                  Natural language input
+                </div>
+              </div>
+              <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold uppercase text-blue-700">
+                User input
+              </span>
+            </div>
+            <div className="max-h-96 overflow-y-auto whitespace-pre-wrap pr-2 text-sm leading-relaxed text-gray-800">
+              {message.content}
+            </div>
+          </div>
         ) : (
           <div
             className="text-sm leading-relaxed"
