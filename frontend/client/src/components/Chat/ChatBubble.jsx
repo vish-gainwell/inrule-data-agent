@@ -104,6 +104,26 @@ const ChatBubble = ({
     }
   };
 
+  const parseCriteriaAnalyzerText = (value) => {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    if (!trimmed || trimmed[0] !== "{") return null;
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.steps)) {
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
+
+  const criteriaAnalyzerInput = isUser
+    ? parseCriteriaAnalyzerText(message.content)
+    : null;
+
   const safeSqlFormat = (sql) => {
     if (!sql) return "";
     try {
@@ -706,6 +726,52 @@ const ChatBubble = ({
               </pre>
             </div>
           )
+        ) : criteriaAnalyzerInput ? (
+          <div className="rounded-lg border border-blue-200 bg-white/80 p-4 text-softblack shadow-sm">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3 border-b border-blue-100 pb-3">
+              <div>
+                <div className="text-sm font-semibold">Criteria Analyzer Request</div>
+                <div className="mt-1 text-xs text-secondary">
+                  Edit {criteriaAnalyzerInput.edit_id || "unknown"} · {criteriaAnalyzerInput.steps.length} steps · {criteriaAnalyzerInput.steps.filter((step) => step?.requires_data_query).length} data queries requested
+                </div>
+              </div>
+              <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold uppercase text-blue-700">
+                User input
+              </span>
+            </div>
+
+            <div className="max-h-96 space-y-2 overflow-y-auto pr-2">
+              {criteriaAnalyzerInput.steps.map((step, index) => (
+                <div
+                  key={`${step?.step_number ?? index}`}
+                  className="rounded-md border border-gray-200 bg-white p-3"
+                >
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <div className="text-xs font-semibold">
+                      Step {step?.step_number ?? index + 1}
+                    </div>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        step?.requires_data_query
+                          ? "bg-green-50 text-green-700"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      {step?.requires_data_query ? "Data query" : "No data query"}
+                    </span>
+                  </div>
+                  <div className="text-xs leading-relaxed text-gray-700">
+                    {step?.business_meaning || "No business meaning provided."}
+                  </div>
+                  {step?.ado_criterion_ref && (
+                    <div className="mt-2 text-[11px] text-gray-500">
+                      Ref: {step.ado_criterion_ref}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         ) : (
           <div
             className="text-sm leading-relaxed"
