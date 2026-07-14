@@ -1,6 +1,7 @@
 # ── Internal / private directories ──────────────────────────────────────────
 cc-bridge/
 ado-toolkit/
+github-toolkit/
 /DB_Tables/
 /Schema/
 backend/docs/

@@ -36,6 +36,13 @@ _DDL_KEYWORDS: list[tuple[str, str | None]] = [
     ("diagnosis code", "IPA.dbo.DiagCode.sql"),
     ("diag code", "IPA.dbo.DiagCode.sql"),
     ("diagcode", "IPA.dbo.DiagCode.sql"),
+    ("step_therapy_drug", "HRX.dbo.step_therapy_drug.sql"),
+    ("step therapy drug", "HRX.dbo.step_therapy_drug.sql"),
+    ("step_therapy_level", "HRX.dbo.step_therapy_level.sql"),
+    ("step therapy level", "HRX.dbo.step_therapy_level.sql"),
+    ("authservice", "plandata_rx_production.dbo.authservice.sql"),
+    ("enrollcoverage", "plandata_rx_production.dbo.enrollcoverage.sql"),
+    ("referral", "plandata_rx_production.dbo.referral.sql"),
 ]
 
 _LIVE_TABLE_KEYWORDS: list[tuple[str, tuple[str, str, str]]] = [

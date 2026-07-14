@@ -2692,6 +2692,157 @@ export const SCHEMA_CONFIG = {
                     "description": "Pharmacy attribute used in claims, PA, pricing, or drug reference processing"
                   }
                 ]
+              },
+              {
+                "name": "step_therapy_drug",
+                "coverage": "covered",
+                "reason": "Schema pulled from live SQL Server",
+                "ddlFile": "by_database\\HRX\\HRX.dbo.step_therapy_drug.sql",
+                "columns": [
+                  {
+                    "name": "stg_id",
+                    "type": "tinyint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "X",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "stl_id",
+                    "type": "tinyint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "X",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "gcn_seqno",
+                    "type": "decimal",
+                    "length": "6,0",
+                    "nullable": "No",
+                    "pk": "X",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "hicl_seqno",
+                    "type": "decimal",
+                    "length": "6,0",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "stl_eff_date",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "stl_end_date",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "change_user_name",
+                    "type": "varchar",
+                    "length": "32",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "change_date",
+                    "type": "datetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  }
+                ]
+              },
+              {
+                "name": "step_therapy_level",
+                "coverage": "covered",
+                "reason": "Schema pulled from live SQL Server",
+                "ddlFile": "by_database\\HRX\\HRX.dbo.step_therapy_level.sql",
+                "columns": [
+                  {
+                    "name": "stg_id",
+                    "type": "tinyint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "X",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "stl_id",
+                    "type": "tinyint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "X",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "min_step_days_cnt",
+                    "type": "smallint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "min_step_drug_cnt",
+                    "type": "tinyint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "max_gap_days_cnt",
+                    "type": "smallint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "change_user_name",
+                    "type": "varchar",
+                    "length": "32",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "change_date",
+                    "type": "datetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  }
+                ]
               }
             ]
           }
@@ -6002,7 +6153,1615 @@ export const SCHEMA_CONFIG = {
                                                 "description": "Schema pulled from live SQL Server"
                                 }
                 ]
-}
+},
+              {
+                "name": "authservice",
+                "coverage": "covered",
+                "reason": "Schema pulled from live SQL Server",
+                "ddlFile": "by_database\\plandata_rx_production\\plandata_rx_production.dbo.authservice.sql",
+                "columns": [
+                  {
+                    "name": "referralid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "X",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "sequence",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "X",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "codeid",
+                    "type": "char",
+                    "length": "11",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "medcoverage",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "carelevel",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "servcategory",
+                    "type": "cattype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "status",
+                    "type": "statustype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "xreasoncode",
+                    "type": "typecode",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "overridecontract",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "totalunits",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "usedunits",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "actualunits",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "tier",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "dosdate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "globalday",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "reqcodeid",
+                    "type": "char",
+                    "length": "11",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "catid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "subcatid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "svcgroupid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "reqcatid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "reqsubcatid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "reqsvcgrpid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "createid",
+                    "type": "udtuserid",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "createdate",
+                    "type": "createdatetype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "updateid",
+                    "type": "udtuserid",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "lastupdate",
+                    "type": "lastupdatetype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "modcode",
+                    "type": "modifiertype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "modcode2",
+                    "type": "modifiertype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "toothnumber",
+                    "type": "toothtype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "toothsurface",
+                    "type": "char",
+                    "length": "5",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "approvedcodeid",
+                    "type": "servicecode",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "modcode3",
+                    "type": "modifiertype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "modcode4",
+                    "type": "modifiertype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "modcode5",
+                    "type": "modifiertype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "globaltemplate",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "X",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "negotiatedcontract",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "negotiatedterm",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "negotiatedvalue",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "ispatientresp",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "ndcprodname",
+                    "type": "char",
+                    "length": "50",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "appndcgroupname",
+                    "type": "char",
+                    "length": "50",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "interqualid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "meddirectorid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "requestedunits",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "svcprocamount",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "initialreferralid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "initialreferralseq",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "detailsourcetype",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "initialreferraltemplate",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "dentalareaid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "downcodesurfacecount",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "DeterminationDate",
+                    "type": "udtshortdate",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "H278RecordSequence",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "location",
+                    "type": "char",
+                    "length": "2",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "Frequency",
+                    "type": "char",
+                    "length": "8",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "EffDate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "TermDate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "ReqEffDate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "ReqTermDate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "decrementtype",
+                    "type": "char",
+                    "length": "3",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "TotalBudget",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "UsedBudget",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "ReqTotalBudget",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  }
+                ]
+              },
+              {
+                "name": "enrollcoverage",
+                "coverage": "covered",
+                "reason": "Schema pulled from live SQL Server",
+                "ddlFile": "by_database\\plandata_rx_production\\plandata_rx_production.dbo.enrollcoverage.sql",
+                "columns": [
+                  {
+                    "name": "enrollcoverageid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "X",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "enrollid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "ratecode",
+                    "type": "nametype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "coveragecodeid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "effdate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "termdate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "createid",
+                    "type": "udtuserid",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "createdate",
+                    "type": "createdatetype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "updateid",
+                    "type": "udtuserid",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "lastupdate",
+                    "type": "lastupdatetype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  }
+                ]
+              },
+              {
+                "name": "referral",
+                "coverage": "covered",
+                "reason": "Schema pulled from live SQL Server",
+                "ddlFile": "by_database\\plandata_rx_production\\plandata_rx_production.dbo.referral.sql",
+                "columns": [
+                  {
+                    "name": "referralid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "X",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "enrollid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "memid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "servicecode",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "COB",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "referto",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "effdate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "referfrom",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "emergency",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "authorizationid",
+                    "type": "char",
+                    "length": "30",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "lastupdate",
+                    "type": "lastupdatetype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "referraldate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "transferinout",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "admitphys",
+                    "type": "longname",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "disdiagnosis",
+                    "type": "udtdiagcode",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "admitdate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "numappt",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "dischargedate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "tier1",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "tier2",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "staytype1",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "termdate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "staytype2",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "issueinitials",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "actual1",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "actual2",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "actualstay1",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "actualstay2",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "daysdenied",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "deferreddliab",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "reinsurance",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "costest",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "perdiemest",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "accchg",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "createdate",
+                    "type": "createdatetype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "createid",
+                    "type": "udtuserid",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "updateid",
+                    "type": "udtuserid",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "diagnosis",
+                    "type": "udtdiagcode",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "admit",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "status",
+                    "type": "statustype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "numremappt",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "acuity",
+                    "type": "typecode",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "attprovid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "admtprovid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "self",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "asstsurgeon",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "authstatus",
+                    "type": "umstatustype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "hasassist",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "receiptdate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "seendate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "userid",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "outofarea",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "ispredetermination",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "paytoaffiliationid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "hasdocuments",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "isautodischargedate",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "referfromnetwork",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "pendclaims",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "refertoprovtype",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "refertopar",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "refertolocation",
+                    "type": "char",
+                    "length": "2",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "isglobal",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "accidentcause",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "accidentdate",
+                    "type": "datetime",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "investigation",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "lmpdate",
+                    "type": "datetime",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "estdeldate",
+                    "type": "datetime",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "surgerydatetime",
+                    "type": "datetime",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "decrementtype",
+                    "type": "char",
+                    "length": "3",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "surgerysuggested",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "appeal",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "appealdate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "reviewtype",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "beneprefid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "appealoutcome",
+                    "type": "shortdesctype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "penaltyapplies",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "retroreview",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "reqlos",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "actuallos",
+                    "type": "zint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "processlogid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "source",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "h278responseneeded",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "h278responsesent",
+                    "type": "datetime",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "h278processlogdetailid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "h278responsestatus",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "reqpatinfo",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "h278haschanges",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "dispositionid",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "priority",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "highlight",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "nextreviewdate",
+                    "type": "smalldatetime",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "DiagnosisIcdVersion",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "DisDiagnosisIcdVersion",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "MergeFromReferralId",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "IsConsolidated",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Date or audit value from live SQL Server schema"
+                  },
+                  {
+                    "name": "ServiceAffilId",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "DefaultContractId",
+                    "type": "ident",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Identifier or code from live SQL Server schema"
+                  },
+                  {
+                    "name": "TOTALBUDGET",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "USEDBUDGET",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "IsBundled",
+                    "type": "yesnotype",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "trackingnumber",
+                    "type": "varchar",
+                    "length": "50",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "ReqTotalBudget",
+                    "type": "zmoney",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  },
+                  {
+                    "name": "ApplyDecrement",
+                    "type": "char",
+                    "length": "1",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "Column pulled from live SQL Server schema"
+                  }
+                ]
+              }
             ]
           }
         ]
