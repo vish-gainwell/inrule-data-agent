@@ -184,9 +184,16 @@ def test_select_ddls_memberattribute_adds_known_gap_note():
     assert any("MemberAttribute table DDL is not yet available" in ddl for ddl in ddls)
 
 
-def test_select_ddls_without_selected_tables_returns_no_schema():
+def test_select_ddls_without_table_keywords_returns_all_packaged_schemas():
     ddls = select_ddls("Completely unknown data requirement")
-    assert ddls == []
+
+    assert len(ddls) == 30
+    joined = "\n".join(ddls)
+    assert "[HRX].[dbo].[step_therapy_drug]" in joined
+    assert "[HRX].[dbo].[step_therapy_level]" in joined
+    assert "[plandata_rx_production].[dbo].[authservice]" in joined
+    assert "[plandata_rx_production].[dbo].[enrollcoverage]" in joined
+    assert "[plandata_rx_production].[dbo].[referral]" in joined
 
 
 def test_rejects_non_select_llm_output():

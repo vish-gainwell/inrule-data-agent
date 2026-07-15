@@ -18,33 +18,6 @@ _MEMBER_ATTRIBUTE_NOTE = (
     "Known columns: memid, theValue, EFFDATE, TERMDATE."
 )
 
-_DDL_KEYWORDS: list[tuple[str, str | None]] = [
-    ("drugoverrides", "HRX.dbo.DrugOverrides.sql"),
-    ("claimhistory", "plandata_rx_production.dbo.claim.sql"),
-    ("claim", "plandata_rx_production.dbo.claim.sql"),
-    ("claimdetail", "plandata_rx_production.dbo.claimdetail.sql"),
-    ("ndc_mstr", "HRX.dbo.NDC_Mstr.sql"),
-    ("ndc mstr", "HRX.dbo.NDC_Mstr.sql"),
-    ("gcnseqno_mstr", "HRX.dbo.GCNSeqNo_Mstr.sql"),
-    ("gcnseqno mstr", "HRX.dbo.GCNSeqNo_Mstr.sql"),
-    ("ndcparameters", "HRX.dbo.NDCParameters.sql"),
-    ("parameter_name", "HRX.dbo.NDCParameters.sql"),
-    ("parameter_value", "HRX.dbo.NDCParameters.sql"),
-    ("memberattribute", None),
-    ("attributevalue", None),
-    ("diagnosislist", "HRX.dbo.DiagnosisList.sql"),
-    ("diagnosis code", "IPA.dbo.DiagCode.sql"),
-    ("diag code", "IPA.dbo.DiagCode.sql"),
-    ("diagcode", "IPA.dbo.DiagCode.sql"),
-    ("step_therapy_drug", "HRX.dbo.step_therapy_drug.sql"),
-    ("step therapy drug", "HRX.dbo.step_therapy_drug.sql"),
-    ("step_therapy_level", "HRX.dbo.step_therapy_level.sql"),
-    ("step therapy level", "HRX.dbo.step_therapy_level.sql"),
-    ("authservice", "plandata_rx_production.dbo.authservice.sql"),
-    ("enrollcoverage", "plandata_rx_production.dbo.enrollcoverage.sql"),
-    ("referral", "plandata_rx_production.dbo.referral.sql"),
-]
-
 _LIVE_TABLE_KEYWORDS: list[tuple[str, tuple[str, str, str]]] = [
     ("claimpharm", ("plandata_rx_production", "dbo", "claimpharm")),
     ("claim pharmacy", ("plandata_rx_production", "dbo", "claimpharm")),
@@ -202,24 +175,15 @@ def generate_queries_for_step(business_meaning: str) -> list[str]:
 
 
 def select_ddls(business_meaning: str) -> list[str]:
-    """Return DDL file contents relevant to this business_meaning.
+    """Return every packaged DDL plus any explicitly referenced live-only tables.
 
-    Keyword matching is intentionally simple; this is the future RAG swap point.
-    If no keywords match, no DDL context is returned; only selected tables are in scope.
+    Sending the complete packaged catalog is the pre-RAG baseline: adding a DDL file
+    makes it available automatically without maintaining table-to-keyword mappings.
+    Live lookups remain a temporary bridge for known tables that are not packaged yet.
     """
 
     text = business_meaning.lower()
-    selected_files: list[str] = []
-    include_member_attribute_note = False
-
-    for keyword, file_name in _DDL_KEYWORDS:
-        if keyword not in text:
-            continue
-        if file_name is None:
-            include_member_attribute_note = True
-            continue
-        if file_name not in selected_files:
-            selected_files.append(file_name)
+    ddl_texts = _read_all_schema_files()
 
     selected_live_tables: list[tuple[str, str, str]] = []
     for keyword, table_ref in _LIVE_TABLE_KEYWORDS:
@@ -228,18 +192,12 @@ def select_ddls(business_meaning: str) -> list[str]:
         if table_ref not in selected_live_tables:
             selected_live_tables.append(table_ref)
 
-    ddl_texts: list[str] = []
-    if selected_files:
-        for file_name in selected_files:
-            content = _read_schema_file(file_name)
-            if content:
-                ddl_texts.append(content)
     for database, schema, table in selected_live_tables:
         content = _read_live_schema_table(database, schema, table)
         if content:
             ddl_texts.append(content)
 
-    if include_member_attribute_note:
+    if "memberattribute" in text or "attributevalue" in text:
         ddl_texts.append(_MEMBER_ATTRIBUTE_NOTE)
 
     return ddl_texts
@@ -464,12 +422,6 @@ def _build_artifact_repair_feedback(invalid_artifacts: list[str]) -> str:
     )
 
 
-def _read_schema_file(file_name: str) -> str | None:
-    path = _SCHEMA_DIR / file_name
-    if not path.exists():
-        print(f"[select_ddls] schema file not found: {file_name}")
-        return None
-    return path.read_text(encoding="utf-8")
 
 
 def _read_all_schema_files() -> list[str]:
