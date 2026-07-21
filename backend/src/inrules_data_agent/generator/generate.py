@@ -16,10 +16,6 @@ load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 _SCHEMA_DIR = Path(__file__).resolve().parent.parent / "schema"
 _IN_MEMORY_SCHEMA_DIR = Path(__file__).resolve().parent.parent / "in_memory_schema"
-_MEMBER_ATTRIBUTE_NOTE = (
-    "Note: MemberAttribute table DDL is not yet available. "
-    "Known columns: memid, theValue, EFFDATE, TERMDATE."
-)
 
 _LIVE_TABLE_KEYWORDS: list[tuple[str, tuple[str, str, str]]] = [
     ("claimpharm", ("plandata_rx_production", "dbo", "claimpharm")),
@@ -232,9 +228,6 @@ def select_ddls(business_meaning: str) -> list[str]:
         content = _read_live_schema_table(database, schema, table)
         if content:
             ddl_texts.append(content)
-
-    if "memberattribute" in text or "attributevalue" in text:
-        ddl_texts.append(_MEMBER_ATTRIBUTE_NOTE)
 
     return ddl_texts
 

@@ -3,20 +3,15 @@ Logical, non-executable Rules Engine in-memory dataset derived from MemberDetail
 (MemberDTO base).
 
 DTO path: InRuleDTO.MemberDetails
-Mapping authority: IR_DTO_schema.xlsx, dto_tree.txt, and total_tree.txt.
+Mapping authority: IR_DTO_schema.xlsx (DTO Metadata and Memory Tables),
+dto_tree.txt, and total_tree.txt.
 
-This is not a physical SQL Server table and must not be executed through
-/execute_query. String lengths are not specified by the DTO; the SQL-like
-types below represent the C# property types only.
-
-Computed DTO properties:
-  - AgeInMonths is calculated from BirthDate and the current application date.
-  - AgeInYears is calculated from BirthDate and the current application date.
-
-AddressDTO properties are explicitly exposed by the references and are flattened
-with an Address_ prefix.
+AddressDTO is explicitly expanded by the DTO tree, so its properties are flattened
+with an Address_ prefix. This is not a physical SQL Server table and must not be
+executed through /execute_query. SQL types preserve workbook C# types/nullability;
+unspecified string lengths use nvarchar(max).
 */
-CREATE TABLE [InMemory].[dbo].[MEMBER]
+CREATE TABLE [InMemory].[dbo].[MEMBER_ATTRIBUTE]
 (
     [MemberID] nvarchar(max) NULL,
     [CardholderID] nvarchar(max) NULL,

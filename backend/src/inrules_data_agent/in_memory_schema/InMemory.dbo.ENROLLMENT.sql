@@ -1,9 +1,8 @@
 /*
-Logical Rules Engine in-memory dataset generated from EnrollmentDTO.
+Logical, non-executable Rules Engine in-memory dataset derived from EnrollmentDTO.
 
-Runtime path: InRuleDTO.MemberDetails.Enrollments
-Loader: hrxPOS_GetMemberEnrollment
-Loader inputs: MemberID, DateOfService, NDC
+DTO path: InRuleDTO.MemberDetails.Enrollments
+Mapping authority: IR_DTO_schema.xlsx, dto_tree.txt, and total_tree.txt.
 
 This is not a physical SQL Server table and must not be executed through
 /execute_query. String lengths are not specified by the DTO; the SQL-like

@@ -1,11 +1,8 @@
 /*
-Logical Rules Engine in-memory dataset generated from ClaimDTO.
+Logical, non-executable Rules Engine in-memory dataset derived from ClaimDTO.
 
-Runtime path: InRuleDTO.MemberDetails.ClaimHistory
-Loader: plandata_rx_production.dbo.hrxMemberHistory_NJ
-Physical sources:
-  - plandata_rx_production.dbo.claim
-  - plandata_rx_production.dbo.claimpharm
+DTO path: InRuleDTO.MemberDetails.ClaimHistory
+Mapping authority: IR_DTO_schema.xlsx, dto_tree.txt, and total_tree.txt.
 
 This is not a physical SQL Server table and must not be executed through
 /execute_query. String lengths and decimal scales are not specified by the DTO;

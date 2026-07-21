@@ -179,15 +179,24 @@ def test_select_ddls_adds_live_schema_for_history_support_tables():
     assert read_live_schema.call_count == 4
 
 
-def test_select_ddls_memberattribute_adds_known_gap_note():
-    ddls = select_ddls("Query MemberAttribute where attributevalue is NURSING_HOME")
-    assert any("MemberAttribute table DDL is not yet available" in ddl for ddl in ddls)
+def test_select_ddls_includes_dto_derived_in_memory_tables():
+    ddls = select_ddls("Query logical Rules Engine data")
+    joined = "\n".join(ddls)
+
+    assert "[InMemory].[dbo].[MEMBER_ATTRIBUTE]" in joined
+    assert "[Address_CountryCode] nvarchar(max) NULL" in joined
+    assert "[InMemory].[dbo].[DRUG]" in joined
+    assert "[NDC_AttrDaysTillRefill] int NOT NULL" in joined
+    assert "[InMemory].[dbo].[EO_HISTORY]" in joined
+    assert "[RejectEdits_EditId] nvarchar(max) NOT NULL" in joined
+    assert "[InMemory].[dbo].[PLAN_AFFILIATIONS]" in joined
+    assert "[ContractTermDate] datetime2 NULL" in joined
 
 
 def test_select_ddls_without_table_keywords_returns_all_packaged_schemas():
     ddls = select_ddls("Completely unknown data requirement")
 
-    assert len(ddls) == 33
+    assert len(ddls) == 44
     joined = "\n".join(ddls)
     assert "[HRX].[dbo].[step_therapy_drug]" in joined
     assert "[HRX].[dbo].[step_therapy_level]" in joined

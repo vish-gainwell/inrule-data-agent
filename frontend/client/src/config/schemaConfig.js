@@ -7775,129 +7775,3280 @@ export const SCHEMA_CONFIG = {
               {
                 "name": "MEMBER_HISTORY",
                 "coverage": "in_memory",
-                "reason": "Logical Rules Engine dataset generated from ClaimDTO; loaded by hrxMemberHistory_NJ from claim and claimpharm",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.MemberDetails.ClaimHistory \u2192 ClaimDTO",
                 "ddlFile": "in_memory_schema\\InMemory.dbo.MEMBER_HISTORY.sql",
                 "columns": [
-                  ["ClaimID", "nvarchar", "max", "Yes"],
-                  ["DrugName", "nvarchar", "max", "Yes"],
-                  ["DrugGenClass", "nvarchar", "max", "Yes"],
-                  ["GCNSeqNo", "nvarchar", "max", "Yes"],
-                  ["GCN", "nvarchar", "max", "Yes"],
-                  ["HICLSeqNo", "nvarchar", "max", "Yes"],
-                  ["NDC", "nvarchar", "max", "Yes"],
-                  ["RxDate", "nvarchar", "max", "Yes"],
-                  ["DateOfService", "nvarchar", "max", "Yes"],
-                  ["Quantity", "decimal", "29,9", "No"],
-                  ["DaysSupply", "int", "", "No"],
-                  ["PrescriberNPI", "nvarchar", "max", "Yes"],
-                  ["ProviderNPI", "nvarchar", "max", "Yes"],
-                  ["PharmacyNPI", "nvarchar", "max", "Yes"],
-                  ["PDLStatus", "nvarchar", "max", "Yes"],
-                  ["PrefDrug_PREF", "nvarchar", "max", "Yes"],
-                  ["PARequired", "bit", "", "No"],
-                  ["Dose", "float", "53", "No"],
-                  ["IsGeneric", "bit", "", "No"],
-                  ["NewRefill", "int", "", "No"],
-                  ["IsNewRefill", "bit", "", "No"],
-                  ["IsBrand", "bit", "", "No"],
-                  ["IsPreferred", "bit", "", "No"],
-                  ["PlanId", "nvarchar", "max", "Yes"],
-                  ["CompoundIndicator", "int", "", "Yes"],
-                  ["ProviderId", "nvarchar", "max", "Yes"],
-                  ["MemberId", "nvarchar", "max", "Yes"],
-                  ["ExhaustedDate", "nvarchar", "max", "Yes"],
-                  ["RxNumber", "nvarchar", "max", "Yes"],
-                  ["NdcCode", "nvarchar", "max", "Yes"],
-                  ["PrescriberNbr", "nvarchar", "max", "Yes"],
-                  ["FillDate", "nvarchar", "max", "Yes"],
-                  ["Fill_Date", "nvarchar", "max", "Yes"],
-                  ["VacationRefillDate", "datetime2", "", "No"],
-                  ["CertificationNumber", "nvarchar", "max", "Yes"],
-                  ["TherapeuticClass", "nvarchar", "max", "Yes"],
-                  ["DispensingFee", "decimal", "29,9", "Yes"],
-                  ["RxDateOfService", "datetime2", "", "No"],
-                  ["CreateDate", "datetime2", "", "No"],
-                  ["TotalMemberAmount", "decimal", "29,9", "Yes"],
-                  ["ExternalClaimId", "nvarchar", "max", "Yes"],
-                  ["RxDateWritten", "nvarchar", "max", "Yes"],
-                  ["IsEncounter", "bit", "", "No"],
-                  ["PriorAuth", "nvarchar", "max", "Yes"],
-                  ["Dosage", "decimal", "29,9", "Yes"],
-                  ["PaidDate", "datetime2", "", "Yes"],
-                  ["FormType", "nvarchar", "max", "Yes"]
-                ].map(([name, type, length, nullable]) => ({
-                  name,
-                  type,
-                  length,
-                  nullable,
-                  pk: "",
-                  fk: "",
-                  description: "Property from ClaimDTO"
-                }))
+                  {
+                    "name": "ClaimID",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "DrugName",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "DrugGenClass",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "GCNSeqNo",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "GCN",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "HICLSeqNo",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "NDC",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "RxDate",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "DateOfService",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "Quantity",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "DaysSupply",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "PrescriberNPI",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "ProviderNPI",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "PharmacyNPI",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "PDLStatus",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "PrefDrug_PREF",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "PARequired",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "Dose",
+                    "type": "float",
+                    "length": "53",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "IsGeneric",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "NewRefill",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "IsNewRefill",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "IsBrand",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "IsPreferred",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "PlanId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "CompoundIndicator",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "ProviderId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "MemberId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "ExhaustedDate",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "RxNumber",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "NdcCode",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "PrescriberNbr",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "FillDate",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "Fill_Date",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "VacationRefillDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "CertificationNumber",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "TherapeuticClass",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "DispensingFee",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "RxDateOfService",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "CreateDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "TotalMemberAmount",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "ExternalClaimId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "RxDateWritten",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "IsEncounter",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "PriorAuth",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "Dosage",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "PaidDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  },
+                  {
+                    "name": "FormType",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ClaimDTO"
+                  }
+                ]
               },
               {
                 "name": "MEMBER",
                 "coverage": "in_memory",
-                "reason": "Logical Rules Engine dataset generated from MemberDTO; loaded by hrxPOS_GetMemberData",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.MemberDetails \u2192 MemberDetailsDTO (MemberDTO base)",
                 "ddlFile": "in_memory_schema\\InMemory.dbo.MEMBER.sql",
                 "columns": [
-                  ["MemberID", "nvarchar", "max", "Yes", "Property from MemberDTO"],
-                  ["CardholderID", "nvarchar", "max", "Yes", "Property from MemberDTO"],
-                  ["FirstName", "nvarchar", "max", "Yes", "Property from MemberDTO"],
-                  ["LastName", "nvarchar", "max", "Yes", "Property from MemberDTO"],
-                  ["BirthDate", "date", "", "Yes", "Property from MemberDTO"],
-                  ["DeathDate", "date", "", "Yes", "Property from MemberDTO"],
-                  ["Gender", "nvarchar", "max", "Yes", "Property from MemberDTO"],
-                  ["Phone", "nvarchar", "max", "Yes", "Property from MemberDTO"],
-                  ["AgeInMonths", "int", "", "No", "Runtime-computed MemberDTO property derived from BirthDate"],
-                  ["AgeInYears", "float", "53", "No", "Runtime-computed MemberDTO property derived from BirthDate"],
-                  ["Address", "nvarchar", "max", "No", "Nested AddressDTO represented as logical JSON until its properties are expanded"],
-                  ["IsInLTC", "bit", "", "Yes", "Property from MemberDTO"],
-                  ["EthnicID", "nvarchar", "max", "Yes", "Property from MemberDTO"]
-                ].map(([name, type, length, nullable, description]) => ({
-                  name,
-                  type,
-                  length,
-                  nullable,
-                  pk: "",
-                  fk: "",
-                  description
-                }))
+                  {
+                    "name": "MemberID",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "CardholderID",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "FirstName",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "LastName",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "BirthDate",
+                    "type": "date",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "DeathDate",
+                    "type": "date",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Gender",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Phone",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "AgeInMonths",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "AgeInYears",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_Id",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_Address1",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_Address2",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_City",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_StateProvince",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_PostalCode",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_CountryCode",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "IsInLTC",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "EthnicID",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  }
+                ]
               },
               {
                 "name": "ENROLLMENT",
                 "coverage": "in_memory",
-                "reason": "Logical Rules Engine dataset generated from EnrollmentDTO; loaded by hrxPOS_GetMemberEnrollment",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.MemberDetails.Enrollments \u2192 EnrollmentDTO",
                 "ddlFile": "in_memory_schema\\InMemory.dbo.ENROLLMENT.sql",
                 "columns": [
-                  ["MemberId", "nvarchar", "max", "No"],
-                  ["ProgramId", "nvarchar", "max", "Yes"],
-                  ["EnrollId", "nvarchar", "max", "No"],
-                  ["CoverageCode", "nvarchar", "max", "Yes"],
-                  ["BenefitPlanId", "nvarchar", "max", "No"],
-                  ["RateCode", "nvarchar", "max", "Yes"],
-                  ["RateId", "nvarchar", "max", "Yes"],
-                  ["SegType", "nvarchar", "max", "Yes"],
-                  ["EffectiveDate", "datetime2", "", "No"],
-                  ["TermDate", "datetime2", "", "No"],
-                  ["CoverageEffectiveDate", "datetime2", "", "No"],
-                  ["CoverageTermDate", "datetime2", "", "No"],
-                  ["RestrictionId", "nvarchar", "max", "Yes"],
-                  ["RestrictEffectiveDate", "datetime2", "", "Yes"],
-                  ["RestrictTermDate", "datetime2", "", "Yes"],
-                  ["Sequence", "smallint", "", "Yes"],
-                  ["BenefitId", "nvarchar", "max", "Yes"],
-                  ["CardholderId", "nvarchar", "max", "Yes"],
-                  ["PersonCode", "nvarchar", "max", "Yes"]
-                ].map(([name, type, length, nullable]) => ({
-                  name,
-                  type,
-                  length,
-                  nullable,
-                  pk: "",
-                  fk: "",
-                  description: "Property from EnrollmentDTO"
-                }))
+                  {
+                    "name": "MemberId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "ProgramId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "EnrollId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "CoverageCode",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "BenefitPlanId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "RateCode",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "RateId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "SegType",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "EffectiveDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "TermDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "CoverageEffectiveDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "CoverageTermDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "RestrictionId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "RestrictEffectiveDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "RestrictTermDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "Sequence",
+                    "type": "smallint",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "BenefitId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "CardholderId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  },
+                  {
+                    "name": "PersonCode",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from EnrollmentDTO"
+                  }
+                ]
+              },
+              {
+                "name": "MEMBER_ATTRIBUTE",
+                "coverage": "in_memory",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.MemberDetails \u2192 MemberDetailsDTO (MemberDTO base)",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.MEMBER_ATTRIBUTE.sql",
+                "columns": [
+                  {
+                    "name": "MemberID",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "CardholderID",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "FirstName",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "LastName",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "BirthDate",
+                    "type": "date",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "DeathDate",
+                    "type": "date",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Gender",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Phone",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "AgeInMonths",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "AgeInYears",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_Id",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_Address1",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_Address2",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_City",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_StateProvince",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_PostalCode",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "Address_CountryCode",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "IsInLTC",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  },
+                  {
+                    "name": "EthnicID",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberDetailsDTO (MemberDTO base)"
+                  }
+                ]
+              },
+              {
+                "name": "DRUG",
+                "coverage": "in_memory",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.ClaimRequest.DrugRequested \u2192 DrugRequestedDTO",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.DRUG.sql",
+                "columns": [
+                  {
+                    "name": "NDC_Code",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_LabelName",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Strength",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Route",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Dose",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_PDLStatus",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_IsPayable",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_IsBrand",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_IsPreferred",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_IsNonPreferred",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_IsGeneric",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_PrefDrug_PREF",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_PARequired",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MinDayDose",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MaxDayDose",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MaxRefills",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MaxRxDays",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MaxRxUnits",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_AttrMaxRxUnits",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_FGenCode",
+                    "type": "smallint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_HGenCode",
+                    "type": "smallint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_LastCovidDoseCount",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_CovidEffDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_CovidTermDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Ps",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Gni",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Dea",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_AddNotActive",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_DisableAllPlans",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Cl",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Gpi",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Ndcgi1",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_HcfaTrmc",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Repndc",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_SetGender",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Pd",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Ud",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Df",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_HcfaDesi1",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Desi",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Desi2",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Ln",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Bn",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_HcfaTyp",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Pkgbilling",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Maxscriptdays",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MinAge",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MaxAge",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_DaysTillRefill",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_AttrDaysTillRefill",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "GCNSeqNo_Code",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "GCNSeqNo_Description",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "HIC3_Code",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "HIC3_Description",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "HICLSeqNo_Code",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "HICLSeqNo_Description",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "GCN_Code",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "GCN_Description",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  }
+                ]
+              },
+              {
+                "name": "DRUG_ATTR",
+                "coverage": "in_memory",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.ClaimRequest.DrugRequested \u2192 DrugRequestedDTO",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.DRUG_ATTR.sql",
+                "columns": [
+                  {
+                    "name": "NDC_Code",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_LabelName",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Strength",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Route",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Dose",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_PDLStatus",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_IsPayable",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_IsBrand",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_IsPreferred",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_IsNonPreferred",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_IsGeneric",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_PrefDrug_PREF",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_PARequired",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MinDayDose",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MaxDayDose",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MaxRefills",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MaxRxDays",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MaxRxUnits",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_AttrMaxRxUnits",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_FGenCode",
+                    "type": "smallint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_HGenCode",
+                    "type": "smallint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_LastCovidDoseCount",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_CovidEffDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_CovidTermDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Ps",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Gni",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Dea",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_AddNotActive",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_DisableAllPlans",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Cl",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Gpi",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Ndcgi1",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_HcfaTrmc",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Repndc",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_SetGender",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Pd",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Ud",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Df",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_HcfaDesi1",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Desi",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Desi2",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Ln",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Bn",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_HcfaTyp",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Pkgbilling",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_Maxscriptdays",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MinAge",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_MaxAge",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_DaysTillRefill",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "NDC_AttrDaysTillRefill",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "GCNSeqNo_Code",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "GCNSeqNo_Description",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "HIC3_Code",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "HIC3_Description",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "HICLSeqNo_Code",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "HICLSeqNo_Description",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "GCN_Code",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  },
+                  {
+                    "name": "GCN_Description",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from DrugRequestedDTO"
+                  }
+                ]
+              },
+              {
+                "name": "PRIOR_AUTH",
+                "coverage": "in_memory",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.MemberDetails.PAHistory \u2192 MemberPAHistoryDTO",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.PRIOR_AUTH.sql",
+                "columns": [
+                  {
+                    "name": "ReferralId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberPAHistoryDTO"
+                  },
+                  {
+                    "name": "AuthId",
+                    "type": "bigint",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberPAHistoryDTO"
+                  },
+                  {
+                    "name": "SequenceId",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberPAHistoryDTO"
+                  },
+                  {
+                    "name": "TotalUnits",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberPAHistoryDTO"
+                  },
+                  {
+                    "name": "DaysSupply",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberPAHistoryDTO"
+                  },
+                  {
+                    "name": "UsedUnits",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberPAHistoryDTO"
+                  },
+                  {
+                    "name": "DailyDoseUnits",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberPAHistoryDTO"
+                  },
+                  {
+                    "name": "RemainingUnits",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberPAHistoryDTO"
+                  }
+                ]
+              },
+              {
+                "name": "EO_HISTORY",
+                "coverage": "in_memory",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.MemberDetails.EOHistory \u2192 MemberEOHistoryDTO",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.EO_HISTORY.sql",
+                "columns": [
+                  {
+                    "name": "AuthorizationId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "MemberId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "CardHolderId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "PrescriberNPI",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "PharmacyNPI",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "StartDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "EndDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "Status",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "NDCKey",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "GCNSeqNo",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "Quantity",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "DaysSupply",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "IT_CNT",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  },
+                  {
+                    "name": "RejectEdits_EditId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from MemberEOHistoryDTO"
+                  }
+                ]
+              },
+              {
+                "name": "EVENT",
+                "coverage": "unresolved",
+                "reason": "Mapped as InRuleDTO.ClaimRequest.DUREvents \u2192 DUREventDTO, but all three authorities explicitly provide no DUREventDTO properties; no DDL was fabricated",
+                "ddlFile": "",
+                "columns": []
+              },
+              {
+                "name": "SCHEDULEII",
+                "coverage": "in_memory",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.MemberDetails.ScheduleIIs \u2192 ScheduleIIDTO",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.SCHEDULEII.sql",
+                "columns": [
+                  {
+                    "name": "ClaimId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ScheduleIIDTO"
+                  },
+                  {
+                    "name": "MemberId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ScheduleIIDTO"
+                  },
+                  {
+                    "name": "ProviderId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ScheduleIIDTO"
+                  },
+                  {
+                    "name": "NDC",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ScheduleIIDTO"
+                  },
+                  {
+                    "name": "RXNumber",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ScheduleIIDTO"
+                  },
+                  {
+                    "name": "ServiceDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ScheduleIIDTO"
+                  },
+                  {
+                    "name": "PrescriptionDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ScheduleIIDTO"
+                  },
+                  {
+                    "name": "QuantityPrescribed",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ScheduleIIDTO"
+                  },
+                  {
+                    "name": "QuantityDispensed",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ScheduleIIDTO"
+                  },
+                  {
+                    "name": "FillsAuthorized",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ScheduleIIDTO"
+                  },
+                  {
+                    "name": "CreateDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ScheduleIIDTO"
+                  }
+                ]
+              },
+              {
+                "name": "PROVIDER",
+                "coverage": "in_memory",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.ClaimRequest.Provider \u2192 ProviderDTO",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.PROVIDER.sql",
+                "columns": [
+                  {
+                    "name": "ID",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "NPI",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "Name",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "ProviderType",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "ProviderTypeCode",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "Status",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "Phone",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "Specialty",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "CredentialStatus",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "Email",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "OIG",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "PlanProviderId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "DEA",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "PhysicalAddress1",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "PhysicalAddress2",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "PhysicalCity",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "PhysicalState",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "PhysicalZip",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "MailingAddress1",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "MailingAddress2",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "MailingCity",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "MailingState",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "MailingZip",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "ExternId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "GpciId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "OverrideRoleId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "ExternalEditing",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "MedicarePar",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "PoaExempt",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "EntityId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "CoverageType",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "ClaimType",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  },
+                  {
+                    "name": "ProviderClass",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ProviderDTO"
+                  }
+                ]
+              },
+              {
+                "name": "CONTRACT_TERM",
+                "coverage": "in_memory",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.ClaimRequest.ContractTerms \u2192 ContractTermDTO",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.CONTRACT_TERM.sql",
+                "columns": [
+                  {
+                    "name": "ContractId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ContractTermDTO"
+                  },
+                  {
+                    "name": "TermId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ContractTermDTO"
+                  },
+                  {
+                    "name": "Status",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ContractTermDTO"
+                  },
+                  {
+                    "name": "ProvType",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ContractTermDTO"
+                  },
+                  {
+                    "name": "EffDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ContractTermDTO"
+                  },
+                  {
+                    "name": "TermDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from ContractTermDTO"
+                  }
+                ]
+              },
+              {
+                "name": "PLAN_AFFILIATIONS",
+                "coverage": "in_memory",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.MemberDetails.PlanAffiliations \u2192 PlanAffiliationDTO",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.PLAN_AFFILIATIONS.sql",
+                "columns": [
+                  {
+                    "name": "AffiliationId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "ProviderId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "AffiliateId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "AffiliateType",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "Status",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "PayFlag",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "EffectiveDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "TermDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "PlanProgramId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "PlanPCP",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "PlanFeeId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "PlanEffectiveDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "PlanTermDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "ContractProgramId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "ContractId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "ContractEffectiveDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "ContractTermDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "ContractCopcTermDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "PlanProviderId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "ContractNetworkId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "ProviderEntityId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "AffiliateZip",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "AffiliatePhyZip",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "AffiliateState",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "ServiceLocationId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "Contracted",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "ApplyDifferential",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "NetworkPayPercent",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "IsRlgExcluded",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "ContractPaymentBundle",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  },
+                  {
+                    "name": "PlanPaymentBundle",
+                    "type": "bit",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanAffiliationDTO"
+                  }
+                ]
+              },
+              {
+                "name": "BENEFITS",
+                "coverage": "in_memory",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.MemberDetails.PlanDrugBenefits \u2192 PlanDrugBenefitDTO",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.BENEFITS.sql",
+                "columns": [
+                  {
+                    "name": "PlanId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanDrugBenefitDTO"
+                  },
+                  {
+                    "name": "BenefitId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanDrugBenefitDTO"
+                  },
+                  {
+                    "name": "LimitAmount",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanDrugBenefitDTO"
+                  },
+                  {
+                    "name": "AgeMin",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanDrugBenefitDTO"
+                  },
+                  {
+                    "name": "AgeMax",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanDrugBenefitDTO"
+                  },
+                  {
+                    "name": "EffectiveDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanDrugBenefitDTO"
+                  },
+                  {
+                    "name": "TermDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PlanDrugBenefitDTO"
+                  }
+                ]
+              },
+              {
+                "name": "PARTIAL",
+                "coverage": "in_memory",
+                "reason": "Logical non-executable DTO dataset: InRuleDTO.MemberDetails.PartialClaimHistory \u2192 PartialHistoryDTO",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.PARTIAL.sql",
+                "columns": [
+                  {
+                    "name": "ClaimId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "Provid",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "MemId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "RxNumber",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "NewRefill",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "MetricQty",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "DaysSupply",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "Ndc",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "RxDate",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "GCN",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "GCN_SeqNo",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "TherapeuticClass",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "Dos",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "RxDateWritten",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "Yes",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "CertificationMbr",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "MatchingClaimId",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "DispensingStatus",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "IntendedQuantityToBeDispensed",
+                    "type": "decimal",
+                    "length": "29,9",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "IntendedDaysSupply",
+                    "type": "int",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "AssociatedPrescriptionRefNumber",
+                    "type": "nvarchar",
+                    "length": "max",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  },
+                  {
+                    "name": "AssociatedDateOfService",
+                    "type": "datetime2",
+                    "length": "",
+                    "nullable": "No",
+                    "pk": "",
+                    "fk": "",
+                    "description": "DTO-derived property from PartialHistoryDTO"
+                  }
+                ]
               }
             ]
           }

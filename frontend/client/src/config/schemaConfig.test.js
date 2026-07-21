@@ -14,7 +14,7 @@ test("returns the default SQL Data Agent schema config", () => {
 test("lists the full derived MVP SQL tables shown in the schema sidebar", () => {
   const tables = listSchemaTables("MDWise");
 
-  assert.equal(tables.length, 33);
+  assert.equal(tables.length, 45);
   assert.ok(tables.includes("HRX.dbo.DrugOverrides"));
   assert.ok(tables.includes("HRX.dbo.GCNSeqNo_Mstr"));
   assert.ok(tables.includes("HRX.dbo.HICLSeqNo_Mstr"));
@@ -30,5 +30,17 @@ test("lists the full derived MVP SQL tables shown in the schema sidebar", () => 
   assert.ok(tables.includes("InMemory.dbo.MEMBER_HISTORY"));
   assert.ok(tables.includes("InMemory.dbo.MEMBER"));
   assert.ok(tables.includes("InMemory.dbo.ENROLLMENT"));
+  assert.ok(tables.includes("InMemory.dbo.MEMBER_ATTRIBUTE"));
+  assert.ok(tables.includes("InMemory.dbo.DRUG"));
+  assert.ok(tables.includes("InMemory.dbo.DRUG_ATTR"));
+  assert.ok(tables.includes("InMemory.dbo.PRIOR_AUTH"));
+  assert.ok(tables.includes("InMemory.dbo.EO_HISTORY"));
+  assert.ok(tables.includes("InMemory.dbo.EVENT"));
+  assert.ok(tables.includes("InMemory.dbo.SCHEDULEII"));
+  assert.ok(tables.includes("InMemory.dbo.PROVIDER"));
+  assert.ok(tables.includes("InMemory.dbo.CONTRACT_TERM"));
+  assert.ok(tables.includes("InMemory.dbo.PLAN_AFFILIATIONS"));
+  assert.ok(tables.includes("InMemory.dbo.BENEFITS"));
+  assert.ok(tables.includes("InMemory.dbo.PARTIAL"));
   assert.ok(tables.includes("IPA.dbo.DiagCode"));
 });
