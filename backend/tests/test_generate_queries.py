@@ -189,6 +189,9 @@ def test_select_ddls_includes_dto_derived_in_memory_tables():
     assert "[NDC_AttrDaysTillRefill] int NOT NULL" in joined
     assert "[InMemory].[dbo].[EO_HISTORY]" in joined
     assert "[RejectEdits_EditId] nvarchar(max) NOT NULL" in joined
+    assert "[InMemory].[dbo].[EVENT]" in joined
+    assert "[Severity_Ranking_Code] varchar(50) NULL" in joined
+    assert "[Ndc_Index] int NOT NULL" in joined
     assert "[InMemory].[dbo].[PLAN_AFFILIATIONS]" in joined
     assert "[ContractTermDate] datetime2 NULL" in joined
 
@@ -196,7 +199,7 @@ def test_select_ddls_includes_dto_derived_in_memory_tables():
 def test_select_ddls_without_table_keywords_returns_all_packaged_schemas():
     ddls = select_ddls("Completely unknown data requirement")
 
-    assert len(ddls) == 44
+    assert len(ddls) == 45
     joined = "\n".join(ddls)
     assert "[HRX].[dbo].[step_therapy_drug]" in joined
     assert "[HRX].[dbo].[step_therapy_level]" in joined
