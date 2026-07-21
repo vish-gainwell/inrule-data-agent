@@ -7767,6 +7767,143 @@ export const SCHEMA_CONFIG = {
         ]
       },
       {
+        "name": "InMemory",
+        "schemas": [
+          {
+            "name": "dbo",
+            "tables": [
+              {
+                "name": "MEMBER_HISTORY",
+                "coverage": "in_memory",
+                "reason": "Logical Rules Engine dataset generated from ClaimDTO; loaded by hrxMemberHistory_NJ from claim and claimpharm",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.MEMBER_HISTORY.sql",
+                "columns": [
+                  ["ClaimID", "nvarchar", "max", "Yes"],
+                  ["DrugName", "nvarchar", "max", "Yes"],
+                  ["DrugGenClass", "nvarchar", "max", "Yes"],
+                  ["GCNSeqNo", "nvarchar", "max", "Yes"],
+                  ["GCN", "nvarchar", "max", "Yes"],
+                  ["HICLSeqNo", "nvarchar", "max", "Yes"],
+                  ["NDC", "nvarchar", "max", "Yes"],
+                  ["RxDate", "nvarchar", "max", "Yes"],
+                  ["DateOfService", "nvarchar", "max", "Yes"],
+                  ["Quantity", "decimal", "29,9", "No"],
+                  ["DaysSupply", "int", "", "No"],
+                  ["PrescriberNPI", "nvarchar", "max", "Yes"],
+                  ["ProviderNPI", "nvarchar", "max", "Yes"],
+                  ["PharmacyNPI", "nvarchar", "max", "Yes"],
+                  ["PDLStatus", "nvarchar", "max", "Yes"],
+                  ["PrefDrug_PREF", "nvarchar", "max", "Yes"],
+                  ["PARequired", "bit", "", "No"],
+                  ["Dose", "float", "53", "No"],
+                  ["IsGeneric", "bit", "", "No"],
+                  ["NewRefill", "int", "", "No"],
+                  ["IsNewRefill", "bit", "", "No"],
+                  ["IsBrand", "bit", "", "No"],
+                  ["IsPreferred", "bit", "", "No"],
+                  ["PlanId", "nvarchar", "max", "Yes"],
+                  ["CompoundIndicator", "int", "", "Yes"],
+                  ["ProviderId", "nvarchar", "max", "Yes"],
+                  ["MemberId", "nvarchar", "max", "Yes"],
+                  ["ExhaustedDate", "nvarchar", "max", "Yes"],
+                  ["RxNumber", "nvarchar", "max", "Yes"],
+                  ["NdcCode", "nvarchar", "max", "Yes"],
+                  ["PrescriberNbr", "nvarchar", "max", "Yes"],
+                  ["FillDate", "nvarchar", "max", "Yes"],
+                  ["Fill_Date", "nvarchar", "max", "Yes"],
+                  ["VacationRefillDate", "datetime2", "", "No"],
+                  ["CertificationNumber", "nvarchar", "max", "Yes"],
+                  ["TherapeuticClass", "nvarchar", "max", "Yes"],
+                  ["DispensingFee", "decimal", "29,9", "Yes"],
+                  ["RxDateOfService", "datetime2", "", "No"],
+                  ["CreateDate", "datetime2", "", "No"],
+                  ["TotalMemberAmount", "decimal", "29,9", "Yes"],
+                  ["ExternalClaimId", "nvarchar", "max", "Yes"],
+                  ["RxDateWritten", "nvarchar", "max", "Yes"],
+                  ["IsEncounter", "bit", "", "No"],
+                  ["PriorAuth", "nvarchar", "max", "Yes"],
+                  ["Dosage", "decimal", "29,9", "Yes"],
+                  ["PaidDate", "datetime2", "", "Yes"],
+                  ["FormType", "nvarchar", "max", "Yes"]
+                ].map(([name, type, length, nullable]) => ({
+                  name,
+                  type,
+                  length,
+                  nullable,
+                  pk: "",
+                  fk: "",
+                  description: "Property from ClaimDTO"
+                }))
+              },
+              {
+                "name": "MEMBER",
+                "coverage": "in_memory",
+                "reason": "Logical Rules Engine dataset generated from MemberDTO; loaded by hrxPOS_GetMemberData",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.MEMBER.sql",
+                "columns": [
+                  ["MemberID", "nvarchar", "max", "Yes", "Property from MemberDTO"],
+                  ["CardholderID", "nvarchar", "max", "Yes", "Property from MemberDTO"],
+                  ["FirstName", "nvarchar", "max", "Yes", "Property from MemberDTO"],
+                  ["LastName", "nvarchar", "max", "Yes", "Property from MemberDTO"],
+                  ["BirthDate", "date", "", "Yes", "Property from MemberDTO"],
+                  ["DeathDate", "date", "", "Yes", "Property from MemberDTO"],
+                  ["Gender", "nvarchar", "max", "Yes", "Property from MemberDTO"],
+                  ["Phone", "nvarchar", "max", "Yes", "Property from MemberDTO"],
+                  ["AgeInMonths", "int", "", "No", "Runtime-computed MemberDTO property derived from BirthDate"],
+                  ["AgeInYears", "float", "53", "No", "Runtime-computed MemberDTO property derived from BirthDate"],
+                  ["Address", "nvarchar", "max", "No", "Nested AddressDTO represented as logical JSON until its properties are expanded"],
+                  ["IsInLTC", "bit", "", "Yes", "Property from MemberDTO"],
+                  ["EthnicID", "nvarchar", "max", "Yes", "Property from MemberDTO"]
+                ].map(([name, type, length, nullable, description]) => ({
+                  name,
+                  type,
+                  length,
+                  nullable,
+                  pk: "",
+                  fk: "",
+                  description
+                }))
+              },
+              {
+                "name": "ENROLLMENT",
+                "coverage": "in_memory",
+                "reason": "Logical Rules Engine dataset generated from EnrollmentDTO; loaded by hrxPOS_GetMemberEnrollment",
+                "ddlFile": "in_memory_schema\\InMemory.dbo.ENROLLMENT.sql",
+                "columns": [
+                  ["MemberId", "nvarchar", "max", "No"],
+                  ["ProgramId", "nvarchar", "max", "Yes"],
+                  ["EnrollId", "nvarchar", "max", "No"],
+                  ["CoverageCode", "nvarchar", "max", "Yes"],
+                  ["BenefitPlanId", "nvarchar", "max", "No"],
+                  ["RateCode", "nvarchar", "max", "Yes"],
+                  ["RateId", "nvarchar", "max", "Yes"],
+                  ["SegType", "nvarchar", "max", "Yes"],
+                  ["EffectiveDate", "datetime2", "", "No"],
+                  ["TermDate", "datetime2", "", "No"],
+                  ["CoverageEffectiveDate", "datetime2", "", "No"],
+                  ["CoverageTermDate", "datetime2", "", "No"],
+                  ["RestrictionId", "nvarchar", "max", "Yes"],
+                  ["RestrictEffectiveDate", "datetime2", "", "Yes"],
+                  ["RestrictTermDate", "datetime2", "", "Yes"],
+                  ["Sequence", "smallint", "", "Yes"],
+                  ["BenefitId", "nvarchar", "max", "Yes"],
+                  ["CardholderId", "nvarchar", "max", "Yes"],
+                  ["PersonCode", "nvarchar", "max", "Yes"]
+                ].map(([name, type, length, nullable]) => ({
+                  name,
+                  type,
+                  length,
+                  nullable,
+                  pk: "",
+                  fk: "",
+                  description: "Property from EnrollmentDTO"
+                }))
+              }
+            ]
+          }
+        ]
+      },
+      {
         "name": "IPA",
         "schemas": [
           {

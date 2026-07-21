@@ -149,6 +149,13 @@ def create_app() -> FastAPI:
             return JSONResponse(
                 status_code=400, content={"error": "Only SELECT queries are allowed"}
             )
+        if re.search(r"\b(?:\[?InMemory\]?\.)", sql, re.IGNORECASE):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "InMemory logical queries cannot be executed through SQL Server"
+                },
+            )
 
         start = time.perf_counter()
         try:

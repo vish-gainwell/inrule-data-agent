@@ -7,12 +7,15 @@ from pathlib import Path
 
 import httpx
 import pyodbc
+import sqlglot
 from dotenv import load_dotenv
 from openai import OpenAI
+from sqlglot import exp
 
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 _SCHEMA_DIR = Path(__file__).resolve().parent.parent / "schema"
+_IN_MEMORY_SCHEMA_DIR = Path(__file__).resolve().parent.parent / "in_memory_schema"
 _MEMBER_ATTRIBUTE_NOTE = (
     "Note: MemberAttribute table DDL is not yet available. "
     "Known columns: memid, theValue, EFFDATE, TERMDATE."
@@ -87,9 +90,23 @@ Rules:
 9. Return ONLY the raw SQL query. No explanation. No markdown. No code fences.
 10. Preserve every explicit filter in the business requirement. If it says
     resubclaimid <> '' then use <> ''; do not convert it to = ''.
-11. Never use placeholder joins or tautologies such as ON 1 = 0 or c.col = c.col.
-    If a required join key is not present in the provided DDL, avoid inventing a
-    join and still keep the required filters on the tables whose columns exist.
+11. Each retrieval query must reference exactly one provided table, either a
+    physical SQL Server table or an InMemory logical DTO table. Never use JOIN,
+    APPLY, UNION, INTERSECT, EXCEPT, or a subquery that reads another table. If a
+    business requirement needs multiple sources, handle only the source requested
+    by the current atomic substep; never combine retrieval substeps.
+12. Never use placeholder predicates or tautologies such as ON 1 = 0 or
+    c.col = c.col. Preserve only filters explicitly stated in the business
+    requirement. Never add a date, status, identifier, null check, or other
+    predicate merely because a column exists in the DDL.
+13. Every referenced and projected column must exist in the selected table's
+    provided DDL. Never invent a column, alias an unrelated column as the
+    requested value, or use a placeholder as a column name.
+14. Match the requested output shape exactly. If the requirement asks to return
+    values or identifiers, select those columns; do not replace them with COUNT(*).
+15. If a logical concept, requested output, filter, or identifier cannot be
+    mapped unambiguously to columns in one provided physical table, return exactly
+    NO_SUPPORTED_QUERY instead of guessing.
 """.strip()
 
 _UNSAFE_SQL_RE = re.compile(
@@ -118,6 +135,10 @@ _RAW_REQUEST_OBJECT_RE = re.compile(
     r"(?<!\{)\b(?:HrxRequest|ClaimRequest)\.",
     re.IGNORECASE,
 )
+_MULTI_TABLE_OPERATION_RE = re.compile(
+    r"\b(?:JOIN|APPLY|UNION|INTERSECT|EXCEPT)\b",
+    re.IGNORECASE,
+)
 
 
 def generate_queries_for_step(business_meaning: str) -> list[str]:
@@ -141,12 +162,26 @@ def generate_queries_for_step(business_meaning: str) -> list[str]:
                 return []
 
             sql = _clean_sql(sql)
+            if sql.upper() == "NO_SUPPORTED_QUERY":
+                print("[generate_queries_for_step] no supported single-table query")
+                return []
             if not _is_safe_select_sql(sql):
                 print("[generate_queries_for_step] rejected unsafe or non-SELECT SQL")
                 return []
 
             invalid_tables = _find_invalid_table_refs(sql, ddl_context)
             if not invalid_tables:
+                invalid_columns = _find_invalid_column_refs(sql, ddl_context)
+                if invalid_columns:
+                    print(
+                        "[generate_queries_for_step] rejected SQL with columns outside schema context: "
+                        + ", ".join(invalid_columns)
+                    )
+                    if attempt == 1:
+                        return []
+                    repair_feedback = _build_column_repair_feedback(invalid_columns)
+                    continue
+
                 invalid_artifacts = _find_invalid_sql_artifacts(sql)
                 if not invalid_artifacts:
                     return [sql]
@@ -184,6 +219,7 @@ def select_ddls(business_meaning: str) -> list[str]:
 
     text = business_meaning.lower()
     ddl_texts = _read_all_schema_files()
+    ddl_texts.extend(_read_all_in_memory_schema_files())
 
     selected_live_tables: list[tuple[str, str, str]] = []
     for keyword, table_ref in _LIVE_TABLE_KEYWORDS:
@@ -398,8 +434,70 @@ def _build_table_repair_feedback(invalid_tables: list[str], ddl_context: str) ->
     )
 
 
+def _find_invalid_column_refs(sql: str, ddl_context: str) -> list[str]:
+    catalog = _extract_ddl_column_catalog(ddl_context)
+    sanitized = re.sub(r"\{\{[^}]+\}\}", "NULL", sql)
+    try:
+        statement = sqlglot.parse_one(sanitized, read="tsql")
+    except sqlglot.errors.ParseError:
+        return ["unparseable T-SQL"]
+
+    tables = list(statement.find_all(exp.Table))
+    if len(tables) != 1:
+        return []
+    table = tables[0]
+    table_parts = [part for part in (table.catalog, table.db, table.name) if part]
+    canonical_table = ".".join(str(part).strip("[]").lower() for part in table_parts)
+    allowed_columns = catalog.get(canonical_table)
+    if allowed_columns is None:
+        return []
+
+    invalid: list[str] = []
+    for column in statement.find_all(exp.Column):
+        name = column.name.lower()
+        if name == "*" or name in allowed_columns:
+            continue
+        if column.name not in invalid:
+            invalid.append(column.name)
+    return invalid
+
+
+def _extract_ddl_column_catalog(ddl_context: str) -> dict[str, set[str]]:
+    catalog: dict[str, set[str]] = {}
+    sections = re.split(r"\n\s*---\s*\n", ddl_context)
+    for section in sections:
+        table_match = _DDL_TABLE_RE.search(section)
+        if not table_match:
+            continue
+        canonical = _canonical_table_ref(table_match.group(1))
+        if not canonical:
+            continue
+        columns = {
+            match.group(1).lower()
+            for match in re.finditer(r"(?:^|[,(])\s*\[([^]]+)\]\s+[A-Za-z_]", section, re.MULTILINE)
+            if not match.group(1).lower().startswith(("pk_", "fk_"))
+        }
+        catalog[canonical] = columns
+    return catalog
+
+
+def _build_column_repair_feedback(invalid_columns: list[str]) -> str:
+    return (
+        "The previous SQL referenced columns not present in the selected table DDL: "
+        f"{', '.join(invalid_columns)}. Regenerate using only exact columns from that "
+        "one table. Do not substitute an unrelated column or invent a predicate. If "
+        "the requested output or filter cannot be mapped unambiguously, return exactly "
+        "NO_SUPPORTED_QUERY."
+    )
+
+
 def _find_invalid_sql_artifacts(sql: str) -> list[str]:
     artifacts: list[str] = []
+    if _MULTI_TABLE_OPERATION_RE.search(sql):
+        artifacts.append("multi-table operation")
+    table_references = list(_SQL_TABLE_RE.finditer(sql))
+    if len(table_references) != 1:
+        artifacts.append(f"expected exactly one table reference; found {len(table_references)}")
     if _IMPOSSIBLE_PREDICATE_RE.search(sql):
         artifacts.append("1 = 0/1 predicate")
     if _RAW_REQUEST_OBJECT_RE.search(sql):
@@ -413,12 +511,14 @@ def _find_invalid_sql_artifacts(sql: str) -> list[str]:
 
 def _build_artifact_repair_feedback(invalid_artifacts: list[str]) -> str:
     return (
-        "The previous SQL used invalid request-object references, placeholder predicates, or self-comparisons: "
-        f"{', '.join(invalid_artifacts)}. Regenerate the query without impossible "
-        "predicates, tautologies, ON 1 = 0, ON 1 = 1, WHERE 1 = 0, WHERE 1 = 1, column = same column "
-        "conditions, or raw HrxRequest/ClaimRequest paths. Use only approved "
-        "double-brace placeholders. Preserve the business requirement filters and "
-        "return only the corrected SELECT."
+        "The previous SQL violated the single-table or SQL-quality rules: "
+        f"{', '.join(invalid_artifacts)}. Regenerate one SELECT against exactly one "
+        "provided physical or InMemory table. Do not use JOIN, APPLY, UNION, "
+        "INTERSECT, EXCEPT, or a "
+        "subquery that reads another table. Also remove impossible predicates, "
+        "tautologies, column = same column conditions, and raw HrxRequest/ClaimRequest "
+        "paths. Use only approved double-brace placeholders, preserve the business "
+        "requirement filters, and return only the corrected SELECT."
     )
 
 
@@ -428,3 +528,12 @@ def _read_all_schema_files() -> list[str]:
     if not _SCHEMA_DIR.exists():
         return []
     return [path.read_text(encoding="utf-8") for path in sorted(_SCHEMA_DIR.glob("*.sql"))]
+
+
+def _read_all_in_memory_schema_files() -> list[str]:
+    if not _IN_MEMORY_SCHEMA_DIR.exists():
+        return []
+    return [
+        path.read_text(encoding="utf-8")
+        for path in sorted(_IN_MEMORY_SCHEMA_DIR.glob("*.sql"))
+    ]

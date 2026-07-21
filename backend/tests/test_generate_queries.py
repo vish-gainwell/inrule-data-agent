@@ -187,7 +187,7 @@ def test_select_ddls_memberattribute_adds_known_gap_note():
 def test_select_ddls_without_table_keywords_returns_all_packaged_schemas():
     ddls = select_ddls("Completely unknown data requirement")
 
-    assert len(ddls) == 30
+    assert len(ddls) == 33
     joined = "\n".join(ddls)
     assert "[HRX].[dbo].[step_therapy_drug]" in joined
     assert "[HRX].[dbo].[step_therapy_level]" in joined
@@ -292,6 +292,87 @@ def test_generate_queries_retries_when_sql_has_junk_predicates():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected_sql]
+    assert call_openai.call_count == 2
+
+
+def test_generate_queries_retries_when_sql_uses_join():
+    ddl = (
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ([claimid] int NULL);"
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimdetail] ([claimid] int NULL);"
+    )
+    corrected_sql = (
+        "SELECT COUNT(*) FROM plandata_rx_production.dbo.claim WITH (nolock)"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[
+                "SELECT COUNT(*) FROM plandata_rx_production.dbo.claim c WITH (nolock) "
+                "JOIN plandata_rx_production.dbo.claimdetail cd WITH (nolock) "
+                "ON cd.claimid = c.claimid",
+                corrected_sql,
+            ],
+        ) as call_openai,
+    ):
+        client = TestClient(create_app())
+        response = client.post(
+            "/generate_queries",
+            json={
+                "edit_id": "single-table",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": "Count matching claims using claim only",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [corrected_sql]
+    assert call_openai.call_count == 2
+
+
+def test_generate_queries_rejects_join_when_repair_still_uses_multiple_tables():
+    ddl = (
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ([claimid] int NULL);"
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimdetail] ([claimid] int NULL);"
+    )
+    joined_sql = (
+        "SELECT COUNT(*) FROM plandata_rx_production.dbo.claim c WITH (nolock) "
+        "JOIN plandata_rx_production.dbo.claimdetail cd WITH (nolock) "
+        "ON cd.claimid = c.claimid"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=joined_sql,
+        ) as call_openai,
+    ):
+        client = TestClient(create_app())
+        response = client.post(
+            "/generate_queries",
+            json={
+                "edit_id": "single-table",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": "Count matching claims",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is False
+    assert result["queries"] == []
     assert call_openai.call_count == 2
 
 
@@ -402,6 +483,17 @@ def test_execute_query_quotes_unquoted_placeholders():
 
     assert response.status_code == 200
     cursor.execute.assert_called_once_with("select '2026-07-09' as dos")
+
+
+def test_execute_query_rejects_inmemory_logical_table():
+    client = TestClient(create_app())
+    response = client.post(
+        "/execute_query",
+        json={"sql": "select * from InMemory.dbo.ENROLLMENT", "params": {}},
+    )
+
+    assert response.status_code == 400
+    assert "InMemory logical queries" in response.json()["error"]
 
 
 def test_execute_query_rejects_non_select():

@@ -14,7 +14,7 @@ test("returns the default SQL Data Agent schema config", () => {
 test("lists the full derived MVP SQL tables shown in the schema sidebar", () => {
   const tables = listSchemaTables("MDWise");
 
-  assert.equal(tables.length, 30);
+  assert.equal(tables.length, 33);
   assert.ok(tables.includes("HRX.dbo.DrugOverrides"));
   assert.ok(tables.includes("HRX.dbo.GCNSeqNo_Mstr"));
   assert.ok(tables.includes("HRX.dbo.HICLSeqNo_Mstr"));
@@ -27,5 +27,8 @@ test("lists the full derived MVP SQL tables shown in the schema sidebar", () => 
   assert.ok(tables.includes("plandata_rx_production.dbo.authservice"));
   assert.ok(tables.includes("plandata_rx_production.dbo.enrollcoverage"));
   assert.ok(tables.includes("plandata_rx_production.dbo.referral"));
+  assert.ok(tables.includes("InMemory.dbo.MEMBER_HISTORY"));
+  assert.ok(tables.includes("InMemory.dbo.MEMBER"));
+  assert.ok(tables.includes("InMemory.dbo.ENROLLMENT"));
   assert.ok(tables.includes("IPA.dbo.DiagCode"));
 });
