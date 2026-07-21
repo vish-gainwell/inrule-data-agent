@@ -5,6 +5,7 @@ github-toolkit/
 /DB_Tables/
 /Schema/
 backend/docs/
+/docs/
 
 # ── Codex planning docs (internal) ───────────────────────────────────────────
 CODEX_*.md

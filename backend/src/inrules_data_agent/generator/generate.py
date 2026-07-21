@@ -86,21 +86,30 @@ Rules:
 9. Return ONLY the raw SQL query. No explanation. No markdown. No code fences.
 10. Preserve every explicit filter in the business requirement. If it says
     resubclaimid <> '' then use <> ''; do not convert it to = ''.
-11. Each retrieval query must reference exactly one provided table, either a
+11. Treat InMemory logical DTO tables as the frontier source. First determine
+    whether one InMemory table contains every column needed for the requested
+    output and explicit predicates. If it does, use that InMemory table. Use a
+    physical SQL Server table only as fallback when no single InMemory table can
+    support the complete current query task. Never map a concept to an unrelated
+    InMemory property merely to avoid physical fallback.
+12. Each retrieval query must reference exactly one provided table, either a
     physical SQL Server table or an InMemory logical DTO table. Never use JOIN,
     APPLY, UNION, INTERSECT, EXCEPT, or a subquery that reads another table. If a
     business requirement needs multiple sources, handle only the source requested
     by the current atomic substep; never combine retrieval substeps.
-12. Never use placeholder predicates or tautologies such as ON 1 = 0 or
+13. Never use placeholder predicates or tautologies such as ON 1 = 0 or
     c.col = c.col. Preserve only filters explicitly stated in the business
     requirement. Never add a date, status, identifier, null check, or other
     predicate merely because a column exists in the DDL.
-13. Every referenced and projected column must exist in the selected table's
+14. Every referenced and projected column must exist in the selected table's
     provided DDL. Never invent a column, alias an unrelated column as the
     requested value, or use a placeholder as a column name.
-14. Match the requested output shape exactly. If the requirement asks to return
+15. Match the requested output shape exactly. If the requirement asks to return
     values or identifiers, select those columns; do not replace them with COUNT(*).
-15. If a logical concept, requested output, filter, or identifier cannot be
+16. The rule description and acceptance criteria are context only. Use them to
+    resolve terminology and dependencies, but do not add a table, predicate,
+    literal, or output that is not required by the current step business meaning.
+17. If a logical concept, requested output, filter, or identifier cannot be
     mapped unambiguously to columns in one provided physical table, return exactly
     NO_SUPPORTED_QUERY instead of guessing.
 """.strip()
@@ -137,7 +146,11 @@ _MULTI_TABLE_OPERATION_RE = re.compile(
 )
 
 
-def generate_queries_for_step(business_meaning: str) -> list[str]:
+def generate_queries_for_step(
+    business_meaning: str,
+    description: str | None = None,
+    acceptance_criteria: str | list[str] | None = None,
+) -> list[str]:
     """Select relevant DDLs, call OpenAI, return one generated SQL string.
 
     Returns [] if no DDLs are available, OpenAI is not configured, the LLM call
@@ -153,7 +166,13 @@ def generate_queries_for_step(business_meaning: str) -> list[str]:
         ddl_context = "\n\n---\n\n".join(ddl_texts)
         repair_feedback = None
         for attempt in range(2):
-            sql = _call_openai(business_meaning, ddl_context, repair_feedback)
+            sql = _call_openai(
+                business_meaning,
+                ddl_context,
+                repair_feedback,
+                description=description,
+                acceptance_criteria=acceptance_criteria,
+            )
             if not sql:
                 return []
 
@@ -214,8 +233,8 @@ def select_ddls(business_meaning: str) -> list[str]:
     """
 
     text = business_meaning.lower()
-    ddl_texts = _read_all_schema_files()
-    ddl_texts.extend(_read_all_in_memory_schema_files())
+    ddl_texts = _read_all_in_memory_schema_files()
+    ddl_texts.extend(_read_all_schema_files())
 
     selected_live_tables: list[tuple[str, str, str]] = []
     for keyword, table_ref in _LIVE_TABLE_KEYWORDS:
@@ -320,10 +339,39 @@ def _format_column_type(data_type, char_max, precision, scale) -> str:
     return normalized
 
 
+def _build_user_message(
+    business_meaning: str,
+    ddl_context: str,
+    description: str | None = None,
+    acceptance_criteria: str | list[str] | None = None,
+) -> str:
+    if isinstance(acceptance_criteria, list):
+        acceptance_text = "\n".join(
+            f"{index}. {criterion}"
+            for index, criterion in enumerate(acceptance_criteria, 1)
+        )
+    else:
+        acceptance_text = acceptance_criteria or "Not provided"
+
+    return (
+        "DDL SCHEMAS (InMemory frontier schemas are listed before physical "
+        "fallback schemas):\n"
+        f"{ddl_context}\n\n"
+        "RULE DESCRIPTION (context only):\n"
+        f"{description or 'Not provided'}\n\n"
+        "ACCEPTANCE CRITERIA (context only):\n"
+        f"{acceptance_text}\n\n"
+        "CURRENT DATA QUERY BUSINESS MEANING (authoritative query task):\n"
+        f"{business_meaning}"
+    )
+
+
 def _call_openai(
     business_meaning: str,
     ddl_context: str,
     repair_feedback: str | None = None,
+    description: str | None = None,
+    acceptance_criteria: str | list[str] | None = None,
 ) -> str | None:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -338,7 +386,12 @@ def _call_openai(
     if base_url:
         client_kwargs["base_url"] = base_url
     client = OpenAI(**client_kwargs)
-    user_message = f"DDL SCHEMAS:\n{ddl_context}\n\nBUSINESS REQUIREMENT:\n{business_meaning}"
+    user_message = _build_user_message(
+        business_meaning,
+        ddl_context,
+        description=description,
+        acceptance_criteria=acceptance_criteria,
+    )
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_message},

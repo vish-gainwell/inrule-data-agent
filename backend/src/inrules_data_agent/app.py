@@ -30,6 +30,8 @@ class Step(BaseModel):
 
 class GenerateQueriesRequest(BaseModel):
     edit_id: str
+    description: str | None = None
+    acceptance_criteria: str | list[str] | None = None
     steps: list[Step]
 
 
@@ -47,7 +49,11 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
     for step in request.steps:
         if not step.requires_data_query:
             continue
-        assembled = generate_queries_for_step(step.business_meaning)
+        assembled = generate_queries_for_step(
+            step.business_meaning,
+            description=request.description,
+            acceptance_criteria=request.acceptance_criteria,
+        )
         queries.append(
             {
                 "step_number": step.step_number,
@@ -56,7 +62,12 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
                 "matched": len(assembled) > 0,
             }
         )
-    return {"edit_id": request.edit_id, "queries": queries}
+    return {
+        "edit_id": request.edit_id,
+        "description": request.description,
+        "acceptance_criteria": request.acceptance_criteria,
+        "queries": queries,
+    }
 
 
 def substitute_placeholders(sql: str, params: dict[str, str]) -> str:

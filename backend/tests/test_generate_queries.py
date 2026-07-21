@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from inrules_data_agent.app import create_app
-from inrules_data_agent.generator.generate import select_ddls
+from inrules_data_agent.generator.generate import _build_user_message, select_ddls
 
 MOCK_SQL = "select count(*) from HRX.dbo.DrugOverrides (nolock) where Type = '3013_Opioid'"
 
@@ -47,6 +47,58 @@ def test_requires_data_query_filter_skips_false_steps():
     assert body["queries"][0]["step_number"] == 2
     assert body["queries"][0]["queries"] == [MOCK_SQL]
     call_openai.assert_called_once()
+
+
+def test_rule_context_is_passed_to_data_query_generation():
+    with patch(
+        "inrules_data_agent.app.generate_queries_for_step",
+        return_value=[MOCK_SQL],
+    ) as generate_step:
+        client = TestClient(create_app())
+        response = client.post(
+            "/generate_queries",
+            json={
+                "edit_id": "3018",
+                "description": "CHIP eligibility rule",
+                "acceptance_criteria": [
+                    "Member has an active CHIP rate code",
+                    "Member has no active CHIP indicator",
+                ],
+                "steps": [
+                    {
+                        "step_number": 4,
+                        "business_meaning": "Return active member rate-code values",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    generate_step.assert_called_once_with(
+        "Return active member rate-code values",
+        description="CHIP eligibility rule",
+        acceptance_criteria=[
+            "Member has an active CHIP rate code",
+            "Member has no active CHIP indicator",
+        ],
+    )
+    assert response.json()["description"] == "CHIP eligibility rule"
+
+
+def test_prompt_separates_context_from_authoritative_query_task():
+    message = _build_user_message(
+        "Return active member rate-code values",
+        "CREATE TABLE [InMemory].[dbo].[ENROLLMENT] ([RateCode] nvarchar(max));",
+        description="CHIP eligibility rule",
+        acceptance_criteria=["Member has active coverage", "No CHIP indicator"],
+    )
+
+    assert "RULE DESCRIPTION (context only):\nCHIP eligibility rule" in message
+    assert "1. Member has active coverage" in message
+    assert "2. No CHIP indicator" in message
+    assert "CURRENT DATA QUERY BUSINESS MEANING (authoritative query task):" in message
+    assert message.endswith("Return active member rate-code values")
 
 
 def test_matched_true_when_openai_returns_sql():
@@ -138,6 +190,16 @@ def test_bulk_generate_queries_returns_result_per_item_in_order():
     assert len(body["items"][1]["queries"]) == 1
     assert body["items"][1]["queries"][0]["step_number"] == 3
     assert body["items"][1]["queries"][0]["queries"] == [MOCK_SQL]
+
+
+def test_select_ddls_lists_in_memory_frontier_before_physical_fallback():
+    ddls = select_ddls("Return active member rate-code values")
+
+    assert "[InMemory].[dbo]" in ddls[0]
+    first_physical = next(
+        index for index, ddl in enumerate(ddls) if "[InMemory].[dbo]" not in ddl
+    )
+    assert all("[InMemory].[dbo]" in ddl for ddl in ddls[:first_physical])
 
 
 def test_select_ddls_drugoverrides():
