@@ -39,6 +39,7 @@ inrule-data-agent/
 | Node.js | 18+ | Frontend |
 | npm | 9+ | Frontend |
 | ODBC Driver 18 for SQL Server | — | DB connectivity (Windows/Linux) |
+| Docker Desktop | current | Optional local Qdrant hybrid schema retrieval |
 
 ---
 
@@ -66,6 +67,16 @@ DB_PORT=1433
 DB_USERNAME=your_db_user
 DB_PASSWORD=your_db_password
 DB_TRUST_SERVER_CERTIFICATE=yes     # Required for self-signed certs
+
+# Optional local Qdrant schema retrieval
+QDRANT_ENABLED=false
+QDRANT_URL=http://localhost:6333
+QDRANT_COLLECTION=inrule_schema
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_EMBEDDING_DIMENSIONS=1536
+SCHEMA_RETRIEVAL_DENSE_LIMIT=20
+SCHEMA_RETRIEVAL_SPARSE_LIMIT=20
+SCHEMA_RETRIEVAL_FINAL_LIMIT=8
 ```
 
 > **Windows note:** The backend uses `DB_`-prefixed keys to avoid the Windows environment variable `USERNAME` shadowing the database username from `.env`.
@@ -88,6 +99,45 @@ uv run uvicorn inrules_data_agent.app:app --app-dir src --reload --port 8000
 
 The API will be available at `http://localhost:8000`.
 
+### 4. Optional: enable local Qdrant hybrid retrieval
+
+Qdrant is **not mandatory**. The backend defaults to `QDRANT_ENABLED=false`
+and works without Docker, Qdrant access, a schema collection, or embedding calls.
+In that mode, query generation uses the complete packaged InMemory and physical
+DDL catalog exactly as the non-RAG fallback.
+
+Use Qdrant only when local hybrid retrieval is available to you. Start it from
+the repository root:
+
+```bash
+docker compose -f docker-compose.qdrant.yml up -d
+```
+
+Index the packaged InMemory and physical DDL metadata using OpenAI embeddings:
+
+```bash
+cd backend
+uv run python -m inrules_data_agent.retrieval.index_schema --recreate
+```
+
+Then set `QDRANT_ENABLED=true` and restart the backend. Only schema metadata is
+stored in Qdrant. Incoming business meanings, descriptions, and acceptance
+criteria are embedded temporarily at request time and are not persisted.
+
+Developers without Qdrant should leave or set:
+
+```env
+QDRANT_ENABLED=false
+```
+
+No other Qdrant variables are required when it is disabled.
+
+Hybrid retrieval combines OpenAI dense embeddings with deterministic sparse
+lexical vectors for exact table, column, and parameter names. The fallback is
+automatic: if Qdrant is disabled, unreachable, not indexed, misconfigured, or
+an embedding/retrieval request fails, the generator logs the issue and safely
+uses the complete packaged DDL catalog. Query generation remains available.
+
 #### Endpoints
 
 | Method | Path | Description |
@@ -97,7 +147,7 @@ The API will be available at `http://localhost:8000`.
 | `POST` | `/generate_queries/bulk` | Generate SQL for multiple Criteria Analyzer JSON payloads |
 | `POST` | `/execute_query` | Execute a SELECT query against the live DB |
 
-### 4. Run backend tests
+### 5. Run backend tests
 
 ```bash
 uv run pytest tests/ -v
@@ -143,7 +193,7 @@ Output goes to `frontend/client/dist/`.
 ```
 1. Paste Criteria Analyzer JSON into the chat input on /data-agent
 2. The UI calls POST /generate_queries with the JSON
-3. The backend passes each rule step + DDL schema to the LLM
+3. The backend retrieves relevant DDL schemas with local Qdrant when enabled; otherwise it automatically uses the complete packaged catalog
 4. Generated SQL cards appear per step — each with an Execute button
 5. Clicking Execute calls POST /execute_query and returns results
 ```

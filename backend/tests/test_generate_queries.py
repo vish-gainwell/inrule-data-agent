@@ -3,7 +3,11 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from inrules_data_agent.app import create_app
-from inrules_data_agent.generator.generate import _build_user_message, select_ddls
+from inrules_data_agent.generator.generate import (
+    SYSTEM_PROMPT,
+    _build_user_message,
+    select_ddls,
+)
 
 MOCK_SQL = "select count(*) from HRX.dbo.DrugOverrides (nolock) where Type = '3013_Opioid'"
 
@@ -99,6 +103,91 @@ def test_prompt_separates_context_from_authoritative_query_task():
     assert "2. No CHIP indicator" in message
     assert "CURRENT DATA QUERY BUSINESS MEANING (authoritative query task):" in message
     assert message.endswith("Return active member rate-code values")
+    assert "Apply this information hierarchy strictly" in SYSTEM_PROMPT
+    assert "project those exact mapped columns" in SYSTEM_PROMPT
+    assert "do not import other acceptance-" in SYSTEM_PROMPT
+    assert "Never guess semantic mappings" in SYSTEM_PROMPT
+
+
+def test_generate_queries_repairs_count_when_values_are_requested():
+    ddl = (
+        "CREATE TABLE [InMemory].[dbo].[ENROLLMENT] "
+        "([MemberId] nvarchar(max), [RateCode] nvarchar(max));"
+    )
+    corrected_sql = (
+        "SELECT RateCode FROM InMemory.dbo.ENROLLMENT WITH (nolock) "
+        "WHERE MemberId = {{MemberId}}"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[
+                "SELECT COUNT(*) FROM InMemory.dbo.ENROLLMENT WITH (nolock) "
+                "WHERE MemberId = {{MemberId}}",
+                corrected_sql,
+            ],
+        ) as call_openai,
+    ):
+        client = TestClient(create_app())
+        response = client.post(
+            "/generate_queries",
+            json={
+                "edit_id": "3018",
+                "description": "CHIP eligibility rule",
+                "acceptance_criteria": "Member must have active coverage",
+                "steps": [
+                    {
+                        "step_number": 4,
+                        "business_meaning": "Return active member rate-code values",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [corrected_sql]
+    assert call_openai.call_count == 2
+    repair_feedback = call_openai.call_args_list[1].args[2]
+    assert "COUNT(*) output does not match" in repair_feedback
+
+
+def test_generate_queries_rejects_count_when_values_are_requested_after_repair():
+    ddl = (
+        "CREATE TABLE [InMemory].[dbo].[ENROLLMENT] "
+        "([MemberId] nvarchar(max), [RateCode] nvarchar(max));"
+    )
+    count_sql = "SELECT COUNT(*) FROM InMemory.dbo.ENROLLMENT WITH (nolock)"
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=count_sql,
+        ) as call_openai,
+    ):
+        client = TestClient(create_app())
+        response = client.post(
+            "/generate_queries",
+            json={
+                "edit_id": "3018",
+                "steps": [
+                    {
+                        "step_number": 4,
+                        "business_meaning": "Return active member rate-code values",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is False
+    assert result["queries"] == []
+    assert call_openai.call_count == 2
 
 
 def test_matched_true_when_openai_returns_sql():
@@ -214,9 +303,31 @@ def test_select_ddls_claim_history():
     assert any("status" in ddl.lower() for ddl in ddls)
 
 
-def test_select_ddls_diagnosis_code_includes_ipa_schema():
+def test_select_ddls_diagnosis_code_includes_complete_ipa_metadata():
     ddls = select_ddls("Query diagnosis code where code matches incoming diagnosis")
-    assert any("[IPA].[dbo].[DiagCode]" in ddl for ddl in ddls)
+    diag_code_ddl = next(ddl for ddl in ddls if "[IPA].[dbo].[DiagCode]" in ddl)
+
+    assert "Stores detailed records and attributes related to the Diagnosis Code" in diag_code_ddl
+    assert "Code identifier associated with the DiagCode entry" in diag_code_ddl
+    assert "Indicates if POA is required for the DiagCode entry" in diag_code_ddl
+    assert "used for healthcare claims, IPA rule evaluation, validation, or audit tracking" in diag_code_ddl
+
+
+def test_select_ddls_includes_enriched_plandata_metadata():
+    ddls = select_ddls("Query active member coverage and associated claim")
+    claim_ddl = next(
+        ddl for ddl in ddls if "[plandata_rx_production].[dbo].[claim]" in ddl
+    )
+    coverage_ddl = next(
+        ddl
+        for ddl in ddls
+        if "[plandata_rx_production].[dbo].[enrollcoverage]" in ddl
+    )
+
+    assert "Header-level claim records for pharmacy or medical services" in claim_ddl
+    assert "Primary key of the claim table" in claim_ddl
+    assert "Coverage elections for enrolled members" in coverage_ddl
+    assert "Ratecode (group num) assigned for the coverage" in coverage_ddl
 
 
 def test_select_ddls_adds_live_schema_for_history_support_tables():
@@ -252,10 +363,19 @@ def test_select_ddls_includes_dto_derived_in_memory_tables():
     assert "[InMemory].[dbo].[EO_HISTORY]" in joined
     assert "[RejectEdits_EditId] nvarchar(max) NOT NULL" in joined
     assert "[InMemory].[dbo].[EVENT]" in joined
-    assert "[Severity_Ranking_Code] varchar(50) NULL" in joined
-    assert "[Ndc_Index] int NOT NULL" in joined
+    assert "[SeverityRankingCode] int NOT NULL" in joined
+    assert "[SeverityLevel] nvarchar(max) NULL" in joined
+    assert "[ConflictCode] nvarchar(max) NULL" in joined
+    assert "[ICN] nvarchar(max) NULL" in joined
+    assert "[PrevICN] nvarchar(max) NULL" in joined
+    assert "[NdcIndex] int NOT NULL" in joined
     assert "[InMemory].[dbo].[PLAN_AFFILIATIONS]" in joined
     assert "[ContractTermDate] datetime2 NULL" in joined
+    assert "[RateCode] nvarchar(max) NULL, -- Displays the rate code of the enrollment record" in joined
+    assert "[EffectiveDate] datetime2 NOT NULL, -- Displays the effective date of the member's enrollment segment" in joined
+    assert "[PDLStatus] nvarchar(max) NULL, -- PDLStatus represents the status of a drug on a Preferred Drug List" in joined
+    assert "[NDC_Code] nvarchar(max) NOT NULL, -- Ndc code" in joined
+    assert "Column description source: IR_DTO_schema.xlsx, DTO Schema tab" in joined
 
 
 def test_select_ddls_without_table_keywords_returns_all_packaged_schemas():

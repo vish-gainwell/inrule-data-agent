@@ -10,11 +10,12 @@ explicit properties are flattened with path prefixes. This is not a physical SQL
 Server table. SQL types preserve workbook C# types/nullability; unspecified string
 lengths use nvarchar(max).
 */
+/* Column description source: IR_DTO_schema.xlsx, DTO Schema tab. Only nonblank authoritative descriptions are included. */
 CREATE TABLE [InMemory].[dbo].[DRUG_ATTR]
 (
-    [NDC_Code] nvarchar(max) NOT NULL,
-    [NDC_LabelName] nvarchar(max) NULL,
-    [NDC_Strength] nvarchar(max) NULL,
+    [NDC_Code] nvarchar(max) NOT NULL, -- Ndc code
+    [NDC_LabelName] nvarchar(max) NULL, -- Ndc label name
+    [NDC_Strength] nvarchar(max) NULL, -- Strength
     [NDC_Route] nvarchar(max) NULL,
     [NDC_Dose] nvarchar(max) NULL,
     [NDC_PDLStatus] nvarchar(max) NULL,
@@ -62,12 +63,12 @@ CREATE TABLE [InMemory].[dbo].[DRUG_ATTR]
     [NDC_MaxAge] int NULL,
     [NDC_DaysTillRefill] int NOT NULL,
     [NDC_AttrDaysTillRefill] int NOT NULL,
-    [GCNSeqNo_Code] nvarchar(max) NULL,
-    [GCNSeqNo_Description] nvarchar(max) NULL,
-    [HIC3_Code] nvarchar(max) NULL,
-    [HIC3_Description] nvarchar(max) NULL,
-    [HICLSeqNo_Code] nvarchar(max) NULL,
-    [HICLSeqNo_Description] nvarchar(max) NULL,
-    [GCN_Code] nvarchar(max) NULL,
-    [GCN_Description] nvarchar(max) NULL
+    [GCNSeqNo_Code] nvarchar(max) NULL, -- GCN seq code
+    [GCNSeqNo_Description] nvarchar(max) NULL, -- Description for gcn seq code
+    [HIC3_Code] nvarchar(max) NULL, -- Hic3 code
+    [HIC3_Description] nvarchar(max) NULL, -- Hic3 description
+    [HICLSeqNo_Code] nvarchar(max) NULL, -- Hicl code
+    [HICLSeqNo_Description] nvarchar(max) NULL, -- Hicl description
+    [GCN_Code] nvarchar(max) NULL, -- GCN code
+    [GCN_Description] nvarchar(max) NULL -- Description for gcn code
 );

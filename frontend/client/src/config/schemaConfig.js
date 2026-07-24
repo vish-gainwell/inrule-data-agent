@@ -2867,7 +2867,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "X",
                     "fk": "",
-                    "description": "Identifier for claim"
+                    "description": "Primary key of the claim table. This can be auto populated by idsequencer or entered by a user."
                   },
                   {
                     "name": "referralid",
@@ -2876,7 +2876,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for referral"
+                    "description": "This is the referral/prior auth that was given before the member received services. This will only be populated on claims that had referrals. Links to referral.referralid"
                   },
                   {
                     "name": "enrollid",
@@ -2885,7 +2885,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for enroll"
+                    "description": "The enrollid of the member that will be used to calculate the benefits for this member for the specific claim. Links to enrollment.enrollid"
                   },
                   {
                     "name": "affiliationid",
@@ -2894,7 +2894,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for affiliation"
+                    "description": "Specifies the pay to provider for the claim. Links to affiliation.affiliationid and then to provider on affiliateid. Displays the provider name."
                   },
                   {
                     "name": "facilitycode",
@@ -2903,7 +2903,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing facilitycode"
+                    "description": "Provides specific information about the hospital bill. The first digit of the three digit number identifies the type of facility. The second digit classifies the type of care being billed. The third digit indicates the sequence of the bill for a specific"
                   },
                   {
                     "name": "memid",
@@ -2912,7 +2912,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for mem"
+                    "description": "The memberid of the person the claim is for. This links back to member.memid."
                   },
                   {
                     "name": "billclasscode",
@@ -2921,7 +2921,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing billclasscode"
+                    "description": "Provides specific information about the hospital bill. The first digit of the three digit number identifies the type of facility. The second digit classifies the type of care being billed. The third digit indicates the sequence of the bill for a specific"
                   },
                   {
                     "name": "frequencycode",
@@ -2930,7 +2930,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing frequencycode"
+                    "description": "Provides specific information about the hospital bill. The first digit of the three digit number identifies the type of facility. The second digit classifies the type of care being billed. The third digit indicates the sequence of the bill for a specific"
                   },
                   {
                     "name": "startdate",
@@ -2939,7 +2939,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to startdate"
+                    "description": "Dates service began for this claim. All claimdetail records for this claim must be between this date and the end date."
                   },
                   {
                     "name": "enddate",
@@ -2948,7 +2948,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to enddate"
+                    "description": "Last date of service was given for this claim. All claimdetail records for this claim must be between this date and the end date."
                   },
                   {
                     "name": "controlnmb",
@@ -2957,7 +2957,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing controlnmb"
+                    "description": "Field is a user defined field usually used by providers as a patient billing number."
                   },
                   {
                     "name": "admitdate",
@@ -2966,7 +2966,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to admitdate"
+                    "description": "Admission date for entry in claim"
                   },
                   {
                     "name": "admithour",
@@ -2975,7 +2975,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing admithour"
+                    "description": "Hour of patient admission"
                   },
                   {
                     "name": "medrecnmb",
@@ -2984,7 +2984,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing medrecnmb"
+                    "description": "Number assigned by the provider to the patients medical of health record. QNXT 3.6 Expanded to char(30) for UB04"
                   },
                   {
                     "name": "payer",
@@ -2993,7 +2993,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing payer"
+                    "description": "NOT USED : Name of Payer (health Plan)"
                   },
                   {
                     "name": "relinfo",
@@ -3002,7 +3002,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing relinfo"
+                    "description": "Flag saying if information can be released for the member."
                   },
                   {
                     "name": "admittype",
@@ -3011,7 +3011,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing admittype"
+                    "description": "Admission Type on UB92 : Indicates the priority of the inpatient admission."
                   },
                   {
                     "name": "asgben",
@@ -3020,7 +3020,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing asgben"
+                    "description": "Assigned benefits check box on claim . 2.4 (070): Changed default to 'N' (Also Rolled back to 2.0)"
                   },
                   {
                     "name": "admitsource",
@@ -3029,7 +3029,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing admitsource"
+                    "description": "Admission Source on UB92, indicates the source of the admission or outpatient service"
                   },
                   {
                     "name": "priorpay",
@@ -3038,7 +3038,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing priorpay"
+                    "description": "Prior Payments made by member/plan"
                   },
                   {
                     "name": "patientstatus",
@@ -3047,7 +3047,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Status flag indicating patientstatus"
+                    "description": "Indicates patients disposition as of the ending date of service for the period of care reported"
                   },
                   {
                     "name": "estamtdue",
@@ -3056,7 +3056,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing estamtdue"
+                    "description": "NOT USED : Estimated amount due on claim form"
                   },
                   {
                     "name": "esc",
@@ -3065,7 +3065,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing esc"
+                    "description": "User defined field and can be used as a reinsurance number"
                   },
                   {
                     "name": "reason",
@@ -3074,7 +3074,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing reason"
+                    "description": "User defined field. Free form entry."
                   },
                   {
                     "name": "plancrn",
@@ -3083,7 +3083,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing plancrn"
+                    "description": "Claim number as assigned by external entity (typically State/Federal agency)"
                   },
                   {
                     "name": "plansubdate",
@@ -3092,7 +3092,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to plansubdate"
+                    "description": "NOT USED : Date the claim was submitted to external organization"
                   },
                   {
                     "name": "eligibleamt",
@@ -3101,7 +3101,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing eligibleamt"
+                    "description": "Total dollar amount that is eligible for the claim."
                   },
                   {
                     "name": "totaldeduct",
@@ -3110,7 +3110,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing totaldeduct"
+                    "description": "Total deductible from the sum of the deductibles of the claimdetail lines. Calculated during adjudication"
                   },
                   {
                     "name": "remitno",
@@ -3119,7 +3119,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing remitno"
+                    "description": "Remit number associated with claim. Populated when you run remits."
                   },
                   {
                     "name": "adjuddate",
@@ -3128,7 +3128,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to adjuddate"
+                    "description": "Adjudication Date of the claim"
                   },
                   {
                     "name": "logdate",
@@ -3137,7 +3137,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to logdate"
+                    "description": "The date the claim was logged for processing. This field is used to calculate quick pay discounts/ late pay surcharges (If applied to the contract). The pay date (Date FFS payment is generated) less the claim.logdate calculates the number of days for this"
                   },
                   {
                     "name": "cleandate",
@@ -3146,7 +3146,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to cleandate"
+                    "description": "Date a claim becomes ready for processing with no additional documents required."
                   },
                   {
                     "name": "orgclaimid",
@@ -3155,7 +3155,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for orgclaim"
+                    "description": "Original claimid. This is placed on the claim you are reversing from."
                   },
                   {
                     "name": "attendphyid",
@@ -3164,7 +3164,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for attendphy"
+                    "description": "Attending provider identifier. Foreign key to provider"
                   },
                   {
                     "name": "resubclaimid",
@@ -3173,7 +3173,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for resubclaim"
+                    "description": "If claim is reversed, this field will contain the ID of the claim reversal"
                   },
                   {
                     "name": "formtype",
@@ -3182,7 +3182,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing formtype"
+                    "description": "Type of claim form being utilized for the claim.This is generally defined by the providers provider type definition. (Claimtype field in the providertype table)"
                   },
                   {
                     "name": "plansubmit",
@@ -3191,7 +3191,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing plansubmit"
+                    "description": "For reporting only and will send an encounter report to the line of business. Values 1=Yes, 0= No"
                   },
                   {
                     "name": "otherphyid1",
@@ -3200,7 +3200,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing otherphyid1"
+                    "description": "NOT USED : Additional provider identifier"
                   },
                   {
                     "name": "lastupdate",
@@ -3209,7 +3209,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date and time of the last update"
+                    "description": "Date this record was last updated"
                   },
                   {
                     "name": "otherphyid2",
@@ -3218,7 +3218,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing otherphyid2"
+                    "description": "NOT USED : Additional provider2 identifier"
                   },
                   {
                     "name": "provrep",
@@ -3227,7 +3227,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing provrep"
+                    "description": "NOT USED : Provider Representative"
                   },
                   {
                     "name": "updateid",
@@ -3236,7 +3236,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier of the user who updated the record"
+                    "description": "Id of the user who last updated this record"
                   },
                   {
                     "name": "createid",
@@ -3245,7 +3245,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier of the user who created the record"
+                    "description": "Id of the user who created this record"
                   },
                   {
                     "name": "provrepdate",
@@ -3254,7 +3254,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to provrepdate"
+                    "description": "NOT USED : Provider Submission Date"
                   },
                   {
                     "name": "totalamt",
@@ -3263,7 +3263,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing totalamt"
+                    "description": "This field indicates the total amount of charges on the claim form"
                   },
                   {
                     "name": "createdate",
@@ -3272,7 +3272,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date and time the record was created"
+                    "description": "Date this record was created"
                   },
                   {
                     "name": "attendphyname",
@@ -3281,7 +3281,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing attendphyname"
+                    "description": "Identifies the name of the licensed physician who normally is expected to certify and recertify medical necessity of the services rendered and / or has the primary responsibility for the patients medical care and treatment"
                   },
                   {
                     "name": "status",
@@ -3290,7 +3290,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Status flag indicating status"
+                    "description": "Status of the claim. (I.E. Log, Open, Adjudicated, Pend, Pay, Deny, Reverse, Waitpay, Waitdeny, Waitrev, Paid, Denied, and Reversed, etc)"
                   },
                   {
                     "name": "planid",
@@ -3299,7 +3299,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for plan"
+                    "description": "The benefit plan that the member has. This is populated from the enrollment.planid field. This will be used in calculating the members benefits."
                   },
                   {
                     "name": "eobamt",
@@ -3308,7 +3308,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing eobamt"
+                    "description": "Amount submitted as coordination of benefits dollar amount. Will be calculated based on system setup."
                   },
                   {
                     "name": "eobeligibleamt",
@@ -3317,7 +3317,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing eobeligibleamt"
+                    "description": "Dollar amount eligible for payment after applying cob amount"
                   },
                   {
                     "name": "totalpaid",
@@ -3326,7 +3326,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for totalpa"
+                    "description": "Total paid on the claim. Is populated when adjudication is run. This is not displayed on the Claim Summary screen even though the UI says Total Paid. It is on the Pay tab."
                   },
                   {
                     "name": "emergency",
@@ -3335,7 +3335,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing emergency"
+                    "description": "NOT USED : MOVED TO CLAIMDETAIL RECORD : Indicates claim is for an emergency situation"
                   },
                   {
                     "name": "contractid",
@@ -3344,7 +3344,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for contract"
+                    "description": "The contract that is associated with the paytoprovider. This contract information will be used to calculate the contract dollars for the claim"
                   },
                   {
                     "name": "paiddate",
@@ -3353,7 +3353,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to paiddate"
+                    "description": "Dater the claim completed the payment process. The field is only visible after the claim has been processed through create FFS Payment. Field will remain null until payment is processed."
                   },
                   {
                     "name": "drg",
@@ -3362,7 +3362,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing drg"
+                    "description": "Diagnostic Related Grouping code submitted by hospital for Medicare reimubursement"
                   },
                   {
                     "name": "userinitials",
@@ -3371,7 +3371,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing userinitials"
+                    "description": "NOT USED : Initials of user that last updated the claim entry"
                   },
                   {
                     "name": "okpaydate",
@@ -3380,7 +3380,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to okpaydate"
+                    "description": "Date the claim was marked ok to move through payment process. This field is only visible after the claim has been marked OK."
                   },
                   {
                     "name": "provid",
@@ -3389,7 +3389,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for prov"
+                    "description": "Provider id of the provider submitting the claim."
                   },
                   {
                     "name": "okpayby",
@@ -3398,7 +3398,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing okpayby"
+                    "description": "Login of the user that marked the claim ok to move through payment process"
                   },
                   {
                     "name": "claimbypcp",
@@ -3407,7 +3407,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing claimbypcp"
+                    "description": "Flag used to determine if claim was submitted by the members PCP. This is calculated by matching the provid and memid to the memberpcp table. Values '0' = No , '1' = Yes , '-1' = Yes"
                   },
                   {
                     "name": "shareofcost",
@@ -3416,7 +3416,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing shareofcost"
+                    "description": "Member's share of cost for this claim (LCLAIM claims ONLY)"
                   },
                   {
                     "name": "dischargehour",
@@ -3425,7 +3425,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing dischargehour"
+                    "description": "The hour during which the patient was discharged from inpatient care"
                   },
                   {
                     "name": "haspool",
@@ -3434,7 +3434,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing haspool"
+                    "description": "If the member has a pool associated with the contract then this will be set to yes. Set during adjudication. Values 'N' = No, 'Y' = Yes"
                   },
                   {
                     "name": "ffspoolid",
@@ -3443,7 +3443,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for ffspool"
+                    "description": "The risk poolid (riskpool.riskpoolid) associated with this claim and it is only populated when the ffs risk pool is defined at the contract level. If riskpools are defined at the contract term level the risk pools are only available at the claim line lev"
                   },
                   {
                     "name": "ffspoolamt",
@@ -3452,7 +3452,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing ffspoolamt"
+                    "description": "Sum of the FFS pool amount on the claim line (claimdetail.ffspoolamt)"
                   },
                   {
                     "name": "outofarea",
@@ -3461,7 +3461,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing outofarea"
+                    "description": "Will indicate that the claim is out of normal service area. Values \"Y\" = Yes, \"N\" = No"
                   },
                   {
                     "name": "covereddays",
@@ -3470,7 +3470,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing covereddays"
+                    "description": "Number of inpatient days covered by the primary payer"
                   },
                   {
                     "name": "noncovereddays",
@@ -3479,7 +3479,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing noncovereddays"
+                    "description": "Number of days of care NOT covered by the primary payer"
                   },
                   {
                     "name": "coinsurancedays",
@@ -3488,7 +3488,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing coinsurancedays"
+                    "description": "Inpatient MEDICARE days occurring after the 60th day and before the 91st day in a single spell of illness."
                   },
                   {
                     "name": "lifereservedays",
@@ -3497,7 +3497,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing lifereservedays"
+                    "description": "Under MEDICARE, each beneficiary has a lifetime reserve of 60 days of inpatient hospital services after using 90 days of inpatient hospital services during a spell of illness."
                   },
                   {
                     "name": "isencounter",
@@ -3506,7 +3506,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing isencounter"
+                    "description": "If selected will set services to capitated. It will override the contract even if there are FFS lines. Values \"Y\" = Yes, \"N\" = No"
                   },
                   {
                     "name": "serviceaffilid",
@@ -3515,7 +3515,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for serviceaffil"
+                    "description": "The facility that the service is being provided at. This may not be necessary on all claims"
                   },
                   {
                     "name": "dischargedate",
@@ -3524,7 +3524,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to dischargedate"
+                    "description": "If services submitted in this claim were performed while the patient was confined in a health care facility, the ending date of confinement"
                   },
                   {
                     "name": "isemployment",
@@ -3533,7 +3533,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing isemployment"
+                    "description": "A yes/no field to indicate whether the patient alleges that his/her medical condition is due to the environment or events resulting from employment"
                   },
                   {
                     "name": "isautoaccident",
@@ -3542,7 +3542,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing isautoaccident"
+                    "description": "A yes/no field to indicate whether the patient's condition was the result of an auto accident"
                   },
                   {
                     "name": "isotheraccident",
@@ -3551,7 +3551,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing isotheraccident"
+                    "description": "A yes/no field to indicate whether the patient's condition was the result of other, non-auto accident"
                   },
                   {
                     "name": "dateonset",
@@ -3560,7 +3560,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to dateonset"
+                    "description": "Date the illness or injury happened or started."
                   },
                   {
                     "name": "similarillnessdate",
@@ -3569,7 +3569,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to similarillnessdate"
+                    "description": "The previous date that the patient experienced symptoms similar or identical to those for which services submitted on this claim were rendered"
                   },
                   {
                     "name": "accidentstate",
@@ -3578,7 +3578,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing accidentstate"
+                    "description": "State Postal Code identifying the state in which the automobile accident occurred"
                   },
                   {
                     "name": "manualencounter",
@@ -3587,7 +3587,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing manualencounter"
+                    "description": "Indicates If the user verifies that this was not a manual encounter. Values 'Y' Yes, 'N' no"
                   },
                   {
                     "name": "isepsdt",
@@ -3596,7 +3596,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing isepsdt"
+                    "description": "NOT USED : MOVED TO CLAIMDETAIL : Is epsdt flag"
                   },
                   {
                     "name": "initialprothesis",
@@ -3605,7 +3605,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing initialprothesis"
+                    "description": "Determines if I-Initial or R-Replacement of prothesis"
                   },
                   {
                     "name": "priorprothesisdate",
@@ -3614,7 +3614,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to priorprothesisdate"
+                    "description": "Date of prior prothesis"
                   },
                   {
                     "name": "isorthodontics",
@@ -3623,7 +3623,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing isorthodontics"
+                    "description": "Indicates of claim is orthodontic related"
                   },
                   {
                     "name": "orthoappldate",
@@ -3632,7 +3632,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to orthoappldate"
+                    "description": "Date orthodontics were applied"
                   },
                   {
                     "name": "orthomosrem",
@@ -3641,7 +3641,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing orthomosrem"
+                    "description": "Dental - Number of months remaining in treatment"
                   },
                   {
                     "name": "totalreimburseamt",
@@ -3650,7 +3650,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing totalreimburseamt"
+                    "description": "Total reimbursement dollar amount. Calculated during adjudication"
                   },
                   {
                     "name": "hasdocuments",
@@ -3659,7 +3659,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing hasdocuments"
+                    "description": "Indicates that documents were submitted with this claim."
                   },
                   {
                     "name": "referfrom",
@@ -3668,7 +3668,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing referfrom"
+                    "description": "This is the provid of the physician the member was referred from. This links to provider.provid."
                   },
                   {
                     "name": "isstoploss",
@@ -3677,7 +3677,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing isstoploss"
+                    "description": "Selected to indicate if there is stop loss associated with the claim. (Y/N)"
                   },
                   {
                     "name": "totalrefundamt",
@@ -3686,7 +3686,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing totalrefundamt"
+                    "description": "Total dollar amount refunded by the provider during a reversal."
                   },
                   {
                     "name": "planresub",
@@ -3695,7 +3695,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing planresub"
+                    "description": "Indicates that claim should be resubmitted to carrier to reflect adjustment"
                   },
                   {
                     "name": "planresubdate",
@@ -3704,7 +3704,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to planresubdate"
+                    "description": "Date that claim was resubmitted to carrier. Comes from the claim.startdate field of the claim that is listed on the original claim in the claim.resubclaimid field."
                   },
                   {
                     "name": "hascareplan",
@@ -3713,7 +3713,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing hascareplan"
+                    "description": "Indicatees if a careplan exits for claim"
                   },
                   {
                     "name": "reimbursemember",
@@ -3722,7 +3722,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing reimbursemember"
+                    "description": "If selected will pay the member rather than the provider."
                   },
                   {
                     "name": "totalsubmitdiscount",
@@ -3731,7 +3731,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing totalsubmitdiscount"
+                    "description": "Total discounts based on dollar amount submitted and quick pays,"
                   },
                   {
                     "name": "totaladdlmemamt",
@@ -3740,7 +3740,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing totaladdlmemamt"
+                    "description": "How much more the member is responsible to pay. Calculated during adjudicate. Done on manual pricing."
                   },
                   {
                     "name": "totalmemamt",
@@ -3749,7 +3749,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing totalmemamt"
+                    "description": "How much the member is responsible for our of total claim. This includes copay's and deductibles."
                   },
                   {
                     "name": "importfinal",
@@ -3758,7 +3758,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing importfinal"
+                    "description": "NOT USED"
                   },
                   {
                     "name": "payeeid",
@@ -3767,7 +3767,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for payee"
+                    "description": "NOT USED : For alternate payment purposes this will be the memberid of the member that will be paid for this claim."
                   },
                   {
                     "name": "claimsourceid",
@@ -3776,7 +3776,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for claimsource"
+                    "description": "Stores where claim was created from. Manual entry or EDI"
                   },
                   {
                     "name": "carryoverintdays",
@@ -3785,7 +3785,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing carryoverintdays"
+                    "description": "Stores the number of days for interest calculations to be carried over from a claim that has been denied to an adjustment claim"
                   },
                   {
                     "name": "externalenrollid",
@@ -3794,7 +3794,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for externalenroll"
+                    "description": "External COB enrollment attached to the claim. Defines relationship and type of COB being processed in adjudication which effects the COB calculation"
                   },
                   {
                     "name": "paycobbyline",
@@ -3803,7 +3803,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing paycobbyline"
+                    "description": "If (Y)es then adjudication will calculate and pay the COB on a line by line basis. If (N)O then adjudication will calculate and pay the COB on a claim basis."
                   },
                   {
                     "name": "totextdeductamt",
@@ -3812,7 +3812,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing totextdeductamt"
+                    "description": "Total claim external insurance deductable amount. Used in determining secondary payment in COB process."
                   },
                   {
                     "name": "totextcopayamt",
@@ -3821,7 +3821,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing totextcopayamt"
+                    "description": "Total claim external insurance copay amount. Used in determining secondary payment in QMACS COB process."
                   },
                   {
                     "name": "totextcoinsuranceamt",
@@ -3830,7 +3830,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing totextcoinsuranceamt"
+                    "description": "Total claim external insurance coinsurance amount. Used in determining secondary payment in QMACS COB process."
                   },
                   {
                     "name": "totextpaidamt",
@@ -3839,7 +3839,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing totextpaidamt"
+                    "description": "Total claim external insurance paid amount. Used in determining secondary payment in QMACS COB process. COB Screen-Total Paid Amount"
                   },
                   {
                     "name": "interestdays",
@@ -3848,7 +3848,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing interestdays"
+                    "description": "The number of days used to calculate interest."
                   },
                   {
                     "name": "cobsavings",
@@ -3857,7 +3857,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing cobsavings"
+                    "description": "Holds the COB Savings generated as a result of the claim dental lines in this claim"
                   },
                   {
                     "name": "isitsclaim",
@@ -3866,7 +3866,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing isitsclaim"
+                    "description": "Used to determine if a claim is an ITS claim (N)o - Isn't an ITS Claim (H)ome - Claim is on the Home plan (Yours) Hos(T) - Claim is on a Host Plan (i.e. you are out of state and visit a doctor with a BCBS contract)"
                   },
                   {
                     "name": "forcedbeneprefid",
@@ -3875,7 +3875,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for forcedbenepref"
+                    "description": "Primary key from the for the benepreference table. Populated with the preferred benefit id."
                   },
                   {
                     "name": "adjudbeneprefid",
@@ -3884,7 +3884,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for adjudbenepref"
+                    "description": "Primary key from the for the benepreference table. Populated with the preferred benefit id during adjudication"
                   },
                   {
                     "name": "determiningclaimid",
@@ -3893,7 +3893,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for determiningclaim"
+                    "description": "Primary key of the claim table. This is populated with a claimid that is used in calculating this claim"
                   },
                   {
                     "name": "eobreceived",
@@ -3902,7 +3902,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing eobreceived"
+                    "description": "Indicates if an EOB was received for a claim"
                   },
                   {
                     "name": "isbasesupplemental",
@@ -3911,7 +3911,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing isbasesupplemental"
+                    "description": "Column indicates whether claim was adjudicated using base\\supplemental processing"
                   },
                   {
                     "name": "privacypayeeid",
@@ -3920,7 +3920,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for privacypayee"
+                    "description": "Payeeid to pay for member reimbursement REFERENCES member(memid)"
                   },
                   {
                     "name": "suppresseob",
@@ -3929,7 +3929,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing suppresseob"
+                    "description": "Indicates if the Explanation of Benefits (EOB) is not issued"
                   },
                   {
                     "name": "cobsavingsapplied",
@@ -3938,7 +3938,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing cobsavingsapplied"
+                    "description": "COB credit reserve savings are applied at this claim"
                   },
                   {
                     "name": "calccobbyline",
@@ -3947,7 +3947,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing calccobbyline"
+                    "description": "Indicates how COB calculated: (C)laim, (L)ine by line, (' ') Not set"
                   },
                   {
                     "name": "haslien",
@@ -3956,7 +3956,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing haslien"
+                    "description": "Indicates if the claim has a lien (Y/N)"
                   },
                   {
                     "name": "hasrefundrequest",
@@ -3965,7 +3965,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing hasrefundrequest"
+                    "description": "Refund has been requested from provider/member"
                   },
                   {
                     "name": "mspclaim",
@@ -3974,7 +3974,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing mspclaim"
+                    "description": "2.6 (020): Indicates if this record is for a Medicare Secondary Payee (MSP) claim"
                   },
                   {
                     "name": "msppayeeid",
@@ -3983,7 +3983,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for msppayee"
+                    "description": "2.6 (020): Medicare payee identifier from carrier table that will be reimbursed up to the total amount they paid as primary."
                   },
                   {
                     "name": "reimbursemedicareamt",
@@ -3992,7 +3992,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing reimbursemedicareamt"
+                    "description": "2.6 (020): The dollar amount to reimburse to medicare for a claim that they paid as primary in error."
                   },
                   {
                     "name": "reject",
@@ -4001,7 +4001,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing reject"
+                    "description": "2.6 (037): If edit is deny and reject is 'Y' then indicates it is a rejected claim"
                   },
                   {
                     "name": "reimbursecopayamt",
@@ -4010,7 +4010,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing reimbursecopayamt"
+                    "description": "2.6 (039): The copay dollars the member needs to be reimbursed for because the member met their max out of pocker or maximum coinsured charge and no longer pays a copy."
                   },
                   {
                     "name": "mempaidamt",
@@ -4019,7 +4019,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing mempaidamt"
+                    "description": "2.6 (039): The amount the member has paid the provider for this claim. The UB92 claim field is: \"Prior Paid\" (BOX 54). The 1500 field is\" \"Amt Paid\" (Box 29)."
                   },
                   {
                     "name": "exportdate837",
@@ -4028,7 +4028,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to exportdate837"
+                    "description": "2.6 (057): Date external priced claim was exported via 837 from pricing"
                   },
                   {
                     "name": "externalpricing",
@@ -4037,7 +4037,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing externalpricing"
+                    "description": "2.6 (057): Indicator that determinesif claim was externally priced"
                   },
                   {
                     "name": "importdate837",
@@ -4046,7 +4046,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to importdate837"
+                    "description": "2.6 (057): Date external priced claim was imported via 837"
                   },
                   {
                     "name": "externaldcn",
@@ -4055,7 +4055,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing externaldcn"
+                    "description": "2.6 (057): External document control number"
                   },
                   {
                     "name": "networkaffilid",
@@ -4064,7 +4064,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for networkaffil"
+                    "description": "2.6 (057): External/Internal network affiliation to use for pricing."
                   },
                   {
                     "name": "doshragrporgpolid",
@@ -4118,7 +4118,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Status flag indicating mhbstatus"
+                    "description": "Status of this claim in MyHealthView system"
                   },
                   {
                     "name": "isrepricingclaim",
@@ -4127,7 +4127,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing isrepricingclaim"
+                    "description": "Indicates if this claim is a repricing claim. If so there are different rules for adjudication. (i.e. no enrollment, no member, etc)"
                   },
                   {
                     "name": "rebilltotalamt",
@@ -4136,7 +4136,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing rebilltotalamt"
+                    "description": "Total rebill carrier amount for claim, calculated by adding up the rebill carrier amounts for each claim line that qualifies as a rebill claim line. If this is set to Null then this is not a rebill carrier claim."
                   },
                   {
                     "name": "rebillreleasedate",
@@ -4145,7 +4145,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to rebillreleasedate"
+                    "description": "Date that the rebill carrier claim will be released for payment. - If the claim is not a rebill Carrier claim, no hold on provider payment, this is set to Null and the status of the claim is set to Pay. If rebillholdpayment = N, no hold on provider paymen"
                   },
                   {
                     "name": "otherphyid1name",
@@ -4154,7 +4154,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing otherphyid1name"
+                    "description": "The name stored for the other physician 1 from a claim form. The other physician one column is used to store other types of physicians associated with a claim such as OPERATING."
                   },
                   {
                     "name": "otherphyid2name",
@@ -4163,7 +4163,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing otherphyid2name"
+                    "description": "The name stored for the other physician 2 from a claim form. The other physician one column is used to store other types of physicians associated with a claim such as OPERATING."
                   },
                   {
                     "name": "voidreasonid",
@@ -4181,7 +4181,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing missinginformation"
+                    "description": "Indicates if the claim is missing information that stopped the claim from adjudicating successfully."
                   },
                   {
                     "name": "contractnetworkid",
@@ -4190,7 +4190,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for contractnetwork"
+                    "description": "Network identified during adjudication, which will enable payment to quickly find the correct contractinfo record with the 'requestrefund' column and process accordingly. The rest of the contractinfo key is already available."
                   },
                   {
                     "name": "formcreationdate",
@@ -4343,7 +4343,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing dcn"
+                    "description": "Document control number used to identify the associated paper claim in Filenet"
                   },
                   {
                     "name": "ExternalFinancialStatus",
@@ -4441,7 +4441,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "X",
                     "fk": "X",
-                    "description": "Identifier for claim"
+                    "description": "Primary key of the claim table"
                   },
                   {
                     "name": "claimline",
@@ -4450,7 +4450,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "X",
                     "fk": "",
-                    "description": "Value representing claimline"
+                    "description": "Claim Detail line number"
                   },
                   {
                     "name": "referralid",
@@ -4459,7 +4459,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for referral"
+                    "description": "This is not the Primary key of the referral table. 2.6 (005): Expand to char(30). The referralid in this table matches to the referral.authorizationid field. Verified in the ME Lab environment. The custom auth auto-match code populates claimdetail.refe"
                   },
                   {
                     "name": "revcode",
@@ -4468,7 +4468,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing revcode"
+                    "description": "Revenue code for the claimdetail line"
                   },
                   {
                     "name": "contractid",
@@ -4477,7 +4477,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for contract"
+                    "description": "Contract Identifier for the claimdetail lin"
                   },
                   {
                     "name": "termid",
@@ -4486,7 +4486,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for term"
+                    "description": "Contractterm Identifier for the claimdetail line"
                   },
                   {
                     "name": "planid",
@@ -4495,7 +4495,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for plan"
+                    "description": "Plan identifier for the claimdetail line"
                   },
                   {
                     "name": "benefitid",
@@ -4504,7 +4504,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for benefit"
+                    "description": "Benefit Identifier for the claimdetail line"
                   },
                   {
                     "name": "servunits",
@@ -4513,7 +4513,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing servunits"
+                    "description": "Total units billed for a service line"
                   },
                   {
                     "name": "total",
@@ -4522,7 +4522,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing total"
+                    "description": "Total submitted by provider for reimbursement"
                   },
                   {
                     "name": "servcode",
@@ -4531,7 +4531,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing servcode"
+                    "description": "Service code for the claimdetail line"
                   },
                   {
                     "name": "modcode",
@@ -4540,7 +4540,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing modcode"
+                    "description": "Modifier code for the claimdetail line"
                   },
                   {
                     "name": "dosfrom",
@@ -4549,7 +4549,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing dosfrom"
+                    "description": "First date of service for the claimdetail line"
                   },
                   {
                     "name": "dosto",
@@ -4558,7 +4558,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing dosto"
+                    "description": "Second date of service for the claimdetail line"
                   },
                   {
                     "name": "location",
@@ -4567,7 +4567,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing location"
+                    "description": "Place of Service"
                   },
                   {
                     "name": "status",
@@ -4576,7 +4576,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Status flag indicating status"
+                    "description": "Status of the entry in claimdetail"
                   },
                   {
                     "name": "claimamt",
@@ -4585,7 +4585,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing claimamt"
+                    "description": "Amount of the claim"
                   },
                   {
                     "name": "conteligamt",
@@ -4594,7 +4594,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing conteligamt"
+                    "description": "Contract Eligible Amount"
                   },
                   {
                     "name": "amountpaid",
@@ -4603,7 +4603,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for amountpa"
+                    "description": "Amount paid entry in claimdetail"
                   },
                   {
                     "name": "deductible",
@@ -4612,7 +4612,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing deductible"
+                    "description": "Deductible amount on the detail line"
                   },
                   {
                     "name": "plancrn",
@@ -4621,7 +4621,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing plancrn"
+                    "description": "Claim number as assigned by external entity (typically State/Federal agency)"
                   },
                   {
                     "name": "contractpaid",
@@ -4630,7 +4630,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for contractpa"
+                    "description": "Amount to pay per the provider contract"
                   },
                   {
                     "name": "benefitamt",
@@ -4639,7 +4639,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing benefitamt"
+                    "description": "Benefit amount"
                   },
                   {
                     "name": "contractamt",
@@ -4648,7 +4648,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing contractamt"
+                    "description": "Contract Amount"
                   },
                   {
                     "name": "capitated",
@@ -4657,7 +4657,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing capitated"
+                    "description": "Indicates that the service was capitated"
                   },
                   {
                     "name": "submitdate",
@@ -4666,7 +4666,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to submitdate"
+                    "description": "Date claim was submitted to external entity"
                   },
                   {
                     "name": "plansub",
@@ -4675,7 +4675,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing plansub"
+                    "description": "NOT USED"
                   },
                   {
                     "name": "lastupdate",
@@ -4684,7 +4684,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date and time of the last update"
+                    "description": "Date this record was last updated"
                   },
                   {
                     "name": "updateid",
@@ -4693,7 +4693,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier of the user who updated the record"
+                    "description": "Id of the user who last updated this record"
                   },
                   {
                     "name": "prindiag",
@@ -4702,7 +4702,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing prindiag"
+                    "description": "Principle diagnostic code for the claimdetail line"
                   },
                   {
                     "name": "emergency",
@@ -4711,7 +4711,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing emergency"
+                    "description": "Is the claimdetail line associated with an emergency room visit"
                   },
                   {
                     "name": "cob",
@@ -4720,7 +4720,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing cob"
+                    "description": "Indicates if line item has coordination of benefits. Values 0=no, 1= yes"
                   },
                   {
                     "name": "epsdt",
@@ -4729,7 +4729,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing epsdt"
+                    "description": "If set, indicates this service is related to epsdt treatment"
                   },
                   {
                     "name": "typesrv",
@@ -4738,7 +4738,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing typesrv"
+                    "description": "Type of service"
                   },
                   {
                     "name": "ineligibleamt",
@@ -4747,7 +4747,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing ineligibleamt"
+                    "description": "Amount claimed that was deemed ineligible"
                   },
                   {
                     "name": "createdate",
@@ -4756,7 +4756,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date and time the record was created"
+                    "description": "Date this record was created"
                   },
                   {
                     "name": "createid",
@@ -4765,7 +4765,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier of the user who created the record"
+                    "description": "Id of the user who created this record"
                   },
                   {
                     "name": "cobamt",
@@ -4774,7 +4774,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing cobamt"
+                    "description": "Amount paid by coordination of benefit carrier"
                   },
                   {
                     "name": "userinitials",
@@ -4783,7 +4783,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing userinitials"
+                    "description": "Initials of user that last updated the claimdetail entry"
                   },
                   {
                     "name": "copay",
@@ -4792,7 +4792,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing copay"
+                    "description": "Member's copay for this service"
                   },
                   {
                     "name": "adjudicate",
@@ -4801,7 +4801,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing adjudicate"
+                    "description": "Adjudication Date of the claim"
                   },
                   {
                     "name": "costshareamt",
@@ -4810,7 +4810,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing costshareamt"
+                    "description": "Member's Costshare for this service"
                   },
                   {
                     "name": "costshareper",
@@ -4819,7 +4819,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing costshareper"
+                    "description": "Member's cost share % for this service"
                   },
                   {
                     "name": "contpercent",
@@ -4828,7 +4828,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing contpercent"
+                    "description": "Contract Percentage applied"
                   },
                   {
                     "name": "benepercent",
@@ -4837,7 +4837,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing benepercent"
+                    "description": "Benefit Percentage paid by plan"
                   },
                   {
                     "name": "remvisits",
@@ -4846,7 +4846,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing remvisits"
+                    "description": "Remaining visits"
                   },
                   {
                     "name": "maxvisits",
@@ -4855,7 +4855,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing maxvisits"
+                    "description": "Maximum number of visits"
                   },
                   {
                     "name": "network",
@@ -4864,7 +4864,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing network"
+                    "description": "network with which this provider was affiliated"
                   },
                   {
                     "name": "benededuct",
@@ -4873,7 +4873,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing benededuct"
+                    "description": "Benefit deductible amount"
                   },
                   {
                     "name": "annualaccrual",
@@ -4882,7 +4882,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing annualaccrual"
+                    "description": "Accrued annual benefit amount"
                   },
                   {
                     "name": "lifetimeaccrual",
@@ -4891,7 +4891,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing lifetimeaccrual"
+                    "description": "Accrued lifetime amount"
                   },
                   {
                     "name": "maxoutaccrual",
@@ -4900,7 +4900,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing maxoutaccrual"
+                    "description": "Accrued Max out of pocket amount"
                   },
                   {
                     "name": "coscode",
@@ -4909,7 +4909,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing coscode"
+                    "description": "Category of Service stamp on the claimdetail line"
                   },
                   {
                     "name": "catexp",
@@ -4918,7 +4918,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing catexp"
+                    "description": "Category of expense stamp on the claimdetail record"
                   },
                   {
                     "name": "paydiscount",
@@ -4927,7 +4927,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing paydiscount"
+                    "description": "Pay discount amount"
                   },
                   {
                     "name": "subcat",
@@ -4936,7 +4936,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing subcat"
+                    "description": "Sub Category of Expense code"
                   },
                   {
                     "name": "beneinelig",
@@ -4945,7 +4945,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing beneinelig"
+                    "description": "Benefit ineligible amount"
                   },
                   {
                     "name": "riderid",
@@ -4954,7 +4954,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for rider"
+                    "description": "Primary key of the rider table"
                   },
                   {
                     "name": "carelevel",
@@ -4963,7 +4963,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing carelevel"
+                    "description": "Level of Care provided to LCLAIM members"
                   },
                   {
                     "name": "medcoverage",
@@ -4972,7 +4972,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing medcoverage"
+                    "description": "Medicare coverage for LCLAIM members"
                   },
                   {
                     "name": "fracunits",
@@ -4981,7 +4981,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing fracunits"
+                    "description": "Fractional Units if applicable for the claimdetail line"
                   },
                   {
                     "name": "authunits",
@@ -4990,7 +4990,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing authunits"
+                    "description": "Authorized units"
                   },
                   {
                     "name": "poolamt",
@@ -4999,7 +4999,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing poolamt"
+                    "description": "Amount applied to risk pool"
                   },
                   {
                     "name": "haspool",
@@ -5008,7 +5008,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing haspool"
+                    "description": "Has pool flag for claimdetail"
                   },
                   {
                     "name": "poolid",
@@ -5017,7 +5017,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for pool"
+                    "description": "Primary key of the riskpool table"
                   },
                   {
                     "name": "fundid",
@@ -5026,7 +5026,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for fund"
+                    "description": "Primary key of the fund table"
                   },
                   {
                     "name": "ffspoolid",
@@ -5035,7 +5035,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for ffspool"
+                    "description": "Fee for service pool identifier"
                   },
                   {
                     "name": "ffspoolamt",
@@ -5044,7 +5044,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing ffspoolamt"
+                    "description": "Fee for service pool amount"
                   },
                   {
                     "name": "toothnumber",
@@ -5053,7 +5053,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing toothnumber"
+                    "description": "Dental - tooth number for service selected."
                   },
                   {
                     "name": "toothsurface",
@@ -5062,7 +5062,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing toothsurface"
+                    "description": "Tooth surface description that is covered under this service"
                   },
                   {
                     "name": "reimburseamt",
@@ -5071,7 +5071,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing reimburseamt"
+                    "description": "Reimbursement amount"
                   },
                   {
                     "name": "billservcode",
@@ -5080,7 +5080,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing billservcode"
+                    "description": "Service code that was billed on claim line"
                   },
                   {
                     "name": "approvedservcode",
@@ -5089,7 +5089,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing approvedservcode"
+                    "description": "Service code that was approved for claim line"
                   },
                   {
                     "name": "refundamt",
@@ -5098,7 +5098,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing refundamt"
+                    "description": "Amount refunded for this claim line"
                   },
                   {
                     "name": "submitdiscount",
@@ -5107,7 +5107,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing submitdiscount"
+                    "description": "Submission discount for claim line"
                   },
                   {
                     "name": "modcode2",
@@ -5116,7 +5116,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing modcode2"
+                    "description": "2nd Modifier code"
                   },
                   {
                     "name": "modcode3",
@@ -5125,7 +5125,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing modcode3"
+                    "description": "3rd Modifier code"
                   },
                   {
                     "name": "addlmemamt",
@@ -5134,7 +5134,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing addlmemamt"
+                    "description": "Additional member amount"
                   },
                   {
                     "name": "memamt",
@@ -5143,7 +5143,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing memamt"
+                    "description": "Member amount"
                   },
                   {
                     "name": "diag1",
@@ -5152,7 +5152,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing diag1"
+                    "description": "1st diagnosis code"
                   },
                   {
                     "name": "diag2",
@@ -5161,7 +5161,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing diag2"
+                    "description": "2nd diagnosis code"
                   },
                   {
                     "name": "diag3",
@@ -5170,7 +5170,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing diag3"
+                    "description": "3rd diagnosis code"
                   },
                   {
                     "name": "diag4",
@@ -5179,7 +5179,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing diag4"
+                    "description": "4th diagnosis code"
                   },
                   {
                     "name": "globalcovthrudate",
@@ -5188,7 +5188,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to globalcovthrudate"
+                    "description": "This is populated during adjudication and dictates how long it will be until the provider can submit a claim for this member for this service again."
                   },
                   {
                     "name": "modcode4",
@@ -5197,7 +5197,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing modcode4"
+                    "description": "4th modecode"
                   },
                   {
                     "name": "modcode5",
@@ -5206,7 +5206,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing modcode5"
+                    "description": "5th modecode"
                   },
                   {
                     "name": "multmodtiercount",
@@ -5215,7 +5215,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing multmodtiercount"
+                    "description": "Multiple modifier tier count 1 for claim line with a tiered modifier in the modecode column."
                   },
                   {
                     "name": "multmodtiercount2",
@@ -5224,7 +5224,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing multmodtiercount2"
+                    "description": "Multiple modifier tier count 2 for claim line with a tiered modifier in the modecode column."
                   },
                   {
                     "name": "multmodtiercount3",
@@ -5233,7 +5233,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing multmodtiercount3"
+                    "description": "Multiple modifier tier count 3 for claim line with a tiered modifier in the modecode column."
                   },
                   {
                     "name": "multmodtiercount4",
@@ -5242,7 +5242,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing multmodtiercount4"
+                    "description": "Multiple modifier tier count 4 for claim line with a tiered modifier in the modecode column."
                   },
                   {
                     "name": "multmodtiercount5",
@@ -5251,7 +5251,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing multmodtiercount5"
+                    "description": "Multiple modifier tier count 5 for claim line with a tiered modifier in the modecode column."
                   },
                   {
                     "name": "coinsuranceamt",
@@ -5260,7 +5260,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing coinsuranceamt"
+                    "description": "Amount of deference benefitamt and benefit amt * benefit percentage."
                   },
                   {
                     "name": "copayperdiemamt",
@@ -5269,7 +5269,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing copayperdiemamt"
+                    "description": "Amount of copay perdiem change is applied towards member."
                   },
                   {
                     "name": "ispricebyauth",
@@ -5278,7 +5278,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing ispricebyauth"
+                    "description": "Determines how the claimline is priced: Y: use the authorization contract, term and term amount. N: use standard contract adjudication method"
                   },
                   {
                     "name": "cobeligibleamt",
@@ -5287,7 +5287,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing cobeligibleamt"
+                    "description": "Stores the COB eligible dollar amount"
                   },
                   {
                     "name": "medicareactioncode",
@@ -5296,7 +5296,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing medicareactioncode"
+                    "description": "Action code for medicare"
                   },
                   {
                     "name": "isclaimauthloc",
@@ -5305,7 +5305,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing isclaimauthloc"
+                    "description": "Determines if detail record has a claimauthloc record."
                   },
                   {
                     "name": "prioramtpaid",
@@ -5314,7 +5314,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for prioramtpa"
+                    "description": "Prior amount paid on claim."
                   },
                   {
                     "name": "authline",
@@ -5323,7 +5323,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing authline"
+                    "description": "Indicates which auth line claim is validating against."
                   },
                   {
                     "name": "redcoinsuranceamt",
@@ -5332,7 +5332,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing redcoinsuranceamt"
+                    "description": "Provider specific reduced coinsurance amount per APC pricing system."
                   },
                   {
                     "name": "origbeneclaimid",
@@ -5341,7 +5341,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for origbeneclaim"
+                    "description": "Primary key of the claim table"
                   },
                   {
                     "name": "origbeneadmitdate",
@@ -5350,7 +5350,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date related to origbeneadmitdate"
+                    "description": "Original admit date for the benefit period"
                   },
                   {
                     "name": "membmaxfeeamt",
@@ -5359,7 +5359,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing membmaxfeeamt"
+                    "description": "Amount member is responsible to pay that is over the benefit maximum fee"
                   },
                   {
                     "name": "paymentapc",
@@ -5368,7 +5368,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing paymentapc"
+                    "description": "Stores APC codes received from microdyn's APCactive enterprise pricer for enhanced"
                   },
                   {
                     "name": "hcpcsapc",
@@ -5377,7 +5377,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing hcpcsapc"
+                    "description": "Stores the HCPCS APC code"
                   },
                   {
                     "name": "extdeductamt",
@@ -5386,7 +5386,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing extdeductamt"
+                    "description": "External insurance deductable amount. Used in determining secondary payment in QMACS COB process."
                   },
                   {
                     "name": "extcopayamt",
@@ -5395,7 +5395,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing extcopayamt"
+                    "description": "External insurance copay amount. Used in determining secondary payment in QMACS COB process."
                   },
                   {
                     "name": "extcoinsuranceamt",
@@ -5404,7 +5404,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing extcoinsuranceamt"
+                    "description": "External insurance coinsurance amount. Used in determining secondary payment in QMACS COB process."
                   },
                   {
                     "name": "extpaidamt",
@@ -5413,7 +5413,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing extpaidamt"
+                    "description": "External insurance paid amount. Used in determining secondary payment in QMACS COB process."
                   },
                   {
                     "name": "allocatedvisits",
@@ -5422,7 +5422,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing allocatedvisits"
+                    "description": "Number of visits used for this service line"
                   },
                   {
                     "name": "billedunits",
@@ -5431,7 +5431,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing billedunits"
+                    "description": "Original billed units submitted on the claim"
                   },
                   {
                     "name": "cobsavingsappliedamt",
@@ -5440,7 +5440,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing cobsavingsappliedamt"
+                    "description": "Stores the COB savings applied to the claimdetail line"
                   },
                   {
                     "name": "allowedamt",
@@ -5449,7 +5449,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing allowedamt"
+                    "description": "Stores the dollar amount used as the allowed amount for the basis of the COB calculation."
                   },
                   {
                     "name": "payasstatus",
@@ -5458,7 +5458,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Status flag indicating payasstatus"
+                    "description": "Indicates if claimdetail was paid using P - Primary or S - Seconday calculation"
                   },
                   {
                     "name": "beneprefid",
@@ -5467,7 +5467,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for benepref"
+                    "description": "Primary key of the benepreference table"
                   },
                   {
                     "name": "employerfeeamt",
@@ -5476,7 +5476,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing employerfeeamt"
+                    "description": "Employer Fee Schedule Amt"
                   },
                   {
                     "name": "detailsourcetype",
@@ -5485,7 +5485,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing detailsourcetype"
+                    "description": "Source type of a claim service line (B) From Claim Check Rebundling (C) From Claim Check Replacement Code"
                   },
                   {
                     "name": "penaltyamt",
@@ -5494,7 +5494,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing penaltyamt"
+                    "description": "Non-Compliance Penalty Amount - Member Responsible for"
                   },
                   {
                     "name": "cobsavingsamt",
@@ -5503,7 +5503,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing cobsavingsamt"
+                    "description": "Stores the COB savings accumulated from the line."
                   },
                   {
                     "name": "payasprimary",
@@ -5512,7 +5512,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing payasprimary"
+                    "description": "Indicates if system should bypass the COB calculation for a claim line"
                   },
                   {
                     "name": "autofillauth",
@@ -5521,7 +5521,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing autofillauth"
+                    "description": "Determines if Authorizations will be automatically filled during adjudication"
                   },
                   {
                     "name": "provresppenaltyamt",
@@ -5530,7 +5530,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing provresppenaltyamt"
+                    "description": "Non-Compliance Penalty Amount - Provider Responsible for"
                   },
                   {
                     "name": "accomodationrate",
@@ -5539,7 +5539,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing accomodationrate"
+                    "description": "Inpatient Rehabilition Facility (IRF) accommodation rate"
                   },
                   {
                     "name": "hhppsoutlieramt",
@@ -5548,7 +5548,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing hhppsoutlieramt"
+                    "description": "Home health prospective payment system outlier payment amount (calculated)."
                   },
                   {
                     "name": "claimsubdetailtype",
@@ -5557,7 +5557,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing claimsubdetailtype"
+                    "description": "Indicates the type of claimsubdetail included in claimdetail LOC = Level of care, BS = Base/Major Medical"
                   },
                   {
                     "name": "modcodepreadjud",
@@ -5566,7 +5566,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing modcodepreadjud"
+                    "description": "Stores the value of the matching claimline modifier as it existed before adjudication if still set to the default of ZZ."
                   },
                   {
                     "name": "modcode2preadjud",
@@ -5575,7 +5575,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing modcode2preadjud"
+                    "description": "Stores the value of the matching claimline modifier as it existed before adjudication if still set to the default of ZZ."
                   },
                   {
                     "name": "modcode3preadjud",
@@ -5584,7 +5584,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing modcode3preadjud"
+                    "description": "Stores the value of the matching claimline modifier as it existed before adjudication if still set to the default of ZZ."
                   },
                   {
                     "name": "modcode4preadjud",
@@ -5593,7 +5593,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing modcode4preadjud"
+                    "description": "Stores the value of the matching claimline modifier as it existed before adjudication if still set to the default of ZZ."
                   },
                   {
                     "name": "modcode5preadjud",
@@ -5602,7 +5602,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing modcode5preadjud"
+                    "description": "Stores the value of the matching claimline modifier as it existed before adjudication if still set to the default of ZZ."
                   },
                   {
                     "name": "Usemanualcontrac_x000D_\ntprice",
@@ -5629,7 +5629,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing diag5"
+                    "description": "5th diagnosis code"
                   },
                   {
                     "name": "diag6",
@@ -5638,7 +5638,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing diag6"
+                    "description": "6th diagnosis code"
                   },
                   {
                     "name": "diag7",
@@ -5647,7 +5647,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing diag7"
+                    "description": "7th diagnosis code"
                   },
                   {
                     "name": "diag8",
@@ -5656,7 +5656,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing diag8"
+                    "description": "8th diagnosis code"
                   },
                   {
                     "name": "overridecontractpaid",
@@ -5665,7 +5665,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier for overridecontractpa"
+                    "description": "Overriden contract paid amount"
                   },
                   {
                     "name": "overridecontractid",
@@ -5674,7 +5674,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for overridecontract"
+                    "description": "Overridden contract id - REFERENCES contract (contractid)"
                   },
                   {
                     "name": "overridetermcontractid",
@@ -5701,7 +5701,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing differentialamt"
+                    "description": "2.4 (065): Amount of the differential adjustment"
                   },
                   {
                     "name": "startingcontractamt",
@@ -5710,7 +5710,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing startingcontractamt"
+                    "description": "2.4 (065): Amount of provider contract before any adjustments are applied"
                   },
                   {
                     "name": "initialclaimid",
@@ -5719,7 +5719,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for initialclaim"
+                    "description": "2.4 (135): The initial claim identifer used to create this service line"
                   },
                   {
                     "name": "initialclaimline",
@@ -5728,7 +5728,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "X",
-                    "description": "Value representing initialclaimline"
+                    "description": "2.4 (135): The initial claim line used to create this service line"
                   },
                   {
                     "name": "umapprovedunits",
@@ -5737,7 +5737,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing umapprovedunits"
+                    "description": "2.6 (010): Stores the number of UM Document approved service units at the time of claim adjudication"
                   },
                   {
                     "name": "memrespcharges",
@@ -5746,7 +5746,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing memrespcharges"
+                    "description": "2.6 (051): If the member responsibility has been calculated based on charges the this field with contain a value of Y."
                   },
                   {
                     "name": "externalcontractamt",
@@ -5755,7 +5755,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing externalcontractamt"
+                    "description": "2.6 (057): The externally priced contract amount"
                   },
                   {
                     "name": "internalcontractamt",
@@ -5764,7 +5764,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing internalcontractamt"
+                    "description": "2.6 (057): The internally priced contract amount"
                   },
                   {
                     "name": "copaygroupid",
@@ -5773,7 +5773,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "X",
-                    "description": "Identifier for copaygroup"
+                    "description": "2.6 (070): References copaygroup. Stores the copaygroupid on the claimline if the copay on the claim line is applied using a copay preference group."
                   },
                   {
                     "name": "hraeligible",
@@ -5854,7 +5854,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing rebillamt"
+                    "description": "Rebill amount for the claim line. It is based on 100% of the fee schedule defined on the program for rebill carrier and is an amount field and not a percentage of a fee."
                   },
                   {
                     "name": "anesminutes",
@@ -5863,7 +5863,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing anesminutes"
+                    "description": "Number of anesthesia minutes passed in from an imported claim or entered during manual claim entry. On manual claim entry either a datetime span (converted to minutes by app) or the actual minutes can be entered."
                   },
                   {
                     "name": "hasndccode",
@@ -5872,7 +5872,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing hasndccode"
+                    "description": "Indicates if this claimdetail records has NDC Code records that are attached to it."
                   },
                   {
                     "name": "dtlmissinginfo",
@@ -5881,7 +5881,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing dtlmissinginfo"
+                    "description": "Indicates if the claim line is missing information that stopped the claim line from adjudicating successfully."
                   },
                   {
                     "name": "paylimitid",
@@ -5953,7 +5953,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Value representing icdversion"
+                    "description": "Diagnosis ICD Version, '9' for ICD-9 and '0' for ICD-10"
                   },
                   {
                     "name": "CoverageCodeId",
@@ -6167,7 +6167,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "X",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Primary key of the referral table"
                   },
                   {
                     "name": "sequence",
@@ -6176,7 +6176,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "X",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "unique sequence number to identify services for authorization"
                   },
                   {
                     "name": "codeid",
@@ -6185,7 +6185,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Approved service code either CPT or Revenue code"
                   },
                   {
                     "name": "medcoverage",
@@ -6194,7 +6194,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Flag determining if this service gives medical coverage"
                   },
                   {
                     "name": "carelevel",
@@ -6203,7 +6203,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Indicates carelevel of this service"
                   },
                   {
                     "name": "servcategory",
@@ -6212,7 +6212,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Service Category for the authservice line"
                   },
                   {
                     "name": "status",
@@ -6221,7 +6221,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Status of the entry in authservice"
                   },
                   {
                     "name": "xreasoncode",
@@ -6230,7 +6230,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "NO LONGER USED - old reasoncode"
                   },
                   {
                     "name": "overridecontract",
@@ -6239,7 +6239,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Indicates that a contract for cares services is in place that overrides the current contract"
                   },
                   {
                     "name": "totalunits",
@@ -6248,7 +6248,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Total units for the authservice entry"
                   },
                   {
                     "name": "usedunits",
@@ -6257,7 +6257,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Number of units used"
                   },
                   {
                     "name": "actualunits",
@@ -6266,7 +6266,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "No of units used - overrides totalunits if loaded"
                   },
                   {
                     "name": "tier",
@@ -6275,7 +6275,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "tier level for approved service."
                   },
                   {
                     "name": "dosdate",
@@ -6284,7 +6284,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date of Service"
                   },
                   {
                     "name": "globalday",
@@ -6293,7 +6293,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Number of days a member can come back for a service related to this service and still count against initial visit"
                   },
                   {
                     "name": "reqcodeid",
@@ -6302,7 +6302,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Indicates if the authservice code is required for the authservice line"
                   },
                   {
                     "name": "catid",
@@ -6311,7 +6311,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Category ID. Primary key of the svccategory table."
                   },
                   {
                     "name": "subcatid",
@@ -6320,7 +6320,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Service sub category ID. Along with catid make up the primary key of the svcsubcategory table."
                   },
                   {
                     "name": "svcgroupid",
@@ -6329,7 +6329,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Service Group ID. Along with catid and subcatid make up the primary key of the svccatgroup table."
                   },
                   {
                     "name": "reqcatid",
@@ -6338,7 +6338,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Requested category ID - approving service group on authorization."
                   },
                   {
                     "name": "reqsubcatid",
@@ -6347,7 +6347,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Requested sub category ID - approving service group on authorization"
                   },
                   {
                     "name": "reqsvcgrpid",
@@ -6356,7 +6356,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Requested service group ID - approving service group on authorization."
                   },
                   {
                     "name": "createid",
@@ -6365,7 +6365,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Id of the user who created this record"
                   },
                   {
                     "name": "createdate",
@@ -6374,7 +6374,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date this record was created"
                   },
                   {
                     "name": "updateid",
@@ -6383,7 +6383,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Id of the user who last updated this record"
                   },
                   {
                     "name": "lastupdate",
@@ -6392,7 +6392,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date this record was last updated"
                   },
                   {
                     "name": "modcode",
@@ -6401,7 +6401,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Modifier code"
                   },
                   {
                     "name": "modcode2",
@@ -6410,7 +6410,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "2nd Modifier code"
                   },
                   {
                     "name": "toothnumber",
@@ -6419,7 +6419,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Dental - tooth number for service selected."
                   },
                   {
                     "name": "toothsurface",
@@ -6428,7 +6428,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Tooth surface description that is covered under this service"
                   },
                   {
                     "name": "approvedcodeid",
@@ -6437,7 +6437,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Approved code for service line."
                   },
                   {
                     "name": "modcode3",
@@ -6446,7 +6446,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "3rd Modifier code"
                   },
                   {
                     "name": "modcode4",
@@ -6455,7 +6455,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "4th Modifier code"
                   },
                   {
                     "name": "modcode5",
@@ -6464,7 +6464,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "5th Modifier code"
                   },
                   {
                     "name": "globaltemplate",
@@ -6473,7 +6473,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "X",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Determines if the service comes from an authorization template or referral."
                   },
                   {
                     "name": "negotiatedcontract",
@@ -6482,7 +6482,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "no definition supplied in QNXT"
                   },
                   {
                     "name": "negotiatedterm",
@@ -6491,7 +6491,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "no definition supplied in QNXT"
                   },
                   {
                     "name": "negotiatedvalue",
@@ -6500,7 +6500,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Indicates the negotiated value (in either dollars or percentage) based on the term"
                   },
                   {
                     "name": "ispatientresp",
@@ -6509,7 +6509,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Determines patient responsibility on negotiated auth contracts."
                   },
                   {
                     "name": "ndcprodname",
@@ -6518,7 +6518,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Holds the product name of the NDC group that was selected."
                   },
                   {
                     "name": "appndcgroupname",
@@ -6527,7 +6527,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Holds the approved NDC group name when the requested NDC group is downcoded/upcoded"
                   },
                   {
                     "name": "interqualid",
@@ -6536,7 +6536,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Inter Qual Identifier"
                   },
                   {
                     "name": "meddirectorid",
@@ -6545,7 +6545,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Identifier for a medical director REFERENCES entity(entid)"
                   },
                   {
                     "name": "requestedunits",
@@ -6554,7 +6554,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Number of requested units from the 278 transaction"
                   },
                   {
                     "name": "svcprocamount",
@@ -6563,7 +6563,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "The dollar amount that is required to perform this procedure"
                   },
                   {
                     "name": "initialreferralid",
@@ -6572,7 +6572,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "2.4 (135): The one of the initial referral template PK columns used to identify the referral that created this service line"
                   },
                   {
                     "name": "initialreferralseq",
@@ -6581,7 +6581,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "2.4 (135): The one of the initial referral template PK columns used to identify the referral that created this service line"
                   },
                   {
                     "name": "detailsourcetype",
@@ -6590,7 +6590,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "2.4 (135): The source type for a system generated referral service line. Values are B: Rebundling and BLANK"
                   },
                   {
                     "name": "initialreferraltemplate",
@@ -6599,7 +6599,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "2.4 (135): The one of the initial referral template PK columns used to identify the referral that created this service line"
                   },
                   {
                     "name": "dentalareaid",
@@ -6608,7 +6608,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "no definition supplied in QNXT"
                   },
                   {
                     "name": "downcodesurfacecount",
@@ -6617,7 +6617,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "no definition supplied in QNXT"
                   },
                   {
                     "name": "DeterminationDate",
@@ -6626,7 +6626,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Determination date for each UM service line"
                   },
                   {
                     "name": "H278RecordSequence",
@@ -6635,7 +6635,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "HIPAA 278 record sequence"
                   },
                   {
                     "name": "location",
@@ -6644,7 +6644,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Value representing location"
                   },
                   {
                     "name": "Frequency",
@@ -6653,7 +6653,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Value representing frequency"
                   },
                   {
                     "name": "EffDate",
@@ -6662,7 +6662,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Effective date of this record"
                   },
                   {
                     "name": "TermDate",
@@ -6671,7 +6671,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Term date of this record"
                   },
                   {
                     "name": "ReqEffDate",
@@ -6742,7 +6742,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "X",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Primary key for the enrollcoverage table"
                   },
                   {
                     "name": "enrollid",
@@ -6751,7 +6751,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Primary key from the enrollkeys table"
                   },
                   {
                     "name": "ratecode",
@@ -6760,7 +6760,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Ratecode (group num) assigned for the coverage"
                   },
                   {
                     "name": "coveragecodeid",
@@ -6769,7 +6769,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Primary key from the coveragecode table"
                   },
                   {
                     "name": "effdate",
@@ -6778,7 +6778,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Effective date of the record"
                   },
                   {
                     "name": "termdate",
@@ -6787,7 +6787,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Termination date of the record"
                   },
                   {
                     "name": "createid",
@@ -6796,7 +6796,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Id of the user who created this record"
                   },
                   {
                     "name": "createdate",
@@ -6805,7 +6805,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date this record was created"
                   },
                   {
                     "name": "updateid",
@@ -6814,7 +6814,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Id of the user who last updated this record"
                   },
                   {
                     "name": "lastupdate",
@@ -6823,7 +6823,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date this record was last updated"
                   }
                 ]
               },
@@ -6840,7 +6840,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "X",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Primary key of the referral table"
                   },
                   {
                     "name": "enrollid",
@@ -6849,7 +6849,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Primary key of the enrollment table"
                   },
                   {
                     "name": "memid",
@@ -6858,7 +6858,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Primary key of the member table"
                   },
                   {
                     "name": "servicecode",
@@ -6867,7 +6867,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "The services that can be performed. Ties to the authcode table to identify the template."
                   },
                   {
                     "name": "COB",
@@ -6876,7 +6876,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "referto",
@@ -6885,7 +6885,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "The provider that is being referred to"
                   },
                   {
                     "name": "effdate",
@@ -6894,7 +6894,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Effective date of record"
                   },
                   {
                     "name": "referfrom",
@@ -6903,7 +6903,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "The provider that request the referral. Typically the primary care provider"
                   },
                   {
                     "name": "emergency",
@@ -6912,7 +6912,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Emergency Authorization flag"
                   },
                   {
                     "name": "authorizationid",
@@ -6921,7 +6921,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Authorization identifier for the referral. Typically number given to provider to reference the referral 2.6 (005): Expand to char(30)"
                   },
                   {
                     "name": "lastupdate",
@@ -6930,7 +6930,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date this record was last updated"
                   },
                   {
                     "name": "referraldate",
@@ -6939,7 +6939,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date of referral issue"
                   },
                   {
                     "name": "transferinout",
@@ -6948,7 +6948,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "1 - Transfer In , 2 - Transfer Out"
                   },
                   {
                     "name": "admitphys",
@@ -6957,7 +6957,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Admitting physician"
                   },
                   {
                     "name": "disdiagnosis",
@@ -6966,7 +6966,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "ICD9 diagnosis at the time of discharge"
                   },
                   {
                     "name": "admitdate",
@@ -6975,7 +6975,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Admission date for entry in referral"
                   },
                   {
                     "name": "numappt",
@@ -6984,7 +6984,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "dischargedate",
@@ -6993,7 +6993,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date of discharge"
                   },
                   {
                     "name": "tier1",
@@ -7002,7 +7002,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "tier2",
@@ -7011,7 +7011,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "staytype1",
@@ -7020,7 +7020,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "termdate",
@@ -7029,7 +7029,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Termdate of this record"
                   },
                   {
                     "name": "staytype2",
@@ -7038,7 +7038,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "issueinitials",
@@ -7047,7 +7047,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Auth Issuing - User Initials"
                   },
                   {
                     "name": "actual1",
@@ -7056,7 +7056,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "actual2",
@@ -7065,7 +7065,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "actualstay1",
@@ -7074,7 +7074,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "actualstay2",
@@ -7083,7 +7083,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "daysdenied",
@@ -7092,7 +7092,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "deferreddliab",
@@ -7101,7 +7101,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "reinsurance",
@@ -7110,7 +7110,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Third Party Liability"
                   },
                   {
                     "name": "costest",
@@ -7119,7 +7119,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "perdiemest",
@@ -7128,7 +7128,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Per diem estimate on the referral"
                   },
                   {
                     "name": "accchg",
@@ -7137,7 +7137,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "createdate",
@@ -7146,7 +7146,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date this record was created"
                   },
                   {
                     "name": "createid",
@@ -7155,7 +7155,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Id of the user who created this record"
                   },
                   {
                     "name": "updateid",
@@ -7164,7 +7164,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Id of the user who last updated this record"
                   },
                   {
                     "name": "diagnosis",
@@ -7173,7 +7173,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "admit",
@@ -7182,7 +7182,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Admit flag"
                   },
                   {
                     "name": "status",
@@ -7191,7 +7191,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Status of the entry in referral"
                   },
                   {
                     "name": "numremappt",
@@ -7200,7 +7200,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Not Used"
                   },
                   {
                     "name": "acuity",
@@ -7209,7 +7209,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Urgent, Emergency, and Elective acuity type"
                   },
                   {
                     "name": "attprovid",
@@ -7218,7 +7218,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Attending provider identifier. Foreign key to provider"
                   },
                   {
                     "name": "admtprovid",
@@ -7227,7 +7227,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Admitting provider id"
                   },
                   {
                     "name": "self",
@@ -7236,7 +7236,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Is the referral a self referral flag"
                   },
                   {
                     "name": "asstsurgeon",
@@ -7245,7 +7245,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Provider ID of Assistant Surgeon"
                   },
                   {
                     "name": "authstatus",
@@ -7254,7 +7254,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Status of the authorization"
                   },
                   {
                     "name": "hasassist",
@@ -7263,7 +7263,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "has Assistant Surgeon"
                   },
                   {
                     "name": "receiptdate",
@@ -7272,7 +7272,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Not Yet Used - Authorization Receipt Date"
                   },
                   {
                     "name": "seendate",
@@ -7281,7 +7281,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Not Yet Used - Date Member was in PCP office"
                   },
                   {
                     "name": "userid",
@@ -7290,7 +7290,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Id of user that entered referral"
                   },
                   {
                     "name": "outofarea",
@@ -7299,7 +7299,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Flag to indicate if it is an out of area referral"
                   },
                   {
                     "name": "ispredetermination",
@@ -7308,7 +7308,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Flag to indicate auth was created in predetermination."
                   },
                   {
                     "name": "paytoaffiliationid",
@@ -7317,7 +7317,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Providers pay to affiliation id"
                   },
                   {
                     "name": "hasdocuments",
@@ -7326,7 +7326,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Flag for auth has documents attached"
                   },
                   {
                     "name": "isautodischargedate",
@@ -7335,7 +7335,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Indicates if the dischargedate field is the result of automatic calculation or was it overriden by a manual entry"
                   },
                   {
                     "name": "referfromnetwork",
@@ -7344,7 +7344,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Network (provid) being referred from"
                   },
                   {
                     "name": "pendclaims",
@@ -7353,7 +7353,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Indicates whether the claim(s) will pend when this authorization is used"
                   },
                   {
                     "name": "refertoprovtype",
@@ -7362,7 +7362,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Primary key from the providertype table"
                   },
                   {
                     "name": "refertopar",
@@ -7371,7 +7371,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Specifies the par status of the actual referred provider"
                   },
                   {
                     "name": "refertolocation",
@@ -7380,7 +7380,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Specifies the actual HCFA location for the professional services"
                   },
                   {
                     "name": "isglobal",
@@ -7389,7 +7389,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Determines if the authorization is a global authorization."
                   },
                   {
                     "name": "accidentcause",
@@ -7398,7 +7398,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Cause of accident: (A)uto, (E)mployment, (O)ther, ' '"
                   },
                   {
                     "name": "accidentdate",
@@ -7407,7 +7407,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date accident occurred"
                   },
                   {
                     "name": "investigation",
@@ -7416,7 +7416,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Is an investigation required"
                   },
                   {
                     "name": "lmpdate",
@@ -7425,7 +7425,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "last menstrual period date"
                   },
                   {
                     "name": "estdeldate",
@@ -7434,7 +7434,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Estimated date of delivery"
                   },
                   {
                     "name": "surgerydatetime",
@@ -7443,7 +7443,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Surgery date"
                   },
                   {
                     "name": "decrementtype",
@@ -7452,7 +7452,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Used by adjudication to determin how the units will be decremented from the claim SVC - Servide DOS - Date of Service PRV - Date of Service by Provider"
                   },
                   {
                     "name": "surgerysuggested",
@@ -7461,7 +7461,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Indicates if surgery was suggested for this referral"
                   },
                   {
                     "name": "appeal",
@@ -7470,7 +7470,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Indicates if this referral is an appeal"
                   },
                   {
                     "name": "appealdate",
@@ -7479,7 +7479,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date of the appeal"
                   },
                   {
                     "name": "reviewtype",
@@ -7488,7 +7488,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Determines type of review document: A-Authorization, C-Certification or R-Referral"
                   },
                   {
                     "name": "beneprefid",
@@ -7497,7 +7497,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Primary key of the benepreference table"
                   },
                   {
                     "name": "appealoutcome",
@@ -7506,7 +7506,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Outcome of the appeal"
                   },
                   {
                     "name": "penaltyapplies",
@@ -7515,7 +7515,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Determines if non-compliance penalties apply to claims that use this authorization"
                   },
                   {
                     "name": "retroreview",
@@ -7524,7 +7524,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Determines if authorization is retrospective"
                   },
                   {
                     "name": "reqlos",
@@ -7533,7 +7533,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Requested length of stay"
                   },
                   {
                     "name": "actuallos",
@@ -7542,7 +7542,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Actual length of stay"
                   },
                   {
                     "name": "processlogid",
@@ -7551,7 +7551,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Stores the processlogid of the record in the ProcessLogHeader table in the planintegration database that is generated when the 278 transaction is processed by BizTalk"
                   },
                   {
                     "name": "source",
@@ -7560,7 +7560,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Identifies the source the authorization was generated from Q = QNXT/QMACS, H = HIPAA2.4 (129)C = Case Manager Module 3.4 SP05 (TZIX PDR 02.B) W = HealthWeb"
                   },
                   {
                     "name": "h278responseneeded",
@@ -7569,7 +7569,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Determines whether a 278 response is needed for an authorization received via HIPAA (Y/N)"
                   },
                   {
                     "name": "h278responsesent",
@@ -7578,7 +7578,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Indicates the date/time a response was sent for an authorization received via HIPAA"
                   },
                   {
                     "name": "h278processlogdetailid",
@@ -7587,7 +7587,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Identifier from the processlogdetail table that this record is tied to"
                   },
                   {
                     "name": "h278responsestatus",
@@ -7596,7 +7596,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "The current status of the 278 response: (F)inal, (I)ntermediate, (N)one"
                   },
                   {
                     "name": "reqpatinfo",
@@ -7605,7 +7605,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Indicates if additional information has been requested"
                   },
                   {
                     "name": "h278haschanges",
@@ -7614,7 +7614,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Indicates whether the requested data (from 278 transaction) and the current data differs (Y/N)"
                   },
                   {
                     "name": "dispositionid",
@@ -7623,7 +7623,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Foreign key to umdisposition. The disposition of the utilization management document."
                   },
                   {
                     "name": "priority",
@@ -7632,7 +7632,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Identifies UM documents that are flagged as High Priority by the user. Manually maintained by the user. Values allowed are H = High or NULL (NOTE: NULL is treated as BLANK)"
                   },
                   {
                     "name": "highlight",
@@ -7641,7 +7641,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "highlight"
                   },
                   {
                     "name": "nextreviewdate",
@@ -7650,7 +7650,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date UM Document needs to be reviewed."
                   },
                   {
                     "name": "DiagnosisIcdVersion",
@@ -7659,7 +7659,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Value representing diagnosisicdversion"
                   },
                   {
                     "name": "DisDiagnosisIcdVersion",
@@ -7668,7 +7668,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Value representing disdiagnosisicdversion"
                   },
                   {
                     "name": "MergeFromReferralId",
@@ -7677,7 +7677,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Identifier for mergefromreferral"
                   },
                   {
                     "name": "IsConsolidated",
@@ -7686,7 +7686,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Date or audit value from live SQL Server schema"
+                    "description": "Date related to isconsolidated"
                   },
                   {
                     "name": "ServiceAffilId",
@@ -7695,7 +7695,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Identifier for serviceaffil"
                   },
                   {
                     "name": "DefaultContractId",
@@ -7704,7 +7704,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Identifier or code from live SQL Server schema"
+                    "description": "Identifier for defaultcontract"
                   },
                   {
                     "name": "TOTALBUDGET",
@@ -7713,7 +7713,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Value representing totalbudget"
                   },
                   {
                     "name": "USEDBUDGET",
@@ -7722,7 +7722,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "No",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Value representing usedbudget"
                   },
                   {
                     "name": "IsBundled",
@@ -7731,7 +7731,7 @@ export const SCHEMA_CONFIG = {
                     "nullable": "Yes",
                     "pk": "",
                     "fk": "",
-                    "description": "Column pulled from live SQL Server schema"
+                    "description": "Value representing isbundled"
                   },
                   {
                     "name": "trackingnumber",
@@ -10017,38 +10017,15 @@ export const SCHEMA_CONFIG = {
               {
                 "name": "EVENT",
                 "coverage": "in_memory",
-                "reason": "Logical non-executable DataTable dataset using the authoritative HRX dbo.EVENT columns copied and accessed directly by the RxPOS DUR path",
+                "reason": "Logical non-executable DTO dataset derived from RxPOS.Schemas.Shared.RequestModels.DUREventDTO",
                 "ddlFile": "in_memory_schema\\InMemory.dbo.EVENT.sql",
                 "columns": [
-                  ["ICN", "varchar", "50", "Yes"],
-                  ["Data_Base_Ind", "varchar", "50", "Yes"],
-                  ["Dur_Conflict_Code", "varchar", "50", "Yes"],
-                  ["Dur_Msg", "varchar", "128", "Yes"],
-                  ["Other_Pharmacy_Ind", "varchar", "50", "Yes"],
-                  ["Other_Prescriber_Ind", "varchar", "50", "Yes"],
-                  ["Overlap_Days", "varchar", "50", "Yes"],
-                  ["Physician_Prescriber", "varchar", "50", "Yes"],
-                  ["Prev_Fill_Date", "varchar", "50", "Yes"],
-                  ["Prev_Fill_Qty", "varchar", "50", "Yes"],
-                  ["Prev_Icn", "varchar", "50", "Yes"],
-                  ["Prev_Ndc", "varchar", "50", "Yes"],
-                  ["Prev_Prov_Id", "varchar", "50", "Yes"],
-                  ["Recip_Id_Orig", "varchar", "50", "Yes"],
-                  ["Prev_Rx_Nbr", "varchar", "50", "Yes"],
-                  ["Severity_Level", "varchar", "50", "Yes"],
-                  ["Severity_Ranking_Code", "varchar", "50", "Yes"],
-                  ["Dur_Overflow_Flag", "varchar", "50", "Yes"],
-                  ["Curr_Ndc", "varchar", "50", "Yes"],
-                  ["Curr_Gcn", "varchar", "50", "Yes"],
-                  ["Curr_Gcnseqno", "varchar", "50", "Yes"],
-                  ["Curr_Metric_Qty", "varchar", "50", "Yes"],
-                  ["Curr_Metric_Dqty", "varchar", "50", "Yes"],
-                  ["Curr_Skey", "varchar", "50", "Yes"],
-                  ["Event_Inhibit", "varchar", "50", "Yes"],
-                  ["Hic_Current", "varchar", "50", "Yes"],
-                  ["Hic_History", "varchar", "50", "Yes"],
-                  ["Extra_Dur_Info", "varchar", "128", "Yes"],
-                  ["Ndc_Index", "int", "", "No"]
+                  ["SeverityRankingCode", "int", "", "No"],
+                  ["SeverityLevel", "nvarchar", "max", "Yes"],
+                  ["ConflictCode", "nvarchar", "max", "Yes"],
+                  ["ICN", "nvarchar", "max", "Yes"],
+                  ["PrevICN", "nvarchar", "max", "Yes"],
+                  ["NdcIndex", "int", "", "No"]
                 ].map(([name, type, length, nullable]) => ({
                   name,
                   type,
@@ -10056,7 +10033,7 @@ export const SCHEMA_CONFIG = {
                   nullable,
                   pk: "",
                   fk: "",
-                  description: "Authoritative HRX dbo.EVENT DataTable column"
+                  description: "DTO-derived property from DUREventDTO"
                 }))
               },
               {
