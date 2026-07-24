@@ -11,25 +11,26 @@ with an Address_ prefix. This is not a physical SQL Server table and must not be
 executed through /execute_query. SQL types preserve workbook C# types/nullability;
 unspecified string lengths use nvarchar(max).
 */
+/* Column description source: IR_DTO_schema.xlsx, DTO Schema tab. Only nonblank authoritative descriptions are included. */
 CREATE TABLE [InMemory].[dbo].[MEMBER_ATTRIBUTE]
 (
-    [MemberID] nvarchar(max) NULL,
-    [CardholderID] nvarchar(max) NULL,
-    [FirstName] nvarchar(max) NULL,
-    [LastName] nvarchar(max) NULL,
-    [BirthDate] date NULL,
-    [DeathDate] date NULL,
-    [Gender] nvarchar(max) NULL,
-    [Phone] nvarchar(max) NULL,
-    [AgeInMonths] int NOT NULL,
-    [AgeInYears] int NOT NULL,
-    [Address_Id] int NOT NULL,
-    [Address_Address1] nvarchar(max) NULL,
-    [Address_Address2] nvarchar(max) NULL,
-    [Address_City] nvarchar(max) NULL,
-    [Address_StateProvince] nvarchar(max) NULL,
-    [Address_PostalCode] nvarchar(max) NULL,
-    [Address_CountryCode] nvarchar(max) NULL,
-    [IsInLTC] bit NULL,
+    [MemberID] nvarchar(max) NULL, -- Unique member id
+    [CardholderID] nvarchar(max) NULL, -- Card holder id
+    [FirstName] nvarchar(max) NULL, -- First name of member
+    [LastName] nvarchar(max) NULL, -- Last name of member
+    [BirthDate] date NULL, -- DOB of member
+    [DeathDate] date NULL, -- Date of Death of member
+    [Gender] nvarchar(max) NULL, -- Gender of member
+    [Phone] nvarchar(max) NULL, -- Phone number of member
+    [AgeInMonths] int NOT NULL, -- Member's age in months
+    [AgeInYears] int NOT NULL, -- Member's age in years
+    [Address_Id] int NOT NULL, -- Id of the address from db
+    [Address_Address1] nvarchar(max) NULL, -- First line of address
+    [Address_Address2] nvarchar(max) NULL, -- Second line of address
+    [Address_City] nvarchar(max) NULL, -- City name
+    [Address_StateProvince] nvarchar(max) NULL, -- State Name
+    [Address_PostalCode] nvarchar(max) NULL, -- Zip code
+    [Address_CountryCode] nvarchar(max) NULL, -- Country Code
+    [IsInLTC] bit NULL, -- Is member in LTC, Used by Claim Reversal
     [EthnicID] nvarchar(max) NULL
 );

@@ -11,6 +11,45 @@ test("returns the default SQL Data Agent schema config", () => {
   assert.ok(config.databases.length > 0);
 });
 
+test("represents EVENT with the DUREventDTO properties", () => {
+  const config = getSchemaConfig();
+  const inMemory = config.databases.find(({ name }) => name === "InMemory");
+  const dbo = inMemory.schemas.find(({ name }) => name === "dbo");
+  const event = dbo.tables.find(({ name }) => name === "EVENT");
+
+  assert.equal(event.coverage, "in_memory");
+  assert.deepEqual(
+    event.columns.map(({ name }) => name),
+    [
+      "SeverityRankingCode",
+      "SeverityLevel",
+      "ConflictCode",
+      "ICN",
+      "PrevICN",
+      "NdcIndex",
+    ],
+  );
+});
+
+test("represents plandata tables with enriched column descriptions", () => {
+  const config = getSchemaConfig();
+  const plandata = config.databases.find(
+    ({ name }) => name === "plandata_rx_production",
+  );
+  const dbo = plandata.schemas.find(({ name }) => name === "dbo");
+  const claim = dbo.tables.find(({ name }) => name === "claim");
+  const coverage = dbo.tables.find(({ name }) => name === "enrollcoverage");
+
+  assert.match(
+    claim.columns.find(({ name }) => name === "claimid").description,
+    /Primary key of the claim table/,
+  );
+  assert.equal(
+    coverage.columns.find(({ name }) => name === "ratecode").description,
+    "Ratecode (group num) assigned for the coverage",
+  );
+});
+
 test("lists the full derived MVP SQL tables shown in the schema sidebar", () => {
   const tables = listSchemaTables("MDWise");
 

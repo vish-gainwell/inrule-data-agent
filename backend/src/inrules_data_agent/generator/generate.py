@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from sqlglot import exp
 
+from ..retrieval.qdrant_schema import retrieve_schema_ddls
+
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 _SCHEMA_DIR = Path(__file__).resolve().parent.parent / "schema"
@@ -82,7 +84,11 @@ Rules:
    - RTRIM(memid), RTRIM(provid) for member and provider ID comparisons
 
 7. Hardcode any other literal values specified in the business requirement.
-8. Default to count(*) unless the requirement specifies a different output column.
+8. Determine the output shape from the CURRENT DATA QUERY BUSINESS MEANING before writing SQL:
+   - If it asks for a count, existence check, or count comparison, return COUNT(*) or the requested aggregate.
+   - If it asks to return values, identifiers, codes, columns, records, or details, project those exact mapped columns. Never replace them with COUNT(*).
+   - If it asks for multiple attributes per record, project only those requested attributes, with clear aliases when needed by the stated output.
+   - Do not add extra output columns merely because they are available in the selected table.
 9. Return ONLY the raw SQL query. No explanation. No markdown. No code fences.
 10. Preserve every explicit filter in the business requirement. If it says
     resubclaimid <> '' then use <> ''; do not convert it to = ''.
@@ -106,12 +112,25 @@ Rules:
     requested value, or use a placeholder as a column name.
 15. Match the requested output shape exactly. If the requirement asks to return
     values or identifiers, select those columns; do not replace them with COUNT(*).
-16. The rule description and acceptance criteria are context only. Use them to
-    resolve terminology and dependencies, but do not add a table, predicate,
-    literal, or output that is not required by the current step business meaning.
-17. If a logical concept, requested output, filter, or identifier cannot be
-    mapped unambiguously to columns in one provided physical table, return exactly
-    NO_SUPPORTED_QUERY instead of guessing.
+16. Apply this information hierarchy strictly:
+    a. The current data-query business meaning is authoritative for the exact
+       table retrieval, filters, runtime inputs, date window, and output shape.
+    b. Acceptance criteria explain the surrounding rule flow and may clarify the
+       intended meaning of a term used in the current task. Use only the portions
+       that directly clarify that current task; do not import other acceptance-
+       criteria steps, branches, filters, literals, or tables.
+    c. The rule description provides broad business purpose only. It must never
+       override the current task or introduce retrieval logic by itself.
+    Before returning SQL, verify every projected column and WHERE predicate is
+    required by the current business meaning or is an unambiguous clarification
+    of a term in that meaning from the acceptance criteria.
+17. Never guess semantic mappings. In particular, do not infer that a status-like,
+    authorization-like, edit-like, paid-date, form-type, or prior-authorization
+    column proves paid/non-reversed/reversal/indicator semantics unless the DDL
+    description or current task and acceptance criteria establish that mapping.
+18. If a logical concept, requested output, filter, runtime input, or identifier
+    cannot be mapped unambiguously to columns in one provided table, return exactly
+    NO_SUPPORTED_QUERY instead of approximating it, dropping it, or adding a proxy.
 """.strip()
 
 _UNSAFE_SQL_RE = re.compile(
@@ -158,7 +177,11 @@ def generate_queries_for_step(
     """
 
     try:
-        ddl_texts = select_ddls(business_meaning)
+        ddl_texts = select_ddls(
+            business_meaning,
+            description=description,
+            acceptance_criteria=acceptance_criteria,
+        )
         if not ddl_texts:
             print("[generate_queries_for_step] no DDL context selected")
             return []
@@ -198,6 +221,7 @@ def generate_queries_for_step(
                     continue
 
                 invalid_artifacts = _find_invalid_sql_artifacts(sql)
+                invalid_artifacts.extend(_find_output_shape_artifacts(sql, business_meaning))
                 if not invalid_artifacts:
                     return [sql]
 
@@ -224,17 +248,32 @@ def generate_queries_for_step(
         return []
 
 
-def select_ddls(business_meaning: str) -> list[str]:
-    """Return every packaged DDL plus any explicitly referenced live-only tables.
+def select_ddls(
+    business_meaning: str,
+    description: str | None = None,
+    acceptance_criteria: str | list[str] | None = None,
+) -> list[str]:
+    """Retrieve relevant schemas, falling back safely to the packaged catalog.
 
-    Sending the complete packaged catalog is the pre-RAG baseline: adding a DDL file
-    makes it available automatically without maintaining table-to-keyword mappings.
-    Live lookups remain a temporary bridge for known tables that are not packaged yet.
+    Qdrant retrieval is opt-in through QDRANT_ENABLED. The incoming business meaning
+    remains authoritative while ADO description and acceptance criteria are labeled
+    supporting context for runtime retrieval. If retrieval is disabled or fails, the
+    complete packaged catalog preserves the current behavior.
     """
 
     text = business_meaning.lower()
-    ddl_texts = _read_all_in_memory_schema_files()
-    ddl_texts.extend(_read_all_schema_files())
+    try:
+        ddl_texts = retrieve_schema_ddls(
+            business_meaning,
+            description=description,
+            acceptance_criteria=acceptance_criteria,
+        )
+    except Exception as exc:
+        print(f"[select_ddls] Qdrant retrieval failed; using packaged catalog: {exc}")
+        ddl_texts = []
+    if not ddl_texts:
+        ddl_texts = _read_all_in_memory_schema_files()
+        ddl_texts.extend(_read_all_schema_files())
 
     selected_live_tables: list[tuple[str, str, str]] = []
     for keyword, table_ref in _LIVE_TABLE_KEYWORDS:
@@ -537,6 +576,26 @@ def _build_column_repair_feedback(invalid_columns: list[str]) -> str:
     )
 
 
+def _find_output_shape_artifacts(sql: str, business_meaning: str) -> list[str]:
+    asks_for_values = re.search(
+        r"\breturn(?:s|ing)?\b[^.\n]{0,160}\b(?:values?|identifiers?|codes?|"
+        r"columns?|records?|details?|rate-code\s+values?|indicator-code\s+values?|"
+        r"processor\s+control\s+number)\b",
+        business_meaning,
+        re.IGNORECASE,
+    )
+    explicitly_asks_for_count = re.search(
+        r"\b(?:count|how many|number of records|returns?\s+count)\b",
+        business_meaning,
+        re.IGNORECASE,
+    )
+    if asks_for_values and not explicitly_asks_for_count and re.search(
+        r"\bCOUNT\s*\(\s*(?:\*|1)\s*\)", sql, re.IGNORECASE
+    ):
+        return ["COUNT(*) output does not match requested values/identifiers/records"]
+    return []
+
+
 def _find_invalid_sql_artifacts(sql: str) -> list[str]:
     artifacts: list[str] = []
     if _MULTI_TABLE_OPERATION_RE.search(sql):
@@ -564,7 +623,9 @@ def _build_artifact_repair_feedback(invalid_artifacts: list[str]) -> str:
         "subquery that reads another table. Also remove impossible predicates, "
         "tautologies, column = same column conditions, and raw HrxRequest/ClaimRequest "
         "paths. Use only approved double-brace placeholders, preserve the business "
-        "requirement filters, and return only the corrected SELECT."
+        "requirement filters and exact requested output shape, and return only the "
+        "corrected SELECT. If the task asks for values, identifiers, codes, records, "
+        "or details, project them instead of returning COUNT(*)."
     )
 
 
