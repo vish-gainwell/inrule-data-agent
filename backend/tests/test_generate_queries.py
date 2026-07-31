@@ -29,7 +29,7 @@ def test_requires_data_query_filter_skips_false_steps():
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "test",
                 "steps": [
                     {
@@ -55,13 +55,17 @@ def test_requires_data_query_filter_skips_false_steps():
 
 def test_rule_context_is_passed_to_data_query_generation():
     with patch(
-        "inrules_data_agent.app.generate_queries_for_step",
-        return_value=[MOCK_SQL],
+        "inrules_data_agent.app.generate_query_result_for_step",
+        return_value={
+            "queries": [MOCK_SQL],
+            "failure_category": None,
+            "failure_reason": None,
+        },
     ) as generate_step:
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "3018",
                 "description": "CHIP eligibility rule",
                 "acceptance_criteria": [
@@ -86,8 +90,139 @@ def test_rule_context_is_passed_to_data_query_generation():
             "Member has an active CHIP rate code",
             "Member has no active CHIP indicator",
         ],
+        draft_mode=False,
     )
     assert response.json()["description"] == "CHIP eligibility rule"
+
+
+def test_uses_resolved_query_instruction_and_reports_unmatched_step():
+    with patch(
+        "inrules_data_agent.app.generate_query_result_for_step",
+        side_effect=[
+            {
+                "queries": [
+                    "SELECT [PARAMETER_VALUE] FROM [HRX].[dbo].[NDCParameters] WITH (NOLOCK) "
+                    "WHERE [PARAMETER_NAME] = 'Medicare_Age_Years'"
+                ],
+                "failure_category": None,
+                "failure_reason": None,
+            },
+            {
+                "queries": [],
+                "failure_category": "NO_SUPPORTED_GROUNDED_QUERY",
+                "failure_reason": "The task could not be mapped to a safe, grounded SELECT query.",
+            },
+        ],
+    ) as generate_step:
+        client = TestClient(create_app())
+        response = client.post(
+            "/generate_queries",
+            json={
+                "edit_id": "9999",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": "Determine the configured Medicare age threshold in years.",
+                        "requires_data_query": True,
+                        "entity_resolution": {
+                            "entities": [
+                                {
+                                    "data_query_instruction": "Query HRX.dbo.NDCParameters WHERE PARAMETER_NAME = 'Medicare_Age_Years' RETURNS PARAMETER_VALUE."
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "step_number": 2,
+                        "business_meaning": "Retrieve a value from an unsupported source.",
+                        "requires_data_query": True,
+                        "entity_resolution": {
+                            "entities": [
+                                {"data_query_instruction": "Query an unsupported source."}
+                            ]
+                        },
+                    },
+                ],
+            },
+        )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["step_queries"] == body["queries"]
+    assert body["step_queries"][0]["query_task"] == (
+        "Query HRX.dbo.NDCParameters WHERE PARAMETER_NAME = 'Medicare_Age_Years' RETURNS PARAMETER_VALUE."
+    )
+    assert body["step_queries"][0]["matched"] is True
+    assert body["step_queries"][1]["matched"] is False
+    assert body["unmatched_steps"] == [2]
+    assert body["inconclusive_steps"] == []
+    assert body["data_agent_status"] == "available"
+    assert body["data_agent_mode"] == "in_process"
+    assert body["generation_mode"] == "draft"
+    assert generate_step.call_count == 2
+
+
+def test_draft_mode_returns_review_only_candidate_when_business_validation_fails():
+    with patch(
+        "inrules_data_agent.generator.generate.select_ddls",
+        return_value=["CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int NULL);"],
+    ), patch(
+        "inrules_data_agent.generator.generate._call_openai",
+        return_value="SELECT Id FROM HRX.dbo.KnownTable WITH (NOLOCK) WHERE 1 = 1",
+    ):
+        client = TestClient(create_app())
+        response = client.post(
+            "/generate_queries",
+            json={
+                "edit_id": "draft-test",
+                "generation_mode": "draft",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": "Retrieve a value from an unresolved source.",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["step_queries"][0]
+    assert result["matched"] is True
+    assert result["validation_status"] == "DRAFT_REQUIRES_REVIEW"
+    assert result["publishable"] is False
+    assert result["failure_category"] == "VALIDATION_REJECTED"
+    assert result["queries"] == ["SELECT Id FROM HRX.dbo.KnownTable WITH (NOLOCK) WHERE 1 = 1"]
+
+
+def test_draft_mode_does_not_return_unknown_table_candidate():
+    with patch(
+        "inrules_data_agent.generator.generate.select_ddls",
+        return_value=["CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int NULL);"],
+    ), patch(
+        "inrules_data_agent.generator.generate._call_openai",
+        return_value="SELECT Id FROM HRX.dbo.UnknownTable WITH (NOLOCK)",
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "edit_id": "unknown-table",
+                "generation_mode": "draft",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": "Retrieve a value from an unresolved source.",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["step_queries"][0]
+    assert result["queries"] == []
+    assert result["matched"] is False
+    assert result["failure_category"] == "TABLE_NOT_IN_DDL"
+
+
 
 
 def test_prompt_separates_context_from_authoritative_query_task():
@@ -109,13 +244,21 @@ def test_prompt_separates_context_from_authoritative_query_task():
     assert "Never guess semantic mappings" in SYSTEM_PROMPT
 
 
+def test_prompt_uses_nolock_only_for_physical_tables():
+    assert "Never add NOLOCK to InMemory logical DTO table references." in SYSTEM_PROMPT
+    assert (
+        "Add WITH (NOLOCK) after every physical SQL Server table reference."
+        in SYSTEM_PROMPT
+    )
+
+
 def test_generate_queries_repairs_count_when_values_are_requested():
     ddl = (
         "CREATE TABLE [InMemory].[dbo].[ENROLLMENT] "
         "([MemberId] nvarchar(max), [RateCode] nvarchar(max));"
     )
     corrected_sql = (
-        "SELECT RateCode FROM InMemory.dbo.ENROLLMENT WITH (nolock) "
+        "SELECT RateCode FROM InMemory.dbo.ENROLLMENT "
         "WHERE MemberId = {{MemberId}}"
     )
 
@@ -124,7 +267,7 @@ def test_generate_queries_repairs_count_when_values_are_requested():
         patch(
             "inrules_data_agent.generator.generate._call_openai",
             side_effect=[
-                "SELECT COUNT(*) FROM InMemory.dbo.ENROLLMENT WITH (nolock) "
+                "SELECT COUNT(*) FROM InMemory.dbo.ENROLLMENT "
                 "WHERE MemberId = {{MemberId}}",
                 corrected_sql,
             ],
@@ -133,7 +276,7 @@ def test_generate_queries_repairs_count_when_values_are_requested():
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "3018",
                 "description": "CHIP eligibility rule",
                 "acceptance_criteria": "Member must have active coverage",
@@ -160,7 +303,7 @@ def test_generate_queries_rejects_count_when_values_are_requested_after_repair()
         "CREATE TABLE [InMemory].[dbo].[ENROLLMENT] "
         "([MemberId] nvarchar(max), [RateCode] nvarchar(max));"
     )
-    count_sql = "SELECT COUNT(*) FROM InMemory.dbo.ENROLLMENT WITH (nolock)"
+    count_sql = "SELECT COUNT(*) FROM InMemory.dbo.ENROLLMENT"
 
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
@@ -172,7 +315,7 @@ def test_generate_queries_rejects_count_when_values_are_requested_after_repair()
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "3018",
                 "steps": [
                     {
@@ -195,7 +338,7 @@ def test_matched_true_when_openai_returns_sql():
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "3015",
                 "steps": [
                     {
@@ -217,7 +360,7 @@ def test_matched_false_when_openai_returns_none():
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "3015",
                 "steps": [
                     {
@@ -239,7 +382,7 @@ def test_bulk_generate_queries_returns_result_per_item_in_order():
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries/bulk",
-            json={
+            json={"generation_mode": "strict",
                 "items": [
                     {
                         "edit_id": "3015",
@@ -398,7 +541,7 @@ def test_rejects_non_select_llm_output():
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "unsafe",
                 "steps": [
                     {
@@ -432,7 +575,7 @@ def test_generate_queries_retries_when_sql_uses_table_outside_schema():
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "strict",
                 "steps": [
                     {
@@ -471,7 +614,7 @@ def test_generate_queries_retries_when_sql_has_junk_predicates():
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "strict",
                 "steps": [
                     {
@@ -513,7 +656,7 @@ def test_generate_queries_retries_when_sql_uses_join():
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "single-table",
                 "steps": [
                     {
@@ -528,6 +671,216 @@ def test_generate_queries_retries_when_sql_uses_join():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected_sql]
+    assert call_openai.call_count == 2
+
+
+def test_generate_queries_accepts_grounded_physical_join_requested_by_business_meaning():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[enrollkeys] ([memid] int NULL);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[Member] ([memid] int NULL);",
+    ]
+    joined_sql = (
+        "SELECT ek.memid FROM plandata_rx_production.dbo.enrollkeys ek WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.Member m WITH (NOLOCK) "
+        "ON ek.memid = m.memid"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=joined_sql,
+        ) as call_openai,
+    ):
+        client = TestClient(create_app())
+        response = client.post(
+            "/generate_queries",
+            json={"generation_mode": "strict",
+                "edit_id": "grounded-join",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": (
+                            "Return enrollkeys memid values that have a matching Member "
+                            "using enrollkeys.memid = Member.memid"
+                        ),
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [joined_sql]
+    call_openai.assert_called_once()
+
+
+def test_generate_queries_rejects_ungrounded_join_key_after_two_attempts():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[enrollkeys] "
+        "([memid] int NULL, [familyid] int NULL);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[Member] "
+        "([memid] int NULL, [familyid] int NULL);",
+    ]
+    ungrounded_join_sql = (
+        "SELECT ek.memid FROM plandata_rx_production.dbo.enrollkeys ek WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.Member m WITH (NOLOCK) "
+        "ON ek.familyid = m.familyid"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=ungrounded_join_sql,
+        ) as call_openai,
+    ):
+        client = TestClient(create_app())
+        response = client.post(
+            "/generate_queries",
+            json={"generation_mode": "strict",
+                "edit_id": "ungrounded-join",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": (
+                            "Return enrollkeys memid values that have a matching Member"
+                        ),
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is False
+    assert result["queries"] == []
+    assert call_openai.call_count == 2
+    repair_feedback = call_openai.call_args_list[1].args[2].lower()
+    assert "join key" in repair_feedback
+    assert "ground" in repair_feedback
+
+
+def test_generate_queries_rejects_join_that_does_not_connect_its_target():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ([claimid] int NULL);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] ([claimid] int NULL);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimdiag] ([claimid] int NULL);",
+    ]
+    disconnected_sql = (
+        "SELECT c.claimid FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "ON c.claimid = cp.claimid "
+        "JOIN plandata_rx_production.dbo.claimdiag cd WITH (NOLOCK) "
+        "ON c.claimid = cp.claimid"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=disconnected_sql,
+        ) as call_openai,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={"generation_mode": "strict",
+                "edit_id": "disconnected-join",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": (
+                            "Return claim values joined to claimpharm and claimdiag"
+                        ),
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is False
+    assert result["queries"] == []
+    assert call_openai.call_count == 2
+
+
+def test_generate_queries_rejects_repeated_table_join_with_disconnected_alias():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ([claimid] int NULL);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimdiag] ([claimid] int NULL);",
+    ]
+    disconnected_sql = (
+        "SELECT c.claimid FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claimdiag cd1 WITH (NOLOCK) "
+        "ON c.claimid = cd1.claimid "
+        "JOIN plandata_rx_production.dbo.claimdiag cd2 WITH (NOLOCK) "
+        "ON c.claimid = cd1.claimid"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=disconnected_sql,
+        ) as call_openai,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={"generation_mode": "strict",
+                "edit_id": "repeated-disconnected-join",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": "Return claim values joined to claimdiag",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is False
+    assert result["queries"] == []
+    assert call_openai.call_count == 2
+
+
+def test_generate_queries_does_not_treat_table_name_substring_as_explicit_intent():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ([claimid] int NULL);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] "
+        "([claimid] int NULL, [metricqty] int NULL);",
+    ]
+    joined_sql = (
+        "SELECT cp.metricqty FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "ON c.claimid = cp.claimid"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=joined_sql,
+        ) as call_openai,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={"generation_mode": "strict",
+                "edit_id": "atomic-table-intent",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": "Return claimpharm metricqty values",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is False
+    assert result["queries"] == []
     assert call_openai.call_count == 2
 
 
@@ -552,12 +905,229 @@ def test_generate_queries_rejects_join_when_repair_still_uses_multiple_tables():
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "single-table",
                 "steps": [
                     {
                         "step_number": 1,
                         "business_meaning": "Count matching claims",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is False
+    assert result["queries"] == []
+    assert call_openai.call_count == 2
+
+
+def test_generate_queries_repairs_inmemory_nolock_hint():
+    ddl = "CREATE TABLE [InMemory].[dbo].[ENROLLMENT] ([MemberId] nvarchar(max));"
+    corrected_sql = "SELECT MemberId FROM InMemory.dbo.ENROLLMENT"
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[
+                "SELECT MemberId FROM InMemory.dbo.ENROLLMENT WITH (NOLOCK)",
+                corrected_sql,
+            ],
+        ) as call_openai,
+    ):
+        client = TestClient(create_app())
+        response = client.post(
+            "/generate_queries",
+            json={"generation_mode": "strict",
+                "edit_id": "inmemory-nolock",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": "Return MemberId values from ENROLLMENT",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [corrected_sql]
+    assert call_openai.call_count == 2
+
+
+def test_generate_queries_repairs_missing_physical_nolock_hint():
+    ddl = "CREATE TABLE [HRX].[dbo].[DrugOverrides] ([NDCKey] int NULL);"
+    corrected_sql = "SELECT NDCKey FROM HRX.dbo.DrugOverrides WITH (NOLOCK)"
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[
+                "SELECT NDCKey FROM HRX.dbo.DrugOverrides",
+                corrected_sql,
+            ],
+        ) as call_openai,
+    ):
+        client = TestClient(create_app())
+        response = client.post(
+            "/generate_queries",
+            json={"generation_mode": "strict",
+                "edit_id": "physical-nolock",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": "Return NDCKey values from DrugOverrides",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [corrected_sql]
+    assert call_openai.call_count == 2
+
+
+def test_generate_queries_rejects_mixed_inmemory_and_physical_join():
+    ddls = [
+        "CREATE TABLE [InMemory].[dbo].[MEMBER] ([memid] int NULL);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[enrollkeys] ([memid] int NULL);",
+    ]
+    joined_sql = (
+        "SELECT ek.memid FROM plandata_rx_production.dbo.enrollkeys ek WITH (NOLOCK) "
+        "JOIN InMemory.dbo.MEMBER m ON ek.memid = m.memid"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=joined_sql,
+        ) as call_openai,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={"generation_mode": "strict",
+                "edit_id": "mixed-source",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": (
+                            "Return enrollkeys memid values matched to MEMBER memid"
+                        ),
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is False
+    assert result["queries"] == []
+    assert call_openai.call_count == 2
+
+
+def test_generate_queries_rejects_multiple_select_statements():
+    ddl = "CREATE TABLE [HRX].[dbo].[DrugOverrides] ([NDCKey] int NULL);"
+    multiple_sql = (
+        "SELECT NDCKey FROM HRX.dbo.DrugOverrides WITH (NOLOCK); "
+        "SELECT NDCKey FROM HRX.dbo.DrugOverrides WITH (NOLOCK)"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=multiple_sql,
+        ) as call_openai,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={"generation_mode": "strict",
+                "edit_id": "multiple-statements",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": "Return NDCKey values from DrugOverrides",
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is False
+    assert result["queries"] == []
+    assert call_openai.call_count == 2
+
+
+def test_generate_queries_rejects_table_reading_exists_subquery():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ([claimid] int NULL);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] ([claimid] int NULL);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimdiag] "
+        "([claimid] int NULL, [diagcode] nvarchar(max) NULL);",
+    ]
+    nested_sql = (
+        "SELECT diagcode FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "ON c.claimid = cp.claimid WHERE EXISTS (SELECT 1 FROM "
+        "plandata_rx_production.dbo.claimdiag cd WITH (NOLOCK))"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=nested_sql,
+        ) as call_openai,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={"generation_mode": "strict",
+                "edit_id": "nested-scope",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": (
+                            "Return claim diagcode using claimpharm and claimdiag"
+                        ),
+                        "requires_data_query": True,
+                    }
+                ],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is False
+    assert result["queries"] == []
+    assert call_openai.call_count == 2
+
+
+def test_generate_queries_rejects_commented_unknown_table_reference():
+    ddl = "CREATE TABLE [HRX].[dbo].[DrugOverrides] ([NDCKey] int NULL);"
+    unknown_sql = "SELECT * FROM /* generated */ Evil.dbo.Secrets"
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=unknown_sql,
+        ) as call_openai,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={"generation_mode": "strict",
+                "edit_id": "unknown-table",
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "business_meaning": "Return values from Secrets",
                         "requires_data_query": True,
                     }
                 ],
@@ -591,7 +1161,7 @@ def test_generate_queries_retries_when_sql_has_raw_request_object_references():
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "strict",
                 "steps": [
                     {
@@ -621,7 +1191,7 @@ def test_execute_query_returns_results():
         client = TestClient(create_app())
         response = client.post(
             "/execute_query",
-            json={
+            json={"generation_mode": "strict",
                 "sql": "select count(*) as n from HRX.dbo.DrugOverrides (nolock)",
                 "params": {},
             },
@@ -647,7 +1217,7 @@ def test_execute_query_substitutes_placeholders():
         client = TestClient(create_app())
         response = client.post(
             "/execute_query",
-            json={
+            json={"generation_mode": "strict",
                 "sql": "select '{{MemberId}}' as memid",
                 "params": {"memberid": "TEST_MEMBER"},
             },
@@ -669,7 +1239,7 @@ def test_execute_query_quotes_unquoted_placeholders():
         client = TestClient(create_app())
         response = client.post(
             "/execute_query",
-            json={
+            json={"generation_mode": "strict",
                 "sql": "select {{DateOfService}} as dos",
                 "params": {"DateOfService": "2026-07-09"},
             },
@@ -721,7 +1291,7 @@ def test_cleans_sql_code_fence():
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
-            json={
+            json={"generation_mode": "strict",
                 "edit_id": "clean",
                 "steps": [
                     {

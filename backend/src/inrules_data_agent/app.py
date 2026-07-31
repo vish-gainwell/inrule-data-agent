@@ -15,7 +15,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .generator.generate import generate_queries_for_step
+from .generator.generate import generate_query_result_for_step
+from .retrieval.querytext_shadow import (
+    find_comparison_candidates,
+    find_reuse_match,
+    find_shadow_match,
+    load_querytext_rows,
+    load_reuse_corpus,
+    shadow_matching_enabled,
+)
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -33,6 +41,7 @@ class GenerateQueriesRequest(BaseModel):
     description: str | None = None
     acceptance_criteria: str | list[str] | None = None
     steps: list[Step]
+    generation_mode: str = "draft"
 
 
 class BulkGenerateQueriesRequest(BaseModel):
@@ -44,29 +53,119 @@ class ExecuteQueryRequest(BaseModel):
     params: dict[str, str] = Field(default_factory=dict)
 
 
+def _query_task_for_step(step: Step) -> str:
+    """Use the analyzer's resolved query instruction when it provides one."""
+
+    extras = step.model_extra or {}
+    entity_resolution = extras.get("entity_resolution")
+    if not isinstance(entity_resolution, dict):
+        return step.business_meaning
+    entities = entity_resolution.get("entities")
+    if not isinstance(entities, list):
+        return step.business_meaning
+    for entity in entities:
+        if isinstance(entity, dict):
+            instruction = entity.get("data_query_instruction")
+            if isinstance(instruction, str) and instruction.strip():
+                return instruction.strip()
+    return step.business_meaning
+
+
 def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str, Any]:
-    queries = []
+    step_queries = []
+    unmatched_steps = []
+    inconclusive_steps = []
+    draft_mode = request.generation_mode.lower() == "draft"
+    reuse_corpus = None
+    reuse_corpus_error = None
+    if shadow_matching_enabled():
+        try:
+            reuse_corpus = load_reuse_corpus()
+        except Exception as exc:
+            reuse_corpus_error = str(exc)
+            print(f"[dataquery_reuse] corpus lookup failed; reuse skipped: {exc}")
     for step in request.steps:
         if not step.requires_data_query:
             continue
-        assembled = generate_queries_for_step(
-            step.business_meaning,
-            description=request.description,
-            acceptance_criteria=request.acceptance_criteria,
+
+        extras = step.model_extra or {}
+        query_task = _query_task_for_step(step)
+        if str(extras.get("data_query_decision", "")).lower() == "inconclusive":
+            result = {
+                "queries": [],
+                "failure_category": "INCONCLUSIVE_INPUT",
+                "failure_reason": "The analyzer marked this data-query decision as inconclusive.",
+            }
+            inconclusive_steps.append(step.step_number)
+        else:
+            result = generate_query_result_for_step(
+                query_task,
+                description=request.description,
+                acceptance_criteria=request.acceptance_criteria,
+                draft_mode=draft_mode,
+            )
+
+        assembled = result["queries"]
+        matched = bool(assembled)
+        if not matched:
+            unmatched_steps.append(step.step_number)
+        shadow_matches = []
+        comparison_candidates = []
+        try:
+            if shadow_matching_enabled() and assembled:
+                querytext_rows = load_querytext_rows()
+                for sql in assembled:
+                    match = find_shadow_match(sql, querytext_rows)
+                    if match:
+                        shadow_matches.append(match.as_dict())
+                    comparison_candidates.extend(
+                        candidate.as_dict()
+                        for candidate in find_comparison_candidates(sql, querytext_rows)
+                    )
+        except Exception as exc:
+            print(f"[querytext_shadow] lookup failed; generated SQL unchanged: {exc}")
+            shadow_matches = []
+            comparison_candidates = []
+        reuse_matches = []
+        if reuse_corpus is not None:
+            for sql in assembled:
+                reuse_match = find_reuse_match(sql, reuse_corpus)
+                if reuse_match:
+                    reuse_matches.append(reuse_match.as_dict())
+        reuse_decision = (
+            "REUSE_EXISTING_DATAQUERY" if reuse_matches
+            else "PROPOSE_NEW_DATAQUERY" if matched
+            else "NO_QUERY_PROPOSED"
         )
-        queries.append(
+        step_queries.append(
             {
                 "step_number": step.step_number,
                 "business_meaning": step.business_meaning,
+                "query_task": query_task,
                 "queries": assembled,
-                "matched": len(assembled) > 0,
+                "matched": matched,
+                "failure_category": result["failure_category"],
+                "failure_reason": result["failure_reason"],
+                "validation_status": result.get("validation_status", "VALIDATED" if matched else "NOT_GENERATED"),
+                "publishable": matched and result.get("validation_status") != "DRAFT_REQUIRES_REVIEW",
+                "reuse_decision": reuse_decision,
+                "reuse_matches": reuse_matches,
+                "reuse_corpus_error": reuse_corpus_error,
+                "querytext_shadow_matches": shadow_matches,
+                "querytext_comparison_candidates": comparison_candidates,
             }
         )
     return {
         "edit_id": request.edit_id,
         "description": request.description,
         "acceptance_criteria": request.acceptance_criteria,
-        "queries": queries,
+        "queries": step_queries,
+        "step_queries": step_queries,
+        "unmatched_steps": unmatched_steps,
+        "inconclusive_steps": inconclusive_steps,
+        "data_agent_status": "available",
+        "data_agent_mode": "in_process",
+        "generation_mode": "draft" if draft_mode else "strict",
     }
 
 
