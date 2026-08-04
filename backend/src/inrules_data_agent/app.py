@@ -135,6 +135,7 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
                     reuse_matches.append(reuse_match.as_dict())
         reuse_decision = (
             "REUSE_EXISTING_DATAQUERY" if reuse_matches
+            else "REUSE_VALIDATION_UNAVAILABLE" if matched and reuse_corpus_error
             else "PROPOSE_NEW_DATAQUERY" if matched
             else "NO_QUERY_PROPOSED"
         )

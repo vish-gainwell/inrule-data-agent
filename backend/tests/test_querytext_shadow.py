@@ -142,6 +142,7 @@ def test_shadow_database_failure_keeps_generated_sql(monkeypatch):
 
     result = response.json()["queries"][0]
     assert result["queries"] == [sql]
+    assert result["reuse_decision"] == "REUSE_VALIDATION_UNAVAILABLE"
     assert result["querytext_shadow_matches"] == []
     assert result["querytext_comparison_candidates"] == []
 
