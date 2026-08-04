@@ -22,6 +22,7 @@ from .retrieval.querytext_shadow import (
     find_shadow_match,
     load_querytext_rows,
     load_reuse_corpus,
+    reuse_matching_enabled,
     shadow_matching_enabled,
 )
 
@@ -78,7 +79,7 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
     draft_mode = request.generation_mode.lower() == "draft"
     reuse_corpus = None
     reuse_corpus_error = None
-    if shadow_matching_enabled():
+    if reuse_matching_enabled():
         try:
             reuse_corpus = load_reuse_corpus()
         except Exception as exc:
@@ -144,10 +145,12 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
                 "query_task": query_task,
                 "queries": assembled,
                 "matched": matched,
+                "query_generated": matched,
                 "failure_category": result["failure_category"],
                 "failure_reason": result["failure_reason"],
                 "validation_status": result.get("validation_status", "VALIDATED" if matched else "NOT_GENERATED"),
-                "publishable": matched and result.get("validation_status") != "DRAFT_REQUIRES_REVIEW",
+                "review_notes": result.get("failure_reason") if matched else None,
+                "publishable": matched,
                 "reuse_decision": reuse_decision,
                 "reuse_matches": reuse_matches,
                 "reuse_corpus_error": reuse_corpus_error,

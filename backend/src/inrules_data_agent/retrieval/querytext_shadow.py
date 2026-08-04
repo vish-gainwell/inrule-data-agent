@@ -148,6 +148,16 @@ def shadow_matching_enabled() -> bool:
     }
 
 
+def reuse_matching_enabled() -> bool:
+    """Reuse is a core Data Agent function; disable only for offline development."""
+    return os.environ.get("DATAQUERY_REUSE_ENABLED", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+
 def _sentinelize(sql: str) -> str:
     text = _NOLOCK_RE.sub("WITH (NOLOCK)", sql)
     text = re.sub(r"\bWITH\s+WITH\s+\(", "WITH (", text, flags=re.IGNORECASE)
