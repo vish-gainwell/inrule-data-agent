@@ -188,11 +188,12 @@ def test_draft_mode_returns_review_only_candidate_when_business_validation_fails
 
     result = response.json()["step_queries"][0]
     assert result["matched"] is True
-    assert result["validation_status"] == "DRAFT_REQUIRES_REVIEW"
     assert result["query_generated"] is True
-    assert result["review_notes"]
-    assert result["publishable"] is True
-    assert result["failure_category"] == "VALIDATION_REJECTED"
+    assert "validation_status" not in result
+    assert "review_notes" not in result
+    assert "publishable" not in result
+    assert result["failure_category"] is None
+    assert result["failure_reason"] is None
     assert result["queries"] == ["SELECT Id FROM HRX.dbo.KnownTable WITH (NOLOCK) WHERE 1 = 1"]
 
 

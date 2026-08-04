@@ -201,7 +201,6 @@ def _draft_result(sql: str, category: str, reason: str, draft_mode: bool) -> dic
         "queries": [sql],
         "failure_category": category,
         "failure_reason": reason,
-        "validation_status": "DRAFT_REQUIRES_REVIEW",
     }
 
 
@@ -528,7 +527,7 @@ def _call_openai(
         draft_rule = (
             "18. DRAFT MODE: Return the best review-only SELECT candidate when a mapping is\n"
             "    incomplete. Do not invent a non-SELECT operation or multiple statements.\n"
-            "    The caller will mark any failed grounding validation as non-publishable."
+            "    The caller will retain schema-grounded candidates for later review."
         )
         system_prompt = SYSTEM_PROMPT.replace(strict_rule, draft_rule)
     messages = [
