@@ -22,6 +22,7 @@ from .retrieval.querytext_shadow import (
     find_shadow_match,
     load_querytext_rows,
     load_reuse_corpus,
+    propose_new_data_query,
     reuse_matching_enabled,
     shadow_matching_enabled,
 )
@@ -139,6 +140,11 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
             else "PROPOSE_NEW_DATAQUERY" if matched
             else "NO_QUERY_PROPOSED"
         )
+        proposed_new_data_queries = (
+            [propose_new_data_query(sql).as_dict() for sql in assembled]
+            if reuse_decision == "PROPOSE_NEW_DATAQUERY"
+            else []
+        )
         step_queries.append(
             {
                 "step_number": step.step_number,
@@ -151,6 +157,7 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
                 "failure_reason": None if matched else result["failure_reason"],
                 "reuse_decision": reuse_decision,
                 "reuse_matches": reuse_matches,
+                "proposed_new_data_queries": proposed_new_data_queries,
                 "reuse_corpus_error": reuse_corpus_error,
                 "querytext_shadow_matches": shadow_matches,
                 "querytext_comparison_candidates": comparison_candidates,

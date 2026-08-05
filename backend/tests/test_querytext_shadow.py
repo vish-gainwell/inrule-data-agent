@@ -10,6 +10,7 @@ from inrules_data_agent.retrieval.querytext_shadow import (
     find_comparison_candidates,
     find_reuse_match,
     find_shadow_match,
+    propose_new_data_query,
     patterns_equivalent,
 )
 
@@ -211,6 +212,17 @@ def test_api_returns_reuse_decision_with_query_params(monkeypatch):
     assert result["reuse_matches"][0]["data_query_id"] == 101
     assert result["reuse_matches"][0]["proposed_query_params"] == {"ParamName": "Medicare_Age_Years"}
     assert result["reuse_matches"][0]["assignment_examples"][0]["data_package_name"] == "Edit 7200"
+
+
+def test_proposed_new_data_query_derives_runtime_params_and_return_values():
+    proposal = propose_new_data_query(
+        "SELECT p.PARAMETER_VALUE AS ParameterValue FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = '7200_LookBack_Days' AND {{DateOfService}} BETWEEN p.EFFDATE AND p.ENDDATE"
+    )
+
+    assert "{{:DateOfService}}" in proposal.query_text
+    assert proposal.proposed_query_params == {":DateOfService": "{{DateOfService}}"}
+    assert proposal.proposed_return_vals == ["ParameterValue"]
 
 
 def test_reuse_match_rejects_template_with_extra_predicate():

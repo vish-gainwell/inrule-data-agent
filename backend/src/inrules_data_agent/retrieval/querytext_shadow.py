@@ -50,6 +50,21 @@ class DataQueryAssignmentExample:
 
 
 @dataclass(frozen=True)
+class ProposedDataQuery:
+    query_text: str
+    proposed_query_params: dict[str, str]
+    proposed_return_vals: list[str]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "query_text": self.query_text,
+            "proposed_query_params": self.proposed_query_params,
+            "proposed_return_vals": self.proposed_return_vals,
+            "assignment_action": "CREATE_OR_REVIEW_NEW_DATAQUERY",
+        }
+
+
+@dataclass(frozen=True)
 class ReuseMatch:
     data_query_id: int
     name: str
@@ -402,6 +417,44 @@ def _projection_columns(sql: str) -> list[str]:
     if not isinstance(statement, exp.Select):
         return []
     return [expression.alias_or_name or expression.sql(dialect="tsql") for expression in statement.expressions]
+
+
+def _proposed_parameter_name(runtime_path: str, used: set[str]) -> str:
+    words = re.findall(r"[A-Za-z0-9]+", runtime_path)
+    base = "".join(word[:1].upper() + word[1:] for word in words) or "RuntimeValue"
+    name = base
+    suffix = 2
+    while name.lower() in used:
+        name = f"{base}{suffix}"
+        suffix += 1
+    used.add(name.lower())
+    return name
+
+
+def propose_new_data_query(generated_sql: str) -> ProposedDataQuery:
+    """Create a reviewable generic-query contract from generated SQL.
+
+    Runtime ClaimEngine placeholders become named DataQuery parameters. Business
+    literals remain in the proposed QueryText because their semantic reuse role
+    must be confirmed by the later configuration review.
+    """
+    params: dict[str, str] = {}
+    names_by_runtime: dict[str, str] = {}
+    used_names: set[str] = set()
+
+    def replace_runtime(match: re.Match[str]) -> str:
+        runtime_path = match.group(1).strip()
+        if runtime_path.startswith(":"):
+            return match.group(0)
+        name = names_by_runtime.get(runtime_path)
+        if name is None:
+            name = _proposed_parameter_name(runtime_path, used_names)
+            names_by_runtime[runtime_path] = name
+            params[f":{name}"] = f"{{{{{runtime_path}}}}}"
+        return f"{{{{:{name}}}}}"
+
+    query_text = _PLACEHOLDER_RE.sub(replace_runtime, generated_sql)
+    return ProposedDataQuery(query_text, params, _projection_columns(generated_sql))
 
 
 def find_reuse_match(
