@@ -17,14 +17,10 @@ from pydantic import BaseModel, Field
 
 from .generator.generate import generate_query_result_for_step
 from .retrieval.querytext_shadow import (
-    find_comparison_candidates,
     find_reuse_match,
-    find_shadow_match,
-    load_querytext_rows,
     load_reuse_corpus,
     propose_new_data_query,
     reuse_matching_enabled,
-    shadow_matching_enabled,
 )
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
@@ -111,23 +107,7 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
         matched = bool(assembled)
         if not matched:
             unmatched_steps.append(step.step_number)
-        shadow_matches = []
-        comparison_candidates = []
-        try:
-            if shadow_matching_enabled() and assembled:
-                querytext_rows = load_querytext_rows()
-                for sql in assembled:
-                    match = find_shadow_match(sql, querytext_rows)
-                    if match:
-                        shadow_matches.append(match.as_dict())
-                    comparison_candidates.extend(
-                        candidate.as_dict()
-                        for candidate in find_comparison_candidates(sql, querytext_rows)
-                    )
-        except Exception as exc:
-            print(f"[querytext_shadow] lookup failed; generated SQL unchanged: {exc}")
-            shadow_matches = []
-            comparison_candidates = []
+
         reuse_matches = []
         if reuse_corpus is not None:
             for sql in assembled:
@@ -145,22 +125,29 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
             if reuse_decision == "PROPOSE_NEW_DATAQUERY"
             else []
         )
+        selected_contract = reuse_matches[0] if reuse_matches else (
+            proposed_new_data_queries[0] if proposed_new_data_queries else None
+        )
+        data_query = None
+        if selected_contract:
+            data_query = {
+                "data_query_id": selected_contract.get("data_query_id"),
+                "data_query_name": selected_contract.get("data_query_name"),
+                "query_text": selected_contract["query_text"],
+                "query_params": selected_contract["proposed_query_params"],
+                "return_vals": selected_contract["proposed_return_vals"],
+            }
         step_queries.append(
             {
                 "step_number": step.step_number,
                 "business_meaning": step.business_meaning,
-                "query_task": query_task,
-                "queries": assembled,
-                "matched": matched,
                 "query_generated": matched,
+                "reuse_decision": reuse_decision,
+                "data_query": data_query,
                 "failure_category": None if matched else result["failure_category"],
                 "failure_reason": None if matched else result["failure_reason"],
-                "reuse_decision": reuse_decision,
-                "reuse_matches": reuse_matches,
-                "proposed_new_data_queries": proposed_new_data_queries,
-                "reuse_corpus_error": reuse_corpus_error,
-                "querytext_shadow_matches": shadow_matches,
-                "querytext_comparison_candidates": comparison_candidates,
+                "queries": assembled,
+                "matched": matched,
             }
         )
     return {

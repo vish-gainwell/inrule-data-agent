@@ -89,7 +89,6 @@ def test_shadow_metadata_does_not_replace_generated_sql(monkeypatch):
             return_value={"queries": [sql], "failure_category": None, "failure_reason": None},
         ),
         patch("inrules_data_agent.app.load_reuse_corpus", return_value={}),
-        patch("inrules_data_agent.app.load_querytext_rows", return_value=(stored,)),
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -107,7 +106,7 @@ def test_shadow_metadata_does_not_replace_generated_sql(monkeypatch):
 
     result = response.json()["queries"][0]
     assert result["queries"] == [sql]
-    assert result["querytext_shadow_matches"][0]["data_query_id"] == 5
+    assert "querytext_shadow_matches" not in result
 
 
 def test_shadow_database_failure_keeps_generated_sql(monkeypatch):
@@ -120,10 +119,6 @@ def test_shadow_database_failure_keeps_generated_sql(monkeypatch):
         ),
         patch(
             "inrules_data_agent.app.load_reuse_corpus",
-            side_effect=RuntimeError("ClaimEngine unavailable"),
-        ),
-        patch(
-            "inrules_data_agent.app.load_querytext_rows",
             side_effect=RuntimeError("ClaimEngine unavailable"),
         ),
     ):
@@ -144,8 +139,8 @@ def test_shadow_database_failure_keeps_generated_sql(monkeypatch):
     result = response.json()["queries"][0]
     assert result["queries"] == [sql]
     assert result["reuse_decision"] == "REUSE_VALIDATION_UNAVAILABLE"
-    assert result["querytext_shadow_matches"] == []
-    assert result["querytext_comparison_candidates"] == []
+    assert result["data_query"] is None
+    assert "querytext_comparison_candidates" not in result
 
 
 def test_reuse_match_binds_generic_parameter_and_returns_assignment_examples():
@@ -197,7 +192,6 @@ def test_api_returns_reuse_decision_with_query_params(monkeypatch):
             return_value={"queries": [sql], "failure_category": None, "failure_reason": None},
         ),
         patch("inrules_data_agent.app.load_reuse_corpus", return_value={101: (stored, (assignment,))}),
-        patch("inrules_data_agent.app.load_querytext_rows", return_value=(stored,)),
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -209,9 +203,15 @@ def test_api_returns_reuse_decision_with_query_params(monkeypatch):
 
     result = response.json()["step_queries"][0]
     assert result["reuse_decision"] == "REUSE_EXISTING_DATAQUERY"
-    assert result["reuse_matches"][0]["data_query_id"] == 101
-    assert result["reuse_matches"][0]["proposed_query_params"] == {"ParamName": "Medicare_Age_Years"}
-    assert result["reuse_matches"][0]["assignment_examples"][0]["data_package_name"] == "Edit 7200"
+    assert result["data_query"] == {
+        "data_query_id": 101,
+        "data_query_name": "NDCParams_ValueByName",
+        "query_text": "select {{:output}} from ndcparameters (nolock) where parameter_name = '{{:ParamName}}'",
+        "query_params": {"ParamName": "Medicare_Age_Years"},
+        "return_vals": ["PARAMETER_VALUE"],
+    }
+    assert "reuse_matches" not in result
+    assert "proposed_new_data_queries" not in result
 
 
 def test_proposed_new_data_query_derives_runtime_params_and_return_values():

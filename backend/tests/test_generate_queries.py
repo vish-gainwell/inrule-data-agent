@@ -149,9 +149,7 @@ def test_uses_resolved_query_instruction_and_reports_unmatched_step():
     body = response.json()
     assert response.status_code == 200
     assert body["step_queries"] == body["queries"]
-    assert body["step_queries"][0]["query_task"] == (
-        "Query HRX.dbo.NDCParameters WHERE PARAMETER_NAME = 'Medicare_Age_Years' RETURNS PARAMETER_VALUE."
-    )
+    assert "query_task" not in body["step_queries"][0]
     assert body["step_queries"][0]["matched"] is True
     assert body["step_queries"][1]["matched"] is False
     assert body["unmatched_steps"] == [2]
