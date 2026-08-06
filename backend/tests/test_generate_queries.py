@@ -2,10 +2,24 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from inrules_data_agent.app import create_app
+from inrules_data_agent.app import (
+    Step,
+    _acceptance_criteria_for_step,
+    _query_task_for_step,
+    create_app,
+)
 from inrules_data_agent.generator.generate import (
     SYSTEM_PROMPT,
+    _build_artifact_repair_feedback,
     _build_user_message,
+    _column_repair_suggestions,
+    _find_output_name_artifacts,
+    _find_runtime_column_mapping_artifacts,
+    _normalize_missing_physical_table_hints,
+    _normalize_physical_hint_alias_order,
+    _normalize_reserved_table_aliases,
+    _parse_model_query_response,
+    _repair_invalid_column_references,
     select_ddls,
 )
 
@@ -86,13 +100,26 @@ def test_rule_context_is_passed_to_data_query_generation():
     generate_step.assert_called_once_with(
         "Return active member rate-code values",
         description="CHIP eligibility rule",
-        acceptance_criteria=[
-            "Member has an active CHIP rate code",
-            "Member has no active CHIP indicator",
-        ],
+        acceptance_criteria=None,
         draft_mode=False,
     )
     assert response.json()["description"] == "CHIP eligibility rule"
+
+
+def test_uses_atomic_data_query_reason_when_no_resolved_instruction_exists():
+    step = Step(
+        step_number=2,
+        business_meaning="Compare the original claim date plus the configured reversal threshold.",
+        requires_data_query=True,
+        data_query_reason="Lookup NDCParameters value for 7013_Reversal_Days.",
+    )
+
+    assert _query_task_for_step(step) == (
+        "ATOMIC DATA RETRIEVAL OBJECTIVE:\n"
+        "Lookup NDCParameters value for 7013_Reversal_Days.\n\n"
+        "CURRENT BUSINESS FACT CONSTRAINTS AND REQUESTED OUTPUT:\n"
+        "Compare the original claim date plus the configured reversal threshold."
+    )
 
 
 def test_uses_resolved_query_instruction_and_reports_unmatched_step():
@@ -160,7 +187,7 @@ def test_uses_resolved_query_instruction_and_reports_unmatched_step():
     assert generate_step.call_count == 2
 
 
-def test_draft_mode_returns_review_only_candidate_when_business_validation_fails():
+def test_draft_mode_does_not_report_validation_rejected_candidate_as_generated():
     with patch(
         "inrules_data_agent.generator.generate.select_ddls",
         return_value=["CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int NULL);"],
@@ -185,14 +212,14 @@ def test_draft_mode_returns_review_only_candidate_when_business_validation_fails
         )
 
     result = response.json()["step_queries"][0]
-    assert result["matched"] is True
-    assert result["query_generated"] is True
+    assert result["matched"] is False
+    assert result["query_generated"] is False
     assert "validation_status" not in result
     assert "review_notes" not in result
     assert "publishable" not in result
-    assert result["failure_category"] is None
-    assert result["failure_reason"] is None
-    assert result["queries"] == ["SELECT Id FROM HRX.dbo.KnownTable WITH (NOLOCK) WHERE 1 = 1"]
+    assert result["failure_category"] == "VALIDATION_REJECTED"
+    assert "1 = 0/1 predicate" in result["failure_reason"]
+    assert result["queries"] == []
 
 
 def test_draft_mode_does_not_return_unknown_table_candidate():
@@ -234,15 +261,362 @@ def test_prompt_separates_context_from_authoritative_query_task():
         acceptance_criteria=["Member has active coverage", "No CHIP indicator"],
     )
 
-    assert "RULE DESCRIPTION (context only):\nCHIP eligibility rule" in message
+    assert "RULE DESCRIPTION (overall objective only; do not import query logic):\nCHIP eligibility rule" in message
     assert "1. Member has active coverage" in message
     assert "2. No CHIP indicator" in message
-    assert "CURRENT DATA QUERY BUSINESS MEANING (authoritative query task):" in message
+    assert "DIRECTLY REFERENCED ACCEPTANCE CRITERIA (supporting context only):" in message
+    assert "CURRENT DATA QUERY BUSINESS MEANING (authoritative atomic query task):" in message
     assert message.endswith("Return active member rate-code values")
     assert "Apply this information hierarchy strictly" in SYSTEM_PROMPT
     assert "project those exact mapped columns" in SYSTEM_PROMPT
     assert "do not import other acceptance-" in SYSTEM_PROMPT
     assert "Never guess semantic mappings" in SYSTEM_PROMPT
+    assert "One business fact" in SYSTEM_PROMPT
+    assert "no more than 40 characters" in SYSTEM_PROMPT
+
+
+def test_selects_only_acceptance_criterion_referenced_by_step():
+    step = Step(
+        step_number=4,
+        business_meaning="Retrieve SCC=05 historical source values.",
+        requires_data_query=True,
+        ado_criterion_ref="Acceptance Criteria 4",
+    )
+    criteria = ["Partial fill", "CII history", "SCC=61 history", "SCC=05 history"]
+
+    assert _acceptance_criteria_for_step(step, criteria) == ["SCC=05 history"]
+
+
+def test_omits_unreferenced_acceptance_criteria_from_query_context():
+    step = Step(step_number=1, business_meaning="Retrieve one fact", requires_data_query=True)
+
+    assert _acceptance_criteria_for_step(step, ["Unrelated flow A", "Unrelated flow B"]) is None
+
+
+def test_output_alias_repair_requests_raw_source_fact():
+    feedback = _build_artifact_repair_feedback([
+        "output alias 'Active7239BypassFound' describes a final rule decision instead of an extracted fact"
+    ])
+
+    assert "underlying requested source fact" in feedback
+    assert "matching row ID" in feedback
+    assert "Downstream InRule logic decides" in feedback
+
+
+def test_rejects_7073_sentence_length_output_alias():
+    artifacts = _find_output_name_artifacts(
+        "SELECT COUNT(*) AS ErBypassDueToScc0580PercentSameGcnPaidHistory "
+        "FROM HRX.dbo.ClaimHistory WITH (NOLOCK)"
+    )
+
+    assert artifacts == [
+        "output alias 'ErBypassDueToScc0580PercentSameGcnPaidHistory' exceeds 40 characters"
+    ]
+    assert _find_output_name_artifacts(
+        "SELECT COUNT(*) AS Scc05HistoryFound FROM HRX.dbo.ClaimHistory WITH (NOLOCK)"
+    ) == []
+    assert _find_output_name_artifacts(
+        "SELECT COUNT(*) AS Scc05HistoryBypass FROM HRX.dbo.ClaimHistory WITH (NOLOCK)"
+    ) == [
+        "output alias 'Scc05HistoryBypass' describes a final rule decision instead of an extracted fact"
+    ]
+
+
+def test_reserved_table_aliases_are_bracketed_before_sql_parsing():
+    sql = (
+        "SELECT DO.OverrideID FROM HRX.dbo.DrugOverrides DO WITH (NOLOCK) "
+        "WHERE DO.Type = 'value.do.not.change'"
+    )
+
+    normalized = _normalize_reserved_table_aliases(sql)
+
+    assert "DrugOverrides [DO] WITH (NOLOCK)" in normalized
+    assert "[DO].OverrideID" in normalized
+    assert "[DO].Type" in normalized
+    assert "'value.do.not.change'" in normalized
+
+
+def test_physical_nolock_hint_is_moved_after_alias():
+    sql = "SELECT d.OverrideID FROM HRX.dbo.DrugOverrides WITH (NOLOCK) AS d"
+
+    assert _normalize_physical_hint_alias_order(sql) == (
+        "SELECT d.OverrideID FROM HRX.dbo.DrugOverrides AS d WITH (NOLOCK)"
+    )
+
+
+def test_missing_nolock_is_added_only_to_physical_tables():
+    sql = (
+        "SELECT mh.GCNSeqNo FROM InMemory.dbo.MEMBER_HISTORY mh "
+        "JOIN HRX.dbo.DrugOverrides dox ON dox.GCN_SeqNo = mh.GCNSeqNo"
+    )
+
+    normalized = _normalize_missing_physical_table_hints(sql)
+
+    assert "MEMBER_HISTORY mh WITH (NOLOCK)" not in normalized
+    assert "DrugOverrides dox WITH (NOLOCK) ON" in normalized
+
+
+def test_existing_physical_nolock_hint_is_not_duplicated():
+    sql = "SELECT d.OverrideID FROM HRX.dbo.DrugOverrides d WITH (NOLOCK)"
+
+    assert _normalize_missing_physical_table_hints(sql) == sql
+
+
+def test_nonreserved_table_alias_is_unchanged():
+    sql = "SELECT d.OverrideID FROM HRX.dbo.DrugOverrides AS d WITH (NOLOCK)"
+
+    assert _normalize_reserved_table_aliases(sql) == sql
+
+
+def test_generation_repairs_reserved_alias_then_runs_normal_validation():
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[DrugOverrides] ("
+        "[OverrideID] int NOT NULL, [NDCKey] char(11) NULL, "
+        "[Type] varchar(50) NOT NULL, [EffDate] datetime NOT NULL, "
+        "[TermDate] datetime NOT NULL);"
+    )
+    generated = (
+        "SELECT DO.OverrideID AS OverrideId "
+        "FROM HRX.dbo.DrugOverrides WITH (NOLOCK) AS DO "
+        "WHERE DO.Type = '7239_PkgBilling_Bypass' "
+        "AND DO.NDCKey = {{ClaimTransaction.Ndc}} "
+        "AND {{DateOfService}} BETWEEN DO.EffDate AND DO.TermDate"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch("inrules_data_agent.generator.generate._call_openai", return_value=generated),
+        patch("inrules_data_agent.app.load_reuse_corpus", return_value={}),
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "edit_id": "7239",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Return the active package-billing override ID",
+                    "requires_data_query": True,
+                }],
+            },
+        )
+
+    result = response.json()["step_queries"][0]
+    assert result["query_generated"] is True
+    assert "DrugOverrides AS [DO] WITH (NOLOCK)" in result["queries"][0]
+    assert "[DO].OverrideID" in result["queries"][0]
+
+
+def test_structured_model_response_parser_enforces_query_text_contract():
+    assert _parse_model_query_response(
+        '{"query_text":"SELECT 1 AS Value"}'
+    ) == "SELECT 1 AS Value"
+    assert _parse_model_query_response('{"query_text":null}') == "NO_SUPPORTED_QUERY"
+    assert _parse_model_query_response("SELECT 1") == "INVALID_STRUCTURED_RESPONSE"
+    assert _parse_model_query_response('{"sql":"SELECT 1"}') == "INVALID_STRUCTURED_RESPONSE"
+    assert _parse_model_query_response(
+        '{"query_text":"SELECT 1","reason":"extra"}'
+    ) == "INVALID_STRUCTURED_RESPONSE"
+    assert _parse_model_query_response('{"query_text":""}') == "INVALID_STRUCTURED_RESPONSE"
+
+
+def test_generate_queries_retries_invalid_structured_model_response():
+    ddl = "CREATE TABLE [HRX].[dbo].[DrugOverrides] ([NDCKey] int NULL);"
+    corrected = "SELECT NDCKey FROM HRX.dbo.DrugOverrides WITH (NOLOCK)"
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=["INVALID_STRUCTURED_RESPONSE", corrected],
+        ) as call_openai,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "generation_mode": "strict",
+                "edit_id": "invalid-json-envelope",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Return DrugOverrides NDCKey values",
+                    "requires_data_query": True,
+                }],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [corrected]
+    assert call_openai.call_count == 2
+    assert "required JSON envelope" in call_openai.call_args_list[1].args[2]
+
+
+def test_prompt_requires_structured_query_text_json():
+    assert 'Return ONLY one JSON object' in SYSTEM_PROMPT
+    assert '{"query_text": "SELECT ..."}' in SYSTEM_PROMPT
+    assert '{"query_text": null}' in SYSTEM_PROMPT
+
+
+def test_prompt_allows_any_explicit_runtime_input_to_become_a_query_param():
+    assert "open-ended DataQuery contract, not a fixed whitelist" in SYSTEM_PROMPT
+    assert "Rx Number:         {{RxNumber}}" in SYSTEM_PROMPT
+    assert "{{AssociatedPrescriptionRefNumber}}" in SYSTEM_PROMPT
+    assert "never a reason to reject an otherwise table-and-column-grounded query" in SYSTEM_PROMPT
+
+
+def test_runtime_column_semantics_reject_unrelated_identifier_mapping():
+    assert _find_runtime_column_mapping_artifacts(
+        "SELECT COUNT(*) FROM InMemory.dbo.EO_HISTORY eh "
+        "WHERE eh.RejectEdits_EditId = {{RxNumber}}"
+    ) == [
+        "column eh.RejectEdits_EditId is semantically incompatible with runtime input {{RxNumber}}"
+    ]
+    assert _find_runtime_column_mapping_artifacts(
+        "SELECT COUNT(*) FROM plandata_rx_production.dbo.claimpharm cp "
+        "WHERE cp.rxnumber = {{RxNumber}}"
+    ) == []
+    assert _find_runtime_column_mapping_artifacts(
+        "SELECT COUNT(*) FROM plandata_rx_production.dbo.claim c "
+        "WHERE RTRIM(c.referralid) = RTRIM({{RxNumber}})"
+    ) == [
+        "column c.referralid is semantically incompatible with runtime input {{RxNumber}}"
+    ]
+    assert _find_runtime_column_mapping_artifacts(
+        "SELECT COUNT(*) FROM plandata_rx_production.dbo.claim c "
+        "WHERE CAST({{RxNumber}} AS varchar(50)) = RTRIM(c.referralid)"
+    ) == [
+        "column c.referralid is semantically incompatible with runtime input {{RxNumber}}"
+    ]
+    assert _find_runtime_column_mapping_artifacts(
+        "SELECT COUNT(*) FROM plandata_rx_production.dbo.claimpharm cp "
+        "WHERE RTRIM(cp.rxnumber) = RTRIM({{RxNumber}})"
+    ) == []
+
+
+def test_generate_queries_repairs_semantically_incompatible_runtime_column():
+    ddl = (
+        "CREATE TABLE [InMemory].[dbo].[EO_HISTORY] "
+        "([RejectEdits_EditId] nvarchar(max), [MemberId] nvarchar(max));\n"
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] "
+        "([rxnumber] char(50));"
+    )
+    wrong = (
+        "SELECT COUNT(*) AS PaidClaimCount FROM InMemory.dbo.EO_HISTORY eh "
+        "WHERE eh.RejectEdits_EditId = {{RxNumber}}"
+    )
+    corrected = (
+        "SELECT COUNT(*) AS PaidClaimCount "
+        "FROM plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "WHERE cp.rxnumber = {{RxNumber}}"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[wrong, corrected],
+        ) as call_openai,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "generation_mode": "strict",
+                "edit_id": "semantic-runtime-mapping",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Count paid claims for the same Rx number",
+                    "requires_data_query": True,
+                }],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [corrected]
+    assert call_openai.call_count == 2
+
+
+def test_deterministic_column_repair_uses_unique_schema_owner():
+    ddl = """
+    CREATE TABLE [plandata_rx_production].[dbo].[claimpharm]
+    ([metricqty] money, [dayssupply] int, [ndckey] char(11));
+    CREATE TABLE [InMemory].[dbo].[MEMBER_HISTORY]
+    ([GCNSeqNo] nvarchar(max), [Quantity] decimal(29,9));
+    """
+    sql = (
+        "SELECT cp.QuantityDispensed, cp.DaysSupply, mh.GCNSeqNo_Code "
+        "FROM plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "JOIN InMemory.dbo.MEMBER_HISTORY mh ON cp.ndckey = mh.GCNSeqNo"
+    )
+
+    repaired = _repair_invalid_column_references(
+        sql,
+        ddl,
+        ["cp.QuantityDispensed", "cp.DaysSupply", "mh.GCNSeqNo_Code"],
+    )
+
+    assert "cp.metricqty" in repaired
+    assert "cp.dayssupply" in repaired
+    assert "mh.gcnseqno" in repaired
+
+
+def test_generate_queries_returns_deterministically_repaired_column_without_retry():
+    ddl = (
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] "
+        "([metricqty] money);"
+    )
+    generated = (
+        "SELECT cp.QuantityDispensed AS HistoryQuantity "
+        "FROM plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK)"
+    )
+    corrected = (
+        "SELECT cp.metricqty AS HistoryQuantity "
+        "FROM plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK)"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=generated,
+        ) as call_openai,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "generation_mode": "strict",
+                "edit_id": "deterministic-column-repair",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Return historical quantity dispensed",
+                    "requires_data_query": True,
+                }],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [corrected]
+    assert call_openai.call_count == 1
+
+
+def test_column_repair_suggests_schema_owned_business_columns():
+    ddl = """
+    CREATE TABLE [plandata_rx_production].[dbo].[claimpharm]
+    ([ndckey] char(11), [metricqty] money, [dayssupply] int);
+    CREATE TABLE [InMemory].[dbo].[MEMBER_HISTORY]
+    ([GCNSeqNo] nvarchar(max), [Quantity] decimal(29,9), [DaysSupply] int);
+    """
+    sql = (
+        "SELECT cp.QuantityDispensed, cp.DaysSupply, mh.GCNSeqNo_Code "
+        "FROM plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "JOIN InMemory.dbo.MEMBER_HISTORY mh ON cp.ndckey = mh.GCNSeqNo"
+    )
+
+    suggestions = _column_repair_suggestions(
+        ["cp.QuantityDispensed", "cp.DaysSupply", "mh.GCNSeqNo_Code"],
+        sql,
+        ddl,
+    )
+
+    assert any("claimpharm.metricqty" in item for item in suggestions)
+    assert any("claimpharm.dayssupply" in item for item in suggestions)
+    assert any("member_history.gcnseqno" in item for item in suggestions)
 
 
 def test_prompt_uses_nolock_only_for_physical_tables():
@@ -525,13 +899,21 @@ def test_select_ddls_includes_dto_derived_in_memory_tables():
 def test_select_ddls_without_table_keywords_returns_all_packaged_schemas():
     ddls = select_ddls("Completely unknown data requirement")
 
-    assert len(ddls) == 45
+    assert len(ddls) == 53
     joined = "\n".join(ddls)
     assert "[HRX].[dbo].[step_therapy_drug]" in joined
     assert "[HRX].[dbo].[step_therapy_level]" in joined
     assert "[plandata_rx_production].[dbo].[authservice]" in joined
     assert "[plandata_rx_production].[dbo].[enrollcoverage]" in joined
     assert "[plandata_rx_production].[dbo].[referral]" in joined
+    assert "[plandata_rx_production].[dbo].[ClaimPartial]" in joined
+    assert "[plandata_rx_production].[dbo].[claimpharm]" in joined
+    assert "[HRX].[dbo].[DrugCoverage]" in joined
+    assert "[HRX].[dbo].[FED_FIN_Participation]" in joined
+    assert "[HRX].[dbo].[PA_master]" in joined
+    assert "[HRX].[dbo].[NDC_DESI_Mstr]" in joined
+    assert "[HRX].[dbo].[NDCMedicareCov]" in joined
+    assert "[plandata_rx_production].[dbo].[MemberLockIn]" in joined
 
 
 def test_rejects_non_select_llm_output():
@@ -717,6 +1099,47 @@ def test_generate_queries_accepts_grounded_physical_join_requested_by_business_m
     call_openai.assert_called_once()
 
 
+def test_generate_queries_accepts_reviewed_member_history_drugoverride_gcn_join():
+    ddls = [
+        "CREATE TABLE [InMemory].[dbo].[MEMBER_HISTORY] "
+        "([GCNSeqNo] nvarchar(6) NULL, [DateOfService] datetime2 NULL);",
+        "CREATE TABLE [HRX].[dbo].[DrugOverrides] "
+        "([GCN_SeqNo] varchar(6) NULL, [Type] varchar(50) NOT NULL, "
+        "[EffDate] smalldatetime NOT NULL, [TermDate] smalldatetime NOT NULL);",
+    ]
+    joined_sql = (
+        "SELECT mh.GCNSeqNo, mh.DateOfService "
+        "FROM InMemory.dbo.MEMBER_HISTORY mh "
+        "JOIN HRX.dbo.DrugOverrides dox WITH (NOLOCK) "
+        "ON dox.GCN_SeqNo = mh.GCNSeqNo "
+        "WHERE dox.Type LIKE '%FluVaccine%' "
+        "AND mh.DateOfService BETWEEN dox.EffDate AND dox.TermDate"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch("inrules_data_agent.generator.generate._call_openai", return_value=joined_sql),
+        patch("inrules_data_agent.app.load_reuse_corpus", return_value={}),
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "edit_id": "7290",
+                "steps": [{
+                    "step_number": 2,
+                    "business_meaning": (
+                        "Return MEMBER_HISTORY GCNSeqNo and DateOfService rows whose GCN "
+                        "matches a DrugOverrides GCN_SeqNo classified as FluVaccine"
+                    ),
+                    "requires_data_query": True,
+                }],
+            },
+        )
+
+    result = response.json()["step_queries"][0]
+    assert result["query_generated"] is True
+    assert result["queries"] == [joined_sql]
+
+
 def test_generate_queries_rejects_ungrounded_join_key_after_two_attempts():
     ddls = [
         "CREATE TABLE [plandata_rx_production].[dbo].[enrollkeys] "
@@ -761,6 +1184,8 @@ def test_generate_queries_rejects_ungrounded_join_key_after_two_attempts():
     repair_feedback = call_openai.call_args_list[1].args[2].lower()
     assert "join key" in repair_feedback
     assert "ground" in repair_feedback
+    assert "runtime placeholders" in repair_feedback
+    assert "filter that target table directly" in repair_feedback
 
 
 def test_generate_queries_rejects_join_that_does_not_connect_its_target():
@@ -932,10 +1357,7 @@ def test_generate_queries_repairs_inmemory_nolock_hint():
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
             "inrules_data_agent.generator.generate._call_openai",
-            side_effect=[
-                "SELECT MemberId FROM InMemory.dbo.ENROLLMENT WITH (NOLOCK)",
-                corrected_sql,
-            ],
+            return_value="SELECT MemberId FROM InMemory.dbo.ENROLLMENT WITH (NOLOCK)",
         ) as call_openai,
     ):
         client = TestClient(create_app())
@@ -956,7 +1378,34 @@ def test_generate_queries_repairs_inmemory_nolock_hint():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected_sql]
-    assert call_openai.call_count == 2
+    assert call_openai.call_count == 1
+
+
+def test_generate_queries_normalizes_inmemory_nolock_after_alias():
+    ddl = "CREATE TABLE [InMemory].[dbo].[MEMBER_HISTORY] ([MemberId] nvarchar(max));"
+    generated = "SELECT mh.MemberId FROM InMemory.dbo.MEMBER_HISTORY AS mh WITH (NOLOCK)"
+    corrected = "SELECT mh.MemberId FROM InMemory.dbo.MEMBER_HISTORY AS mh"
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch("inrules_data_agent.generator.generate._call_openai", return_value=generated),
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "generation_mode": "strict",
+                "edit_id": "inmemory-alias-nolock",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Return MEMBER_HISTORY MemberId values",
+                    "requires_data_query": True,
+                }],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [corrected]
 
 
 def test_generate_queries_repairs_missing_physical_nolock_hint():
@@ -967,10 +1416,7 @@ def test_generate_queries_repairs_missing_physical_nolock_hint():
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
             "inrules_data_agent.generator.generate._call_openai",
-            side_effect=[
-                "SELECT NDCKey FROM HRX.dbo.DrugOverrides",
-                corrected_sql,
-            ],
+            return_value="SELECT NDCKey FROM HRX.dbo.DrugOverrides",
         ) as call_openai,
     ):
         client = TestClient(create_app())
@@ -991,10 +1437,10 @@ def test_generate_queries_repairs_missing_physical_nolock_hint():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected_sql]
-    assert call_openai.call_count == 2
+    assert call_openai.call_count == 1
 
 
-def test_generate_queries_rejects_mixed_inmemory_and_physical_join():
+def test_generate_queries_allows_sme_grounded_mixed_inmemory_and_physical_join():
     ddls = [
         "CREATE TABLE [InMemory].[dbo].[MEMBER] ([memid] int NULL);",
         "CREATE TABLE [plandata_rx_production].[dbo].[enrollkeys] ([memid] int NULL);",
@@ -1028,9 +1474,183 @@ def test_generate_queries_rejects_mixed_inmemory_and_physical_join():
         )
 
     result = response.json()["queries"][0]
-    assert result["matched"] is False
-    assert result["queries"] == []
+    assert result["matched"] is True
+    assert result["queries"] == [joined_sql]
+    assert call_openai.call_count == 1
+
+
+def test_generate_queries_allows_grounded_tables_implied_by_business_columns():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] "
+        "([claimid] char(15), [memid] char(15), [provid] char(15), "
+        "[status] char(10), [resubclaimid] char(15));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[ClaimPartial] "
+        "([claimid] char(15), [DispensingStatus] char(1), "
+        "[AssociatedPrescriptionRefNumber] char(15));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] "
+        "([claimid] char(15), [rxnumber] char(50));",
+    ]
+    sql = (
+        "SELECT COUNT(*) AS PriorPartialCount "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.ClaimPartial p WITH (NOLOCK) "
+        "ON p.claimid = c.claimid "
+        "JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "ON cp.claimid = c.claimid "
+        "WHERE c.memid = {{MemberId}} AND c.provid = {{ProviderId}} "
+        "AND cp.rxnumber = {{RxNumber}} AND p.DispensingStatus = 'P'"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch("inrules_data_agent.generator.generate._call_openai", return_value=sql),
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "generation_mode": "strict",
+                "edit_id": "concept-grounded-tables",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": (
+                        "Count prior P partial fills for the same member, provider, and Rx number"
+                    ),
+                    "requires_data_query": True,
+                }],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [sql]
+
+
+def test_generate_queries_extracts_single_fenced_select_from_model_prose():
+    ddl = "CREATE TABLE [HRX].[dbo].[DrugOverrides] ([NDCKey] int NULL);"
+    sql = "SELECT NDCKey FROM HRX.dbo.DrugOverrides WITH (NOLOCK)"
+    response_text = f"Here is the query:\n```sql\n{sql}\n```\n"
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=response_text,
+        ) as call_openai,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "generation_mode": "strict",
+                "edit_id": "fenced-select",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Return DrugOverrides NDCKey values",
+                    "requires_data_query": True,
+                }],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [sql]
+    assert call_openai.call_count == 1
+
+
+def test_generate_queries_repairs_unparseable_or_multiple_statement_output():
+    ddl = "CREATE TABLE [HRX].[dbo].[DrugOverrides] ([NDCKey] int NULL);"
+    corrected = "SELECT NDCKey FROM HRX.dbo.DrugOverrides WITH (NOLOCK)"
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[
+                "SELECT NDCKey FROM HRX.dbo.DrugOverrides WITH (NOLOCK); SELECT 1",
+                corrected,
+            ],
+        ) as call_openai,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "generation_mode": "strict",
+                "edit_id": "repair-multiple-selects",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Return DrugOverrides NDCKey values",
+                    "requires_data_query": True,
+                }],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [corrected]
     assert call_openai.call_count == 2
+    assert "exactly one parseable T-SQL SELECT" in call_openai.call_args_list[1].args[2]
+
+
+def test_generate_queries_allows_live_fk_claimdetail_claimpharm_relationships():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ([claimid] char(15));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimdetail] "
+        "([claimid] char(15), [claimline] int);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] "
+        "([claimid] char(15), [claimline] int, [metricqty] money);",
+    ]
+    sql = (
+        "SELECT cp.metricqty FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claimdetail cd WITH (NOLOCK) "
+        "ON cd.claimid = c.claimid "
+        "JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "ON cp.claimid = cd.claimid AND cp.claimline = cd.claimline"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch("inrules_data_agent.generator.generate._call_openai", return_value=sql),
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "generation_mode": "strict",
+                "edit_id": "live-claim-fks",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Return claimpharm metric quantity through claim detail",
+                    "requires_data_query": True,
+                }],
+            },
+        )
+    assert response.json()["queries"][0]["matched"] is True
+
+
+def test_generate_queries_allows_live_fk_referral_authservice_relationship():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[referral] "
+        "([referralid] char(30), [memid] char(15));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[authservice] "
+        "([referralid] char(30), [status] char(10));",
+    ]
+    sql = (
+        "SELECT r.referralid FROM plandata_rx_production.dbo.referral r WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.authservice a WITH (NOLOCK) "
+        "ON a.referralid = r.referralid WHERE a.status = 'APPROVED'"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch("inrules_data_agent.generator.generate._call_openai", return_value=sql),
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "generation_mode": "strict",
+                "edit_id": "live-referral-fk",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Return approved authservice referral IDs",
+                    "requires_data_query": True,
+                }],
+            },
+        )
+    assert response.json()["queries"][0]["matched"] is True
 
 
 def test_generate_queries_rejects_multiple_select_statements():
@@ -1108,6 +1728,43 @@ def test_generate_queries_rejects_table_reading_exists_subquery():
     assert result["matched"] is False
     assert result["queries"] == []
     assert call_openai.call_count == 2
+
+
+def test_generate_queries_allows_grounded_correlated_exists_subquery():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ([claimid] int NULL);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] ([claimid] int NULL);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimdiag] "
+        "([claimid] int NULL, [diagcode] nvarchar(max) NULL);",
+    ]
+    nested_sql = (
+        "SELECT cp.claimid FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "ON c.claimid = cp.claimid WHERE EXISTS (SELECT 1 FROM "
+        "plandata_rx_production.dbo.claimdiag cd WITH (NOLOCK) "
+        "WHERE cd.claimid = c.claimid)"
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch("inrules_data_agent.generator.generate._call_openai", return_value=nested_sql),
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "generation_mode": "strict",
+                "edit_id": "grounded-subquery",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Return claimpharm claim IDs for claim rows having claimdiag history",
+                    "requires_data_query": True,
+                }],
+            },
+        )
+
+    result = response.json()["queries"][0]
+    assert result["matched"] is True
+    assert result["queries"] == [nested_sql]
 
 
 def test_generate_queries_rejects_commented_unknown_table_reference():

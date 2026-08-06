@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 from functools import lru_cache
@@ -25,29 +26,45 @@ _IN_MEMORY_SCHEMA_DIR = Path(__file__).resolve().parent.parent / "in_memory_sche
 _LIVE_TABLE_KEYWORDS: list[tuple[str, tuple[str, str, str]]] = [
     ("claimpharm", ("plandata_rx_production", "dbo", "claimpharm")),
     ("claim pharmacy", ("plandata_rx_production", "dbo", "claimpharm")),
+    ("memberlockin", ("plandata_rx_production", "dbo", "MemberLockIn")),
+    ("member lock-in", ("plandata_rx_production", "dbo", "MemberLockIn")),
+    ("pharmacy lock-in", ("plandata_rx_production", "dbo", "MemberLockIn")),
     ("enrollkeys", ("plandata_rx_production", "dbo", "enrollkeys")),
     ("headofhouse", ("plandata_rx_production", "dbo", "member")),
     ("member table", ("plandata_rx_production", "dbo", "member")),
     (" left join member", ("plandata_rx_production", "dbo", "member")),
     ("ndc_limits", ("HRX", "dbo", "NDC_Limits")),
     ("ndc limits", ("HRX", "dbo", "NDC_Limits")),
+    ("ndcmedicarecov", ("HRX", "dbo", "NDCMedicareCov")),
+    ("ndc medicare cov", ("HRX", "dbo", "NDCMedicareCov")),
+    ("part b drug coverage", ("HRX", "dbo", "NDCMedicareCov")),
 ]
 
 SYSTEM_PROMPT = """
 You are a SQL generator for an InRule pharmacy claims processing system (SQL Server / T-SQL).
 
-Given a business requirement and one or more table DDL schemas, generate a single SELECT
-query that fulfils the requirement.
+Given one atomic data-query business fact and one or more table DDL schemas, generate a
+single SELECT query that extracts only that fact.
 
 Rules:
+0. Generate SQL only for the CURRENT DATA QUERY BUSINESS MEANING. One business fact
+   maps to one query with concise outputs. The complete rule flow may require multiple
+   queries separated by rule logic; never attempt to satisfy the whole description or
+   all acceptance criteria in this query. Retrieve source facts for downstream rule
+   logic rather than calculating a final bypass, denial, posting, or threshold decision.
+   Never name an output Bypass, Deny, Post, Applies, Eligible, or Decision when the
+   current fact can instead return the underlying history, quantity, days supply,
+   date, threshold, code, identifier, or existence value.
 1. Use ONLY tables and columns that exist in the provided DDL schemas.
 2. Use fully qualified table names exactly as shown in the DDL
    (e.g. HRX.dbo.DrugOverrides, plandata_rx_production.dbo.claim).
 3. Source hints must follow the IL execution convention:
    - Never add NOLOCK to InMemory logical DTO table references.
    - Add WITH (NOLOCK) after every physical SQL Server table reference.
-4. For runtime values that come from the incoming claim, use ONLY these exact
-    InRule variable placeholders — never substitute actual values or use ? parameters:
+4. Runtime inputs are an open-ended DataQuery contract, not a fixed whitelist.
+   For every runtime business value explicitly required by the CURRENT DATA QUERY
+   BUSINESS MEANING, emit a concise PascalCase {{RuntimeInput}} placeholder. Never
+   substitute an example value or use ? parameters. Canonical examples include:
 
    Incoming NDC:      {{ClaimTransaction.Ndc}}
    Incoming GCN:      {{ClaimRequest.DrugRequested.GCNSeqNo.Code}}
@@ -55,6 +72,7 @@ Rules:
    Date of Service:   {{DateOfService}}
    Member ID:         {{MemberId}}
    Provider ID:       {{ProviderId}}
+   Rx Number:         {{RxNumber}}
    Lookback Date:     {{LookBackDate}}
    Quantity dispensed: {{QuantityDispensed}}
    Current adjudication date / current filing date: use GETDATE()
@@ -70,11 +88,18 @@ Rules:
      carriermemid from the incoming claim all mean {{MemberId}} unless a query
      explicitly resolves a different member id set.
    - {provider_npi} and incoming provider id mean {{ProviderId}}.
+   - {rx_number}, {rxnumber}, prescription number, service reference number,
+     and incoming claim Rx Number mean {{RxNumber}}.
    - HrxRequest.ClaimDetail.ClaimSeg.qtyDispensed_442_E7 and current claim
      quantity dispensed mean {{QuantityDispensed}}.
 
-   Never emit HrxRequest.*, ClaimRequest.*, single-brace {value} tokens, or
-   placeholders outside the list above.
+   Never emit HrxRequest.*, ClaimRequest.*, or single-brace {value} tokens.
+   For any other explicitly required runtime input, derive a concise business name,
+   for example {{PlanId}}, {{AuthorizationId}}, or {{AssociatedPrescriptionRefNumber}}.
+   The proposed DataQuery QueryParams is the contract telling downstream developers
+   which values must be bound. A missing concrete DTO path is review information,
+   never a reason to reject an otherwise table-and-column-grounded query. Do not
+   invent inputs that are not required by the current atomic business fact.
 
 5. Hardcode any literal values that are specified in the business requirement exactly as written
    (e.g. if business_meaning says Type = '3013_Opioid', use '3013_Opioid' verbatim;
@@ -93,8 +118,14 @@ Rules:
    - If it asks for a count, existence check, or count comparison, return COUNT(*) or the requested aggregate.
    - If it asks to return values, identifiers, codes, columns, records, or details, project those exact mapped columns. Never replace them with COUNT(*).
    - If it asks for multiple attributes per record, project only those requested attributes, with clear aliases when needed by the stated output.
+   - Output aliases must name the extracted business fact, use PascalCase, contain no more than 40 characters, and never read like a full sentence.
+     Prefer names such as Scc05HistoryFound, Scc05HistoryQuantity,
+     Scc05HistoryDaysSupply, Scc05HistoryDateOfService, or ReversalDays.
    - Do not add extra output columns merely because they are available in the selected table.
-9. Return ONLY the raw SQL query. No explanation. No markdown. No code fences.
+9. Return ONLY one JSON object with exactly this shape:
+   {"query_text": "SELECT ..."}
+   Use {"query_text": null} when no grounded query can be produced. Do not return
+   explanation text, markdown, code fences, additional fields, or SQL outside JSON.
 10. Preserve every explicit filter in the business requirement. If it says
     resubclaimid <> '' then use <> ''; do not convert it to = ''.
 11. Treat request/common/precomputed values and InMemory logical DTO tables as
@@ -105,13 +136,16 @@ Rules:
     when the fact is unavailable in the frontier, or when the current task explicitly
     names a physical source as authoritative. Never map a concept to an unrelated
     InMemory property merely to avoid physical fallback.
-12. Prefer one complete table. A query may JOIN multiple physical tables only when
-    the CURRENT DATA QUERY BUSINESS MEANING explicitly requires those sources and
-    the relationship is grounded by the provided schemas and reviewed IL join-key
-    patterns. Every joined table and column must exist in the DDL context. Never mix
-    InMemory and physical tables in one SELECT. Never use APPLY, UNION, INTERSECT,
+12. Prefer one complete table. A query may JOIN multiple tables, including an
+    InMemory logical DTO table with a physical SQL Server table, when the CURRENT
+    DATA QUERY BUSINESS MEANING explicitly requires those sources and the relationship
+    is grounded by provided schemas and reviewed InRule SME join-key patterns. Every
+    joined table and column must exist in the DDL context. Apply NOLOCK only to each
+    physical table and never to an InMemory table. Never use APPLY, UNION, INTERSECT,
     EXCEPT, or an ungrounded multi-table subquery. Never combine unrelated retrieval
-    steps from the description or acceptance criteria.
+    steps from the description or acceptance criteria. When runtime inputs already
+    provide the lookup keys, filter the target table directly with placeholders; do not
+    join a claim or InMemory table merely to recover those same values.
 13. Never use placeholder predicates or tautologies such as ON 1 = 0 or
     c.col = c.col. Preserve only filters explicitly stated in the business
     requirement. Never add a date, status, identifier, null check, or other
@@ -139,8 +173,8 @@ Rules:
     description or current task and acceptance criteria establish that mapping.
 18. If a logical concept, requested output, filter, runtime input, identifier, or
     required join relationship cannot be mapped unambiguously to the provided DDL,
-    return exactly NO_SUPPORTED_QUERY instead of approximating it, dropping it, or
-    adding a proxy.
+    return {"query_text": null} instead of approximating it, dropping it, or adding
+    a proxy.
 """.strip()
 
 _UNSAFE_SQL_RE = re.compile(
@@ -174,6 +208,47 @@ _UNSUPPORTED_SET_OPERATION_RE = re.compile(
     re.IGNORECASE,
 )
 _NOLOCK_HINT_RE = re.compile(r"\(\s*nolock\s*\)", re.IGNORECASE)
+_INMEMORY_NOLOCK_RE = re.compile(
+    r"(?P<table>\b(?:FROM|JOIN)\s+"
+    r"(?:\[?InMemory\]?\s*\.\s*)?\[?dbo\]?\s*\.\s*"
+    r"(?:\[[^]]+\]|[A-Za-z_]\w*)"
+    r"(?:\s+(?:AS\s+)?(?!WITH\b)[A-Za-z_]\w*)?)"
+    r"\s+(?:WITH\s*)?\(\s*NOLOCK\s*\)",
+    re.IGNORECASE,
+)
+_RESERVED_TABLE_ALIASES = frozenset({"do", "group", "key", "order", "user", "value"})
+_HINT_BEFORE_ALIAS_RE = re.compile(
+    r"(?P<table>\b(?:FROM|JOIN)\s+"
+    r"(?:\[[^]]+\]|[A-Za-z_]\w*)"
+    r"(?:\s*\.\s*(?:\[[^]]+\]|[A-Za-z_]\w*)){0,2})"
+    r"\s+WITH\s*\(\s*NOLOCK\s*\)"
+    r"\s+(?:AS\s+)?"
+    r"(?P<alias>(?!(?:WHERE|JOIN|INNER|LEFT|RIGHT|FULL|CROSS|ON|GROUP|ORDER|HAVING|"
+    r"UNION|INTERSECT|EXCEPT|OPTION|OFFSET|FETCH)\b)"
+    r"(?:\[[^]]+\]|[A-Za-z_]\w*))(?=\s|$)",
+    re.IGNORECASE,
+)
+_TABLE_ALIAS_RE = re.compile(
+    r"(?P<prefix>\b(?:FROM|JOIN)\s+"
+    r"(?:\[[^]]+\]|[A-Za-z_]\w*)"
+    r"(?:\s*\.\s*(?:\[[^]]+\]|[A-Za-z_]\w*)){0,2}"
+    r"(?:\s+WITH\s*\(\s*NOLOCK\s*\))?"
+    r"\s+(?:AS\s+)?)"
+    r"(?P<alias>[A-Za-z_]\w*)\b",
+    re.IGNORECASE,
+)
+_PHYSICAL_TABLE_WITH_ALIAS_RE = re.compile(
+    r"(?P<table_ref>\b(?:FROM|JOIN)\s+"
+    r"(?P<table>(?:\[[^]]+\]|[A-Za-z_]\w*)"
+    r"(?:\s*\.\s*(?:\[[^]]+\]|[A-Za-z_]\w*)){2}))"
+    r"(?P<alias>\s+(?:AS\s+)?"
+    r"(?!(?:WITH|WHERE|JOIN|INNER|LEFT|RIGHT|FULL|CROSS|ON|GROUP|ORDER|HAVING|"
+    r"UNION|INTERSECT|EXCEPT|OPTION|OFFSET|FETCH)\b)"
+    r"(?:\[[^]]+\]|[A-Za-z_]\w*))?"
+    r"(?P<hint>\s+(?:WITH\s*)?\(\s*NOLOCK\s*\))?",
+    re.IGNORECASE,
+)
+
 _REVIEWED_JOIN_KEYS = {
     frozenset({("enrollkeys", "memid"), ("member", "memid")}),
     frozenset({("enrollkeys", "enrollid"), ("enrollcoverage", "enrollid")}),
@@ -183,25 +258,25 @@ _REVIEWED_JOIN_KEYS = {
     frozenset({("provider", "provid"), ("provspecialty", "provid")}),
     frozenset({("affiliation", "provid"), ("provider", "provid")}),
     frozenset({("claim", "claimid"), ("claimpharm", "claimid")}),
+    frozenset({("claim", "claimid"), ("claimdetail", "claimid")}),
+    frozenset({("claimdetail", "claimid"), ("claimpharm", "claimid")}),
+    frozenset({("claimdetail", "claimline"), ("claimpharm", "claimline")}),
+    frozenset({("claim", "claimid"), ("claimpartial", "claimid")}),
+    frozenset({("claimpartial", "claimid"), ("claimpharm", "claimid")}),
+    frozenset({("claimpharm", "ndckey"), ("ndc_mstr", "ndckey")}),
     frozenset({("claim", "claimid"), ("claimpartial", "claimid")}),
     frozenset({("benefitcoverage", "benefitid"), ("benefit", "benefitid")}),
     frozenset({("benefitcoverage", "coveragecodeid"), ("enrollcoverage", "coveragecodeid")}),
     frozenset({("ndc_mstr", "gcn_seqno"), ("ndcprefdrug", "gcn_seqno")}),
+    frozenset({("member_history", "gcnseqno"), ("drugoverrides", "gcn_seqno")}),
     frozenset({("claim", "claimid"), ("claimdiag", "claimid")}),
     frozenset({("pa_gap", "referralid"), ("referral", "referralid")}),
+    frozenset({("authservice", "referralid"), ("referral", "referralid")}),
     frozenset({("enrollkeys", "enrollid"), ("memberpcp", "enrollid")}),
     frozenset({("dea", "provid"), ("provider", "provid")}),
 }
 
 
-def _draft_result(sql: str, category: str, reason: str, draft_mode: bool) -> dict[str, str | list[str] | None] | None:
-    if not draft_mode:
-        return None
-    return {
-        "queries": [sql],
-        "failure_category": category,
-        "failure_reason": reason,
-    }
 
 
 def generate_query_result_for_step(
@@ -235,7 +310,8 @@ def generate_query_result_for_step(
         repair_feedback = None
         last_failure_category = "VALIDATION_REJECTED"
         last_failure_reason = "The generated SQL did not pass Data Agent validation."
-        for attempt in range(2):
+        max_attempts = 5 if draft_mode else 2
+        for attempt in range(max_attempts):
             sql = _call_openai(
                 business_meaning,
                 ddl_context,
@@ -250,17 +326,42 @@ def generate_query_result_for_step(
                     "failure_category": "MODEL_RETURNED_NO_QUERY",
                     "failure_reason": "The model returned no SQL for the grounded query task.",
                 }
+            if sql == "INVALID_STRUCTURED_RESPONSE":
+                if attempt < max_attempts - 1:
+                    repair_feedback = _build_structured_response_repair_feedback()
+                    continue
+                return {
+                    "queries": [],
+                    "failure_category": "INVALID_MODEL_RESPONSE",
+                    "failure_reason": "The model did not return the required query_text JSON object.",
+                }
 
             sql = _clean_sql(sql)
+            sql = _normalize_inmemory_table_hints(sql)
+            sql = _normalize_physical_hint_alias_order(sql)
+            sql = _normalize_reserved_table_aliases(sql)
+            sql = _normalize_missing_physical_table_hints(sql)
             if sql.upper() == "NO_SUPPORTED_QUERY":
                 print("[generate_queries_for_step] no supported grounded SELECT query")
+                if draft_mode and attempt < max_attempts - 1:
+                    repair_feedback = (
+                        "Try again by extracting only one atomic source fact from the current "
+                        "business meaning. Prefer a grounded existence count or the specifically "
+                        "requested source columns. Do not calculate the final rule decision, "
+                        "combine separate retrieval stages, or import unrelated rule context. "
+                        "Return {\"query_text\": null} only if no such fact maps to the DDL."
+                    )
+                    continue
                 return {
                     "queries": [],
                     "failure_category": "NO_SUPPORTED_GROUNDED_QUERY",
-                    "failure_reason": "The task could not be mapped to a safe, grounded SELECT query.",
+                    "failure_reason": "The task could not be mapped to a safe, grounded SELECT query after all generation attempts.",
                 }
             if not _is_safe_select_sql(sql):
                 print("[generate_queries_for_step] rejected unsafe or non-SELECT SQL")
+                if not _UNSAFE_SQL_RE.search(sql) and attempt < max_attempts - 1:
+                    repair_feedback = _build_parse_repair_feedback()
+                    continue
                 return {
                     "queries": [],
                     "failure_category": "VALIDATION_REJECTED",
@@ -268,8 +369,28 @@ def generate_query_result_for_step(
                 }
 
             invalid_tables = _find_invalid_table_refs(sql, ddl_context)
+            if invalid_tables == ["unparseable or multiple-statement T-SQL"]:
+                last_failure_category = "UNPARSEABLE_OR_MULTIPLE_STATEMENTS"
+                last_failure_reason = (
+                    "The model did not return exactly one parseable T-SQL SELECT statement."
+                )
+                if attempt == max_attempts - 1:
+                    return {
+                        "queries": [],
+                        "failure_category": last_failure_category,
+                        "failure_reason": last_failure_reason,
+                    }
+                repair_feedback = _build_parse_repair_feedback()
+                continue
             if not invalid_tables:
                 invalid_columns = _find_invalid_column_refs(sql, ddl_context)
+                if invalid_columns and not _RAW_REQUEST_OBJECT_RE.search(sql):
+                    repaired_sql = _repair_invalid_column_references(
+                        sql, ddl_context, invalid_columns
+                    )
+                    if repaired_sql != sql:
+                        sql = repaired_sql
+                        invalid_columns = _find_invalid_column_refs(sql, ddl_context)
                 if invalid_columns:
                     last_failure_category = "COLUMN_NOT_IN_DDL"
                     last_failure_reason = (
@@ -277,23 +398,24 @@ def generate_query_result_for_step(
                         + ", ".join(invalid_columns)
                     )
                     print("[generate_queries_for_step] rejected SQL with columns outside schema context: " + ", ".join(invalid_columns))
-                    if attempt == 1:
+                    if attempt == max_attempts - 1:
                         return {"queries": [], "failure_category": last_failure_category, "failure_reason": last_failure_reason}
-                    repair_feedback = _build_column_repair_feedback(invalid_columns)
+                    repair_feedback = _build_column_repair_feedback(
+                        invalid_columns, sql, ddl_context
+                    )
                     continue
 
                 invalid_artifacts = _find_invalid_sql_artifacts(sql, ddl_context, business_meaning)
                 invalid_artifacts.extend(_find_output_shape_artifacts(sql, business_meaning))
+                output_name_artifacts = _find_output_name_artifacts(sql)
+                invalid_artifacts.extend(output_name_artifacts)
                 if not invalid_artifacts:
                     return {"queries": [sql], "failure_category": None, "failure_reason": None}
 
                 last_failure_category = "VALIDATION_REJECTED"
                 last_failure_reason = "The generated SQL was rejected: " + ", ".join(invalid_artifacts)
                 print("[generate_queries_for_step] rejected SQL with invalid predicates: " + ", ".join(invalid_artifacts))
-                draft = _draft_result(sql, last_failure_category, last_failure_reason, draft_mode)
-                if draft:
-                    return draft
-                if attempt == 1:
+                if attempt == max_attempts - 1:
                     return {"queries": [], "failure_category": last_failure_category, "failure_reason": last_failure_reason}
                 repair_feedback = _build_artifact_repair_feedback(invalid_artifacts)
                 continue
@@ -304,7 +426,7 @@ def generate_query_result_for_step(
                 + ", ".join(invalid_tables)
             )
             print("[generate_queries_for_step] rejected SQL with tables outside schema context: " + ", ".join(invalid_tables))
-            if attempt == 1:
+            if attempt == max_attempts - 1:
                 return {"queries": [], "failure_category": last_failure_category, "failure_reason": last_failure_reason}
             repair_feedback = _build_table_repair_feedback(invalid_tables, ddl_context)
 
@@ -480,11 +602,11 @@ def _build_user_message(
         "DDL SCHEMAS (InMemory frontier schemas are listed before physical "
         "fallback schemas):\n"
         f"{ddl_context}\n\n"
-        "RULE DESCRIPTION (context only):\n"
+        "RULE DESCRIPTION (overall objective only; do not import query logic):\n"
         f"{description or 'Not provided'}\n\n"
-        "ACCEPTANCE CRITERIA (context only):\n"
+        "DIRECTLY REFERENCED ACCEPTANCE CRITERIA (supporting context only):\n"
         f"{acceptance_text}\n\n"
-        "CURRENT DATA QUERY BUSINESS MEANING (authoritative query task):\n"
+        "CURRENT DATA QUERY BUSINESS MEANING (authoritative atomic query task):\n"
         f"{business_meaning}"
     )
 
@@ -521,13 +643,13 @@ def _call_openai(
         strict_rule = (
             "18. If a logical concept, requested output, filter, runtime input, identifier, or\n"
             "    required join relationship cannot be mapped unambiguously to the provided DDL,\n"
-            "    return exactly NO_SUPPORTED_QUERY instead of approximating it, dropping it, or\n"
-            "    adding a proxy."
+            "    return {\"query_text\": null} instead of approximating it, dropping it, or adding\n"
+            "    a proxy."
         )
         draft_rule = (
-            "18. DRAFT MODE: Return the best review-only SELECT candidate when a mapping is\n"
-            "    incomplete. Do not invent a non-SELECT operation or multiple statements.\n"
-            "    The caller will retain schema-grounded candidates for later review."
+            "18. DRAFT MODE: Return the best review-only SELECT candidate in the required\n"
+            "    query_text JSON object when a mapping is incomplete. Do not invent a\n"
+            "    non-SELECT operation or multiple statements."
         )
         system_prompt = SYSTEM_PROMPT.replace(strict_rule, draft_rule)
     messages = [
@@ -540,6 +662,7 @@ def _call_openai(
     request_kwargs = {
         "model": model,
         "messages": messages,
+        "response_format": {"type": "json_object"},
     }
     if model.lower().startswith(("gpt-5", "o1", "o3", "o4")):
         request_kwargs["max_completion_tokens"] = 600
@@ -548,13 +671,88 @@ def _call_openai(
         request_kwargs["max_tokens"] = 600
 
     response = client.chat.completions.create(**request_kwargs)
-    sql = response.choices[0].message.content
-    return sql.strip() if sql else None
+    content = response.choices[0].message.content
+    return _parse_model_query_response(content)
+
+
+def _parse_model_query_response(content: str | None) -> str | None:
+    if not content:
+        return None
+    try:
+        payload = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return "INVALID_STRUCTURED_RESPONSE"
+    if not isinstance(payload, dict) or set(payload) != {"query_text"}:
+        return "INVALID_STRUCTURED_RESPONSE"
+    query_text = payload["query_text"]
+    if query_text is None:
+        return "NO_SUPPORTED_QUERY"
+    if not isinstance(query_text, str) or not query_text.strip():
+        return "INVALID_STRUCTURED_RESPONSE"
+    return query_text.strip()
+
+
+def _normalize_inmemory_table_hints(sql: str) -> str:
+    return _INMEMORY_NOLOCK_RE.sub(lambda match: match.group("table"), sql)
+
+
+def _normalize_physical_hint_alias_order(sql: str) -> str:
+    """Move a physical-table alias before its SQL Server NOLOCK hint."""
+    return _HINT_BEFORE_ALIAS_RE.sub(
+        lambda match: f"{match.group('table')} AS {match.group('alias')} WITH (NOLOCK)",
+        sql,
+    )
+
+
+def _normalize_missing_physical_table_hints(sql: str) -> str:
+    """Add the required SQL Server NOLOCK hint to qualified physical tables."""
+    def add_hint(match: re.Match[str]) -> str:
+        canonical = _canonical_table_ref(match.group("table"))
+        if not canonical or canonical.startswith("inmemory.") or match.group("hint"):
+            return match.group(0)
+        return f"{match.group('table_ref')}{match.group('alias') or ''} WITH (NOLOCK)"
+
+    parts = re.split(r"('(?:''|[^'])*')", sql)
+    for index in range(0, len(parts), 2):
+        parts[index] = _PHYSICAL_TABLE_WITH_ALIAS_RE.sub(add_hint, parts[index])
+    return "".join(parts)
+
+
+def _normalize_reserved_table_aliases(sql: str) -> str:
+    """Bracket parser-reserved table aliases without changing SQL semantics."""
+    aliases: set[str] = set()
+
+    def quote_declaration(match: re.Match[str]) -> str:
+        alias = match.group("alias")
+        if alias.casefold() not in _RESERVED_TABLE_ALIASES:
+            return match.group(0)
+        aliases.add(alias)
+        return f"{match.group('prefix')}[{alias}]"
+
+    parts = re.split(r"('(?:''|[^'])*')", sql)
+    for index in range(0, len(parts), 2):
+        parts[index] = _TABLE_ALIAS_RE.sub(quote_declaration, parts[index])
+    if not aliases:
+        return sql
+    for index in range(0, len(parts), 2):
+        for alias in aliases:
+            parts[index] = re.sub(
+                rf"(?<![\w\]]){re.escape(alias)}\s*\.",
+                f"[{alias}].",
+                parts[index],
+                flags=re.IGNORECASE,
+            )
+    return "".join(parts)
 
 
 def _clean_sql(text: str) -> str:
     sql = text.strip()
-    if sql.startswith("```"):
+    fenced_blocks = re.findall(
+        r"```(?:sql)?\s*(.*?)\s*```", sql, flags=re.IGNORECASE | re.DOTALL
+    )
+    if len(fenced_blocks) == 1 and fenced_blocks[0].lstrip().lower().startswith("select"):
+        sql = fenced_blocks[0]
+    elif sql.startswith("```"):
         sql = re.sub(r"^```(?:sql)?\s*", "", sql, flags=re.IGNORECASE)
         sql = re.sub(r"\s*```$", "", sql)
     return sql.strip().rstrip(";")
@@ -606,13 +804,34 @@ def _canonical_table_ref(table_ref: str) -> str | None:
     return ".".join(parts)
 
 
+def _build_structured_response_repair_feedback() -> str:
+    return (
+        "The previous response did not match the required JSON envelope. Return exactly one "
+        "JSON object with exactly one field: {\"query_text\": \"SELECT ...\"}. Use "
+        "{\"query_text\": null} only when no grounded query exists. Do not return markdown, "
+        "explanations, additional fields, or text outside the JSON object."
+    )
+
+
+def _build_parse_repair_feedback() -> str:
+    return (
+        "The query_text value was not exactly one parseable T-SQL SELECT statement. "
+        "Regenerate the same atomic query as one SELECT only inside the required JSON "
+        "object. Do not put explanations, markdown, code fences, variable declarations, "
+        "temporary tables, multiple SELECT alternatives, or semicolon-separated statements "
+        "inside query_text. Preserve every required business filter, output, QueryParam "
+        "placeholder, and DDL-grounded table/column mapping."
+    )
+
+
 def _build_table_repair_feedback(invalid_tables: list[str], ddl_context: str) -> str:
     allowed = sorted(_extract_ddl_table_names(ddl_context))
     return (
         "The previous SQL referenced table(s) not present in the provided DDL context: "
         f"{', '.join(invalid_tables)}. Regenerate the SQL using ONLY these fully "
         f"qualified tables: {', '.join(allowed)}. Do not invent tables, aliases for "
-        "tables, or joins outside the DDL context. Return only the corrected SELECT."
+        "tables, or joins outside the DDL context. Return the corrected SELECT inside "
+        "the required query_text JSON object."
     )
 
 
@@ -675,13 +894,109 @@ def _extract_ddl_column_catalog(ddl_context: str) -> dict[str, set[str]]:
     return catalog
 
 
-def _build_column_repair_feedback(invalid_columns: list[str]) -> str:
+def _repair_invalid_column_references(
+    sql: str, ddl_context: str, invalid_columns: list[str]
+) -> str:
+    statement = _parse_generated_select(sql)
+    if statement is None:
+        return sql
+    catalog = _extract_ddl_column_catalog(ddl_context)
+    aliases: dict[str, str] = {}
+    for table in statement.find_all(exp.Table):
+        canonical = _canonical_ast_table(table)
+        if canonical:
+            aliases[table.alias_or_name.lower()] = canonical
+    repaired = sql
+    for invalid in invalid_columns:
+        if "." not in invalid:
+            continue
+        raw_alias, raw_column = invalid.rsplit(".", 1)
+        alias = raw_alias.strip('"[]').lower()
+        column = raw_column.strip('"[]')
+        concepts = _semantic_concepts(column)
+        if not concepts:
+            continue
+        candidates: list[tuple[str, str]] = []
+        for candidate_alias, table in aliases.items():
+            for allowed in catalog.get(table, set()):
+                if concepts & _semantic_concepts(allowed):
+                    candidates.append((candidate_alias, allowed))
+        same_alias = [candidate for candidate in candidates if candidate[0] == alias]
+        usable = same_alias if len(same_alias) == 1 else candidates
+        if len(usable) != 1:
+            continue
+        replacement_alias, replacement_column = usable[0]
+        pattern = re.compile(
+            rf"(?<![A-Za-z0-9_])(?:\[{re.escape(alias)}\]|{re.escape(alias)})"
+            rf"\s*\.\s*(?:\[{re.escape(column)}\]|\"{re.escape(column)}\"|{re.escape(column)})"
+            rf"(?![A-Za-z0-9_])",
+            re.IGNORECASE,
+        )
+        repaired = pattern.sub(
+            f"{replacement_alias}.{replacement_column}", repaired
+        )
+    return repaired
+
+
+def _column_repair_suggestions(
+    invalid_columns: list[str], sql: str, ddl_context: str
+) -> list[str]:
+    statement = _parse_generated_select(sql)
+    if statement is None:
+        return []
+    catalog = _extract_ddl_column_catalog(ddl_context)
+    aliases: dict[str, str] = {}
+    referenced_tables: list[str] = []
+    for table in statement.find_all(exp.Table):
+        canonical = _canonical_ast_table(table)
+        if not canonical:
+            continue
+        aliases[table.alias_or_name.lower()] = canonical
+        referenced_tables.append(canonical)
+    suggestions: list[str] = []
+    for invalid in invalid_columns:
+        if "." not in invalid:
+            continue
+        alias, column = invalid.rsplit(".", 1)
+        concepts = _semantic_concepts(column.strip('"[]'))
+        if not concepts:
+            continue
+        preferred = aliases.get(alias.strip('"[]').lower())
+        candidates: list[str] = []
+        ordered_tables = ([preferred] if preferred else []) + [
+            table for table in referenced_tables if table != preferred
+        ]
+        for table in ordered_tables:
+            if not table:
+                continue
+            table_name = table.split(".")[-1]
+            for allowed in sorted(catalog.get(table, set())):
+                if concepts & _semantic_concepts(allowed):
+                    candidates.append(f"{table_name}.{allowed}")
+        if candidates:
+            suggestions.append(
+                f"{invalid} likely maps by business concept to one of: "
+                + ", ".join(candidates[:6])
+            )
+    return suggestions
+
+
+def _build_column_repair_feedback(
+    invalid_columns: list[str], sql: str, ddl_context: str
+) -> str:
+    suggestions = _column_repair_suggestions(invalid_columns, sql, ddl_context)
+    suggestion_text = (
+        " Schema-grounded concept matches: " + "; ".join(suggestions) + "."
+        if suggestions else ""
+    )
     return (
         "The previous SQL referenced columns not present in the selected table DDL: "
-        f"{', '.join(invalid_columns)}. Regenerate using only exact columns from the "
-        "provided table DDLs. Do not substitute an unrelated column or invent a predicate. If "
-        "the requested output or filter cannot be mapped unambiguously, return exactly "
-        "NO_SUPPORTED_QUERY."
+        f"{', '.join(invalid_columns)}.{suggestion_text} Regenerate using only exact "
+        "columns from the provided table DDLs. Move a business concept to the table "
+        "that actually owns the matching column and use only reviewed joins. Do not "
+        "substitute an unrelated column or invent a predicate. Return the corrected SELECT "
+        "inside the required query_text JSON object, or {\"query_text\": null} if the "
+        "mapping cannot be grounded."
     )
 
 
@@ -703,6 +1018,26 @@ def _find_output_shape_artifacts(sql: str, business_meaning: str) -> list[str]:
     ):
         return ["COUNT(*) output does not match requested values/identifiers/records"]
     return []
+
+
+def _find_output_name_artifacts(sql: str) -> list[str]:
+    statement = _parse_generated_select(sql)
+    if not isinstance(statement, exp.Select):
+        return []
+    artifacts = []
+    for projection in statement.expressions:
+        alias = projection.alias
+        if not alias:
+            continue
+        if len(alias) > 40:
+            artifacts.append(f"output alias {alias!r} exceeds 40 characters")
+        elif not re.fullmatch(r"[A-Z][A-Za-z0-9]*", alias):
+            artifacts.append(f"output alias {alias!r} must use PascalCase")
+        elif re.search(r"(?:Bypass|Deny|Post|Decision|Applies|Eligible)", alias):
+            artifacts.append(
+                f"output alias {alias!r} describes a final rule decision instead of an extracted fact"
+            )
+    return artifacts
 
 
 def _parse_generated_select(sql: str) -> Expression | None:
@@ -744,17 +1079,6 @@ def _table_source(table: exp.Table, ddl_context: str) -> str:
     return "UNKNOWN"
 
 
-def _business_meaning_names_tables(
-    business_meaning: str, tables: list[exp.Table]
-) -> bool:
-    normalized = business_meaning.lower().replace("_", " ")
-    return all(
-        re.search(
-            rf"(?<![a-z0-9]){re.escape(table.name.lower().replace('_', ' '))}(?![a-z0-9])",
-            normalized,
-        )
-        for table in tables
-    )
 
 
 def _find_ungrounded_joins(
@@ -811,6 +1135,186 @@ def _find_ungrounded_joins(
     return artifacts
 
 
+def _find_ungrounded_subqueries(statement: Expression) -> list[str]:
+    artifacts: list[str] = []
+    all_tables = list(statement.find_all(exp.Table))
+    aliases = {
+        table.alias_or_name.lower(): table.name.lower()
+        for table in all_tables
+    }
+    nested_selects = [
+        select for select in statement.find_all(exp.Select)
+        if select is not statement
+    ]
+    for nested in nested_selects:
+        if any(
+            ancestor is not nested
+            for ancestor in nested.find_all(exp.Select)
+        ):
+            artifacts.append("nested subquery depth greater than one is not supported")
+            continue
+        nested_tables = [
+            table for table in nested.find_all(exp.Table)
+            if table.find_ancestor(exp.Select) is nested
+        ]
+        if len(nested_tables) != 1:
+            artifacts.append("subquery must read exactly one grounded table")
+            continue
+        nested_alias = nested_tables[0].alias_or_name.lower()
+        correlated = False
+        unreviewed = False
+        for equality in nested.find_all(exp.EQ):
+            left, right = equality.left, equality.right
+            if not isinstance(left, exp.Column) or not isinstance(right, exp.Column):
+                continue
+            left_alias = left.table.lower() if left.table else ""
+            right_alias = right.table.lower() if right.table else ""
+            if nested_alias not in {left_alias, right_alias} or left_alias == right_alias:
+                continue
+            outer_alias = right_alias if left_alias == nested_alias else left_alias
+            if not outer_alias or outer_alias not in aliases:
+                continue
+            relationship = frozenset({
+                (aliases[left_alias], left.name.lower()),
+                (aliases[right_alias], right.name.lower()),
+            })
+            if relationship in _REVIEWED_JOIN_KEYS:
+                correlated = True
+            else:
+                unreviewed = True
+        if unreviewed or not correlated:
+            artifacts.append(
+                f"subquery on {nested_tables[0].sql()} is not correlated through a reviewed key"
+            )
+    return artifacts
+
+
+def _business_meaning_names_table(business_meaning: str, table: exp.Table) -> bool:
+    normalized = business_meaning.lower().replace("_", " ")
+    table_name = table.name.lower().replace("_", " ")
+    return bool(re.search(
+        rf"(?<![a-z0-9]){re.escape(table_name)}(?![a-z0-9])",
+        normalized,
+    ))
+
+
+def _find_noncontributing_two_table_artifacts(
+    statement: Expression, tables: list[exp.Table], business_meaning: str
+) -> list[str]:
+    if len(tables) != 2:
+        return []
+    meaningful_aliases: set[str] = set()
+    expressions = list(statement.expressions)
+    for key in ("where", "group", "having", "order", "qualify"):
+        expression = statement.args.get(key)
+        if isinstance(expression, Expression):
+            expressions.append(expression)
+    for expression in expressions:
+        for column in expression.find_all(exp.Column):
+            if column.table:
+                meaningful_aliases.add(column.table.lower())
+    return [
+        f"table {table.name} contributes no requested output or filter"
+        for table in tables
+        if table.alias_or_name.lower() not in meaningful_aliases
+        and not _business_meaning_names_table(business_meaning, table)
+    ]
+
+
+def _semantic_concepts(name: str) -> set[str]:
+    normalized = re.sub(r"[^a-z0-9]", "", name.lower().lstrip(":"))
+    concepts: set[str] = set()
+    families = {
+        "rxnumber": ("rxnumber", "prescriptionnumber", "servicereferencenumber"),
+        "editid": ("editid", "editeditid", "rejecteditseditid"),
+        "memberid": ("memberid", "memid", "cardholderid"),
+        "providerid": ("providerid", "provid", "pharmacynpi", "prescribernpi", "npi"),
+        "ndc": ("ndc", "ndckey", "nationaldrugcode"),
+        "gcn": ("gcn", "gcnseqno"),
+        "date": ("date", "dos", "dateofservice", "effdate", "enddate", "termdate"),
+        "quantity": ("quantity", "qty", "metricqty", "units"),
+        "dayssupply": ("dayssupply",),
+        "planid": ("planid", "benefitplanid"),
+        "authorizationid": ("authorizationid", "authid", "referralid"),
+        "claimid": ("claimid", "matchingclaimid"),
+    }
+    for concept, aliases in families.items():
+        if any(alias in normalized for alias in aliases):
+            concepts.add(concept)
+    return concepts
+
+
+def _expression_columns(expression: Expression) -> list[exp.Column]:
+    if isinstance(expression, exp.Column):
+        return [expression]
+    return list(expression.find_all(exp.Column))
+
+
+def _expression_runtime_names(
+    expression: Expression, runtime_by_sentinel: dict[str, str]
+) -> list[str]:
+    literals = [expression] if isinstance(expression, exp.Literal) else list(
+        expression.find_all(exp.Literal)
+    )
+    return [
+        runtime_by_sentinel[str(literal.this)]
+        for literal in literals
+        if str(literal.this) in runtime_by_sentinel
+    ]
+
+
+def _runtime_semantic_statement(
+    sql: str,
+) -> tuple[Expression | None, dict[str, str]]:
+    runtime_by_sentinel: dict[str, str] = {}
+
+    def replace(match: re.Match[str]) -> str:
+        runtime = match.group(1).strip()
+        sentinel = f"__INRULE_RUNTIME_{len(runtime_by_sentinel)}__"
+        runtime_by_sentinel[sentinel] = runtime
+        return f"'{sentinel}'"
+
+    sanitized = re.sub(r"'?\{\{([^}]+)\}\}'?", replace, sql)
+    sanitized = _NOLOCK_HINT_RE.sub("WITH (NOLOCK)", sanitized)
+    try:
+        statements = sqlglot.parse(sanitized, read="tsql")
+    except (ParseError, TokenError, ValueError):
+        return None, runtime_by_sentinel
+    parsed = [statement for statement in statements if statement is not None]
+    return (parsed[0] if len(parsed) == 1 else None), runtime_by_sentinel
+
+
+def _find_runtime_column_mapping_artifacts(sql: str) -> list[str]:
+    artifacts: list[str] = []
+    statement, runtime_by_sentinel = _runtime_semantic_statement(sql)
+    if statement is None:
+        return artifacts
+    for equality in statement.find_all(exp.EQ):
+        comparisons = (
+            (equality.left, equality.right),
+            (equality.right, equality.left),
+        )
+        for column_side, runtime_side in comparisons:
+            columns = _expression_columns(column_side)
+            runtimes = _expression_runtime_names(runtime_side, runtime_by_sentinel)
+            for column in columns:
+                for runtime in runtimes:
+                    runtime_concepts = _semantic_concepts(runtime)
+                    column_concepts = _semantic_concepts(column.name)
+                    if (
+                        runtime_concepts
+                        and column_concepts
+                        and runtime_concepts.isdisjoint(column_concepts)
+                    ):
+                        artifact = (
+                            f"column {column.sql()} is semantically incompatible with "
+                            f"runtime input {{{{{runtime}}}}}"
+                        )
+                        if artifact not in artifacts:
+                            artifacts.append(artifact)
+    return artifacts
+
+
 def _find_invalid_sql_artifacts(
     sql: str, ddl_context: str, business_meaning: str
 ) -> list[str]:
@@ -821,6 +1325,7 @@ def _find_invalid_sql_artifacts(
         artifacts.append("1 = 0/1 predicate")
     if _RAW_REQUEST_OBJECT_RE.search(sql):
         artifacts.append("raw request-object reference")
+    artifacts.extend(_find_runtime_column_mapping_artifacts(sql))
     for match in _TAUTOLOGY_RE.finditer(sql):
         expression = match.group(0)
         if expression not in artifacts:
@@ -846,40 +1351,64 @@ def _find_invalid_sql_artifacts(
         elif source == "PHYSICAL" and not has_nolock:
             artifacts.append(f"physical table {table.name} must use NOLOCK")
 
-    if len(list(statement.find_all(exp.Select))) > 1:
-        artifacts.append("table-reading subqueries are not supported in MVP1")
+    nested_selects = [
+        select for select in statement.find_all(exp.Select)
+        if select is not statement
+    ]
+    if nested_selects:
+        artifacts.extend(_find_ungrounded_subqueries(statement))
 
     unique_tables = {
         canonical for table in tables if (canonical := _canonical_ast_table(table))
     }
     if len(unique_tables) > 1:
-        if any(source != "PHYSICAL" for source in table_sources):
-            artifacts.append("multi-table SELECT requires physical tables")
-        if len(set(table_sources)) > 1:
-            artifacts.append("cannot mix InMemory and physical tables in one SELECT")
-        if not _business_meaning_names_tables(business_meaning, tables):
-            artifacts.append("atomic business meaning does not explicitly require every table")
-        joins = list(statement.find_all(exp.Join))
-        if not joins:
+        outer_tables = [
+            table for table in tables
+            if table.find_ancestor(exp.Subquery) is None
+        ]
+        outer_joins = [
+            join for join in statement.find_all(exp.Join)
+            if join.find_ancestor(exp.Subquery) is None
+        ]
+        if outer_joins:
+            artifacts.extend(_find_ungrounded_joins(outer_joins, outer_tables))
+            artifacts.extend(
+                _find_noncontributing_two_table_artifacts(
+                    statement, outer_tables, business_meaning
+                )
+            )
+        elif not nested_selects:
             artifacts.append("multi-table SELECT has no grounded JOIN")
-        else:
-            artifacts.extend(_find_ungrounded_joins(joins, tables))
     return artifacts
 
 
 def _build_artifact_repair_feedback(invalid_artifacts: list[str]) -> str:
+    output_feedback = (
+        " The output alias encoded a final rule decision. Replace decision-shaped "
+        "COUNT/CASE/constant output with the underlying requested source fact, such as "
+        "the matching row ID, code, date, value, or other DDL column, and give it a "
+        "concise factual alias. Downstream InRule logic decides whether a bypass, denial, "
+        "or other action applies."
+        if any("output alias" in artifact for artifact in invalid_artifacts)
+        else ""
+    )
     return (
         "The previous SQL violated source, relationship, or SQL-quality rules: "
         f"{', '.join(invalid_artifacts)}. Regenerate one SELECT using only provided "
         "DDL tables and columns. InMemory tables must not use NOLOCK; physical tables "
-        "must use NOLOCK. Prefer one complete table. Use a physical JOIN only when "
-        "every table is explicitly required by the current atomic business meaning "
-        "and the join key is a reviewed relationship. Never mix InMemory and physical "
-        "tables, and do not use APPLY, UNION, INTERSECT, EXCEPT, or an ungrounded "
+        "must use NOLOCK. Prefer one complete table. Use any physical, InMemory, or "
+        "mixed-source JOIN only when every table is explicitly required by the current "
+        "atomic business meaning and the join key is a reviewed InRule SME relationship. "
+        "If runtime placeholders already provide the target table's lookup keys, remove "
+        "the unnecessary JOIN and filter that target table directly. Do not join claim or "
+        "InMemory data merely to obtain values already supplied as runtime inputs. "
+        "Do not use APPLY, UNION, INTERSECT, EXCEPT, or an ungrounded "
         "multi-table subquery. Also remove impossible predicates, tautologies, and "
-        "raw HrxRequest/ClaimRequest paths. Use only approved double-brace placeholders, "
-        "preserve the current task's filters and exact output shape, and return only "
-        "the corrected SELECT. If grounding is insufficient, return NO_SUPPORTED_QUERY."
+        "raw HrxRequest/ClaimRequest paths."
+        f"{output_feedback} Use approved double-brace placeholders, preserve "
+        "the current task's filters and exact output shape, and return the corrected SELECT "
+        "inside the required query_text JSON object. If grounding is insufficient, return "
+        "{\"query_text\": null}."
     )
 
 

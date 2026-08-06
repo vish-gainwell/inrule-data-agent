@@ -11,12 +11,12 @@ Description: Stores domain-specific configuration, reference, or transaction dat
 
 CREATE TABLE [HRX].[dbo].[StateDiagCodes_Diags]
 (
-    [ID] int NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing | PK marker: X
-    [DiagID] int NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing | FK marker: X
-    [DrugGroup] varchar(60) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
-    [ICDCodeID] char(8) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
-    [IcdVersion] char(1) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
-    [ChangedBy] char(15) NOT NULL, -- Identifier of the user who changed the record
+    [ID] int NOT NULL, -- Unique identifier for (ICD) diagnosis code line? | PK marker: X
+    [DiagID] int NOT NULL, -- Diagnosis ID; specifies identifier for drug group
+    [DrugGroup] varchar(60) NOT NULL, -- Short description of drug group category
+    [ICDCodeID] char(8) NOT NULL, -- ICD Diagnosis Code; identifies patient conditions relevant for claims adjudication, coverage validation, or regulatory requirements
+    [IcdVersion] char(1) NOT NULL, -- Indicator specifying version of ICD coding system
+    [ChangedBy] char(15) NOT NULL, -- User who changed the record
     [ChangedDate] smalldatetime NOT NULL, -- Date and time the record was changed
     CONSTRAINT [PK_StateDiagCodes_Diags] PRIMARY KEY ([ID])
 );

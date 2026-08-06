@@ -37,6 +37,42 @@ def test_strict_match_translates_runtime_placeholder_dialect(monkeypatch):
     assert match.data_query_id == 5
 
 
+def test_reuse_match_treats_rtrimmed_column_equality_as_equivalent():
+    query = StoredQueryText(
+        101,
+        "NDCParams_ValueByName",
+        1,
+        "select {{:output}} from ndcparameters (nolock) "
+        "where parameter_name = '{{:ParamName}}'",
+    )
+    generated = (
+        "SELECT p.parameter_value AS ReversalDaysThreshold "
+        "FROM HRX.dbo.NDCParameters AS p WITH (NOLOCK) "
+        "WHERE RTRIM(p.parameter_name) = '7013_Reversal_Days'"
+    )
+
+    match = find_reuse_match(generated, {101: (query, ())})
+
+    assert match is not None
+    assert match.proposed_query_params == {"ParamName": "7013_Reversal_Days"}
+
+
+def test_rtrim_normalization_does_not_hide_additional_predicates():
+    query = StoredQueryText(
+        101,
+        "NDCParams_ValueByName",
+        1,
+        "select {{:output}} from ndcparameters (nolock) "
+        "where parameter_name = '{{:ParamName}}'",
+    )
+    generated = (
+        "SELECT p.parameter_value FROM HRX.dbo.NDCParameters AS p WITH (NOLOCK) "
+        "WHERE RTRIM(p.parameter_name) = 'X' AND p.effdate <= GETDATE()"
+    )
+
+    assert find_reuse_match(generated, {101: (query, ())}) is None
+
+
 def test_business_literal_difference_is_not_a_match(monkeypatch):
     monkeypatch.setenv("DATAQUERY_SHADOW_ENABLED", "true")
     generated = (
@@ -139,7 +175,13 @@ def test_shadow_database_failure_keeps_generated_sql(monkeypatch):
     result = response.json()["queries"][0]
     assert result["queries"] == [sql]
     assert result["reuse_decision"] == "REUSE_VALIDATION_UNAVAILABLE"
-    assert result["data_query"] is None
+    assert result["data_query"] == {
+        "data_query_id": None,
+        "data_query_name": None,
+        "query_text": sql,
+        "query_params": {},
+        "return_vals": ["parameter_value"],
+    }
     assert "querytext_comparison_candidates" not in result
 
 
@@ -171,6 +213,24 @@ def test_reuse_match_binds_generic_parameter_and_returns_assignment_examples():
     assert match.proposed_query_params == {"ParamName": "Medicare_Age_Years"}
     assert match.proposed_return_vals == ["PARAMETER_VALUE"]
     assert match.assignment_examples[0].data_package_name == "Edit 7200"
+
+
+def test_reuse_match_binds_runtime_value_to_stored_parameter():
+    query = StoredQueryText(
+        102,
+        "NDC_ByKey",
+        1,
+        "select {{:output}} from NDC_Mstr (nolock) where NDCKey = '{{:Ndckey}}'",
+    )
+    generated = (
+        "SELECT NDCKey FROM HRX.dbo.NDC_Mstr WITH (NOLOCK) "
+        "WHERE NDCKey = {{ClaimTransaction.Ndc}}"
+    )
+
+    match = find_reuse_match(generated, {102: (query, ())})
+
+    assert match is not None
+    assert match.proposed_query_params == {"Ndckey": "{{ClaimTransaction.Ndc}}"}
 
 
 def test_api_returns_reuse_decision_with_query_params(monkeypatch):

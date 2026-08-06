@@ -11,16 +11,16 @@ Description: Stores domain-specific configuration, reference, or transaction dat
 
 CREATE TABLE [HRX].[dbo].[DiagnosisList]
 (
-    [diagnosis_ID] int NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing | PK marker: X
-    [diagnosis_type] char(25) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
-    [diagnosis_code] char(8) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
+    [diagnosis_ID] int NOT NULL, -- Unique identifier for diagnosis line | PK marker: X
+    [diagnosis_type] char(25) NOT NULL, -- Short description of diagnosis type category
+    [diagnosis_code] char(8) NOT NULL, -- ICD Diagnosis Code; identifies patient conditions relevant for claims adjudication, coverage validation, or regulatory requirements
     [EffDate] datetime NOT NULL, -- Date and time the record becomes effective | PK marker: X
     [TermDate] datetime NOT NULL, -- Date and time the record becomes inactive
-    [description] varchar(255) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
-    [IcdVersion] char(1) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
-    [createid] varchar(120) NOT NULL, -- Identifier of the user who created the record
+    [description] varchar(255) NOT NULL, -- Long description of diagnosis type category
+    [IcdVersion] char(1) NOT NULL, -- Indicator specifying version of ICD coding system
+    [createid] varchar(120) NOT NULL, -- User who created the record
     [createdate] datetime NOT NULL, -- Date and time the record was created
-    [updateid] varchar(120) NOT NULL, -- Identifier of the user who changed the record
-    [lastupdate] datetime NOT NULL, -- Date and time event or change occurred
+    [updateid] varchar(120) NOT NULL, -- User who changed the record
+    [lastupdate] datetime NOT NULL, -- Date and time an event or change occurred
     CONSTRAINT [PK_DiagnosisList] PRIMARY KEY ([diagnosis_ID], [EffDate])
 );

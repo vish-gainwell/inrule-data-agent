@@ -135,9 +135,13 @@ def test_select_ddls_falls_back_to_packaged_catalog_when_qdrant_fails():
     ):
         result = select_ddls("Return active member rate-code values")
 
-    assert len(result) == 45
+    assert len(result) == 53
     assert "[InMemory].[dbo]" in result[0]
     assert any("[plandata_rx_production].[dbo].[claim]" in ddl for ddl in result)
+    assert any("[HRX].[dbo].[DrugCoverage]" in ddl for ddl in result)
+    assert any("[HRX].[dbo].[NDC_DESI_Mstr]" in ddl for ddl in result)
+    assert any("[HRX].[dbo].[NDCMedicareCov]" in ddl for ddl in result)
+    assert any("[plandata_rx_production].[dbo].[MemberLockIn]" in ddl for ddl in result)
 
 
 def test_index_schema_catalog_upserts_complete_dense_and_sparse_documents(tmp_path):

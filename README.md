@@ -77,6 +77,9 @@ OPENAI_EMBEDDING_DIMENSIONS=1536
 SCHEMA_RETRIEVAL_DENSE_LIMIT=20
 SCHEMA_RETRIEVAL_SPARSE_LIMIT=20
 SCHEMA_RETRIEVAL_FINAL_LIMIT=8
+
+# Optional ClaimEngine QueryText shadow comparison
+DATAQUERY_SHADOW_ENABLED=false
 ```
 
 > **Windows note:** The backend uses `DB_`-prefixed keys to avoid the Windows environment variable `USERNAME` shadowing the database username from `.env`.
@@ -138,6 +141,43 @@ automatic: if Qdrant is disabled, unreachable, not indexed, misconfigured, or
 an embedding/retrieval request fails, the generator logs the issue and safely
 uses the complete packaged DDL catalog. Query generation remains available.
 
+### 5. MVP1 SQL generation behavior
+
+MVP1 returns validated, actual `SELECT` SQL for each atomic data-required rule
+step. It does not generate `QueryParams`/`ReturnVals`, write ClaimEngine
+configuration tables, or replace generated SQL with stored `DataQuery.QueryText`.
+
+Source and relationship rules:
+
+- Prefer request/common/precomputed values and one complete InMemory frontier
+  source when they contain the required fact.
+- InMemory DTO tables do not use `NOLOCK`.
+- Physical SQL Server tables use `WITH (NOLOCK)`.
+- Prefer one complete table, but allow multiple physical tables when the current
+  atomic business meaning explicitly requires them and every join key matches a
+  reviewed IL relationship.
+- Reject mixed InMemory/physical SQL, ungrounded joins, unsupported set operations,
+  multiple statements, and tables or columns absent from the supplied DDL.
+
+Description and acceptance criteria remain supporting context. The current atomic
+`business_meaning` is authoritative for output shape, predicates, literals, and
+required sources.
+
+### 6. Optional: enable QueryText shadow comparison
+
+Set `DATAQUERY_SHADOW_ENABLED=true` to compare each validated generated query
+against the current `ClaimEngine.dbo.DataQuery.QueryText` records. MVP1 reads the
+database on every generated step and intentionally does not cache the catalog.
+
+Shadow mode never replaces generated SQL. It adds `querytext_shadow_matches`
+metadata only when a stored single-table QueryText has strict normalized
+equivalence: the same canonical table, business literals, operators, Boolean
+predicate structure, and compatible projection. Runtime placeholder dialects
+may differ. Multi-table, fragment, and unparseable records are excluded.
+
+If ClaimEngine is unavailable or matching fails, the error is logged and the
+validated generated SQL is returned unchanged.
+
 #### Endpoints
 
 | Method | Path | Description |
@@ -147,7 +187,7 @@ uses the complete packaged DDL catalog. Query generation remains available.
 | `POST` | `/generate_queries/bulk` | Generate SQL for multiple Criteria Analyzer JSON payloads |
 | `POST` | `/execute_query` | Execute a SELECT query against the live DB |
 
-### 5. Run backend tests
+### 7. Run backend tests
 
 ```bash
 uv run pytest tests/ -v

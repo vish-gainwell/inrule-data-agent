@@ -51,21 +51,57 @@ class ExecuteQueryRequest(BaseModel):
     params: dict[str, str] = Field(default_factory=dict)
 
 
+_CRITERION_REF_RE = re.compile(r"(?:acceptance\s+criteria|AC)?\s*(\d+)", re.IGNORECASE)
+
+
+def _acceptance_criteria_for_step(
+    step: Step,
+    acceptance_criteria: str | list[str] | None,
+) -> str | list[str] | None:
+    """Return only acceptance criteria explicitly referenced by the current step."""
+
+    if not isinstance(acceptance_criteria, list):
+        return acceptance_criteria
+    reference = (step.model_extra or {}).get("ado_criterion_ref")
+    if not isinstance(reference, str) or not reference.strip():
+        return None
+    indexes = {
+        int(match.group(1))
+        for match in _CRITERION_REF_RE.finditer(reference)
+        if 1 <= int(match.group(1)) <= len(acceptance_criteria)
+    }
+    selected = [criterion for index, criterion in enumerate(acceptance_criteria, 1) if index in indexes]
+    return selected or None
+
+
+def _query_task_with_constraints(objective: str, business_meaning: str) -> str:
+    if objective.strip() == business_meaning.strip():
+        return business_meaning.strip()
+    return (
+        f"ATOMIC DATA RETRIEVAL OBJECTIVE:\n{objective.strip()}\n\n"
+        "CURRENT BUSINESS FACT CONSTRAINTS AND REQUESTED OUTPUT:\n"
+        f"{business_meaning.strip()}"
+    )
+
+
 def _query_task_for_step(step: Step) -> str:
-    """Use the analyzer's resolved query instruction when it provides one."""
+    """Use an atomic objective without discarding business-fact constraints."""
 
     extras = step.model_extra or {}
     entity_resolution = extras.get("entity_resolution")
-    if not isinstance(entity_resolution, dict):
-        return step.business_meaning
-    entities = entity_resolution.get("entities")
-    if not isinstance(entities, list):
-        return step.business_meaning
-    for entity in entities:
-        if isinstance(entity, dict):
-            instruction = entity.get("data_query_instruction")
-            if isinstance(instruction, str) and instruction.strip():
-                return instruction.strip()
+    if isinstance(entity_resolution, dict):
+        entities = entity_resolution.get("entities")
+        if isinstance(entities, list):
+            for entity in entities:
+                if isinstance(entity, dict):
+                    instruction = entity.get("data_query_instruction")
+                    if isinstance(instruction, str) and instruction.strip():
+                        return _query_task_with_constraints(
+                            instruction, step.business_meaning
+                        )
+    reason = extras.get("data_query_reason")
+    if isinstance(reason, str) and reason.strip():
+        return _query_task_with_constraints(reason, step.business_meaning)
     return step.business_meaning
 
 
@@ -99,7 +135,9 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
             result = generate_query_result_for_step(
                 query_task,
                 description=request.description,
-                acceptance_criteria=request.acceptance_criteria,
+                acceptance_criteria=_acceptance_criteria_for_step(
+                    step, request.acceptance_criteria
+                ),
                 draft_mode=draft_mode,
             )
 
@@ -118,11 +156,14 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
             "REUSE_EXISTING_DATAQUERY" if reuse_matches
             else "REUSE_VALIDATION_UNAVAILABLE" if matched and reuse_corpus_error
             else "PROPOSE_NEW_DATAQUERY" if matched
-            else "NO_QUERY_PROPOSED"
+            else "REQUIRED_QUERY_NOT_GENERATED"
         )
         proposed_new_data_queries = (
             [propose_new_data_query(sql).as_dict() for sql in assembled]
-            if reuse_decision == "PROPOSE_NEW_DATAQUERY"
+            if reuse_decision in {
+                "PROPOSE_NEW_DATAQUERY",
+                "REUSE_VALIDATION_UNAVAILABLE",
+            }
             else []
         )
         selected_contract = reuse_matches[0] if reuse_matches else (

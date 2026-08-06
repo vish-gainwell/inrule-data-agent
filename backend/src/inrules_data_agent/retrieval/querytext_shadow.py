@@ -191,10 +191,24 @@ def _canonical_table(table: exp.Table, default_database: str | None) -> str:
     return ".".join(part for part in (database, schema, name) if part)
 
 
-def _normalize_expression(expression: Expression | None) -> str:
+def _normalize_expression(
+    expression: Expression | None,
+    *,
+    normalize_equality_rtrim: bool = False,
+) -> str:
     if expression is None:
         return ""
     normalized = expression.copy()
+    if normalize_equality_rtrim:
+        for equality in normalized.find_all(exp.EQ):
+            for side in ("this", "expression"):
+                operand = equality.args.get(side)
+                if (
+                    isinstance(operand, exp.Trim)
+                    and operand.args.get("position") == "TRAILING"
+                    and isinstance(operand.this, exp.Column)
+                ):
+                    equality.set(side, operand.this.copy())
     for column in normalized.find_all(exp.Column):
         column.set("table", None)
         column.set("db", None)
@@ -232,7 +246,10 @@ def extract_pattern(sql: str, db_id: int | None = None) -> QueryPattern | None:
         return None
     where = statement.args.get("where")
     where_expression = where.this if where else None
-    predicates = _normalize_expression(where_expression)
+    predicates = _normalize_expression(
+        where_expression,
+        normalize_equality_rtrim=True,
+    )
     filter_columns = tuple(
         sorted(
             {
@@ -401,6 +418,14 @@ def _template_parameter_names(query_text: str) -> list[str]:
     ]
 
 
+def _generated_runtime_values(sql: str) -> list[str]:
+    return [
+        f"{{{{{name}}}}}"
+        for match in _PLACEHOLDER_RE.finditer(sql)
+        if (name := match.group(1).strip()).lower().lstrip(":") != "output"
+    ]
+
+
 def _generated_string_literals(sql: str) -> list[str]:
     try:
         statement = sqlglot.parse_one(_sentinelize(sql), read="tsql")
@@ -479,7 +504,14 @@ def find_reuse_match(
         if not projection_matches:
             continue
         if candidate.predicates == target.predicates:
-            params: dict[str, str] = {}
+            names = _template_parameter_names(query.query_text)
+            runtime_values = _generated_runtime_values(generated_sql)
+            if names:
+                if len(names) != len(runtime_values):
+                    continue
+                params = dict(zip(names, runtime_values, strict=True))
+            else:
+                params = {}
         else:
             names = _template_parameter_names(query.query_text)
             literals = _generated_string_literals(generated_sql)
