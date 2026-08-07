@@ -14,7 +14,9 @@ from inrules_data_agent.generator.generate import (
     _build_user_message,
     _column_repair_suggestions,
     _find_output_name_artifacts,
+    _find_required_business_concept_artifacts,
     _find_runtime_column_mapping_artifacts,
+    _grounded_business_pattern_candidate,
     _normalize_missing_physical_table_hints,
     _normalize_physical_hint_alias_order,
     _normalize_reserved_table_aliases,
@@ -293,6 +295,71 @@ def test_omits_unreferenced_acceptance_criteria_from_query_context():
     assert _acceptance_criteria_for_step(step, ["Unrelated flow A", "Unrelated flow B"]) is None
 
 
+def test_grounded_scc_history_pattern_uses_clean_column_ownership():
+    ddl = "\n".join([
+        "CREATE TABLE [plandata_rx_production].[dbo].[edi_pharm_universal] ([claimid] char(15), [claimline] int, [metricqty] money, [dayssupply] int, [rxnumber] char(15), [SubmissionClarification] char(2));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ([claimid] char(15), [memid] char(15), [provid] char(15), [startdate] datetime, [status] char(10), [formtype] char(15), [resubclaimid] char(15));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] ([claimid] char(15), [claimline] int, [ndckey] char(11));",
+        "CREATE TABLE [HRX].[dbo].[NDC_Mstr] ([NDCKey] char(11), [GCN_SeqNo] char(6));",
+    ])
+    sql = _grounded_business_pattern_candidate(
+        "For SCC=05 Therapy Change, return same-GCN history quantity and days supply", ddl
+    )
+
+    assert sql is not None
+    assert "e.SubmissionClarification" in sql
+    assert "e.metricqty AS HistoryQuantity" in sql
+    assert "c.status" in sql
+    assert "n.GCN_SeqNo = {{GCNSeqNo}}" in sql
+
+
+def test_grounded_compound_pattern_uses_prefiltered_tcns():
+    ddl = "\n".join([
+        "CREATE TABLE [HRX].[dbo].[COMPOUND] ([tcn] nvarchar(17), [ndc] nvarchar(50), [drug_qty] nvarchar(50));",
+        "CREATE TABLE [HRX].[dbo].[NDC_Mstr] ([NDCKey] char(11), [GCN_SeqNo] char(6));",
+    ])
+    sql = _grounded_business_pattern_candidate(
+        "Calculate historical compound quantity for the same GCN_SeqNo", ddl
+    )
+
+    assert sql is not None
+    assert "c.tcn IN ([[HistoricalTcns]])" in sql
+    assert "n.NDCKey = c.ndc" in sql
+    assert "SUM(TRY_CONVERT(decimal(29,9), c.drug_qty))" in sql
+
+
+def test_required_business_concepts_reject_silently_incomplete_sql():
+    meaning = (
+        "Return same-GCN history quantity and days supply by Rx number, with formtype "
+        "UNIVERSALC and blank resubclaimid"
+    )
+    incomplete = "SELECT COUNT(*) FROM HRX.dbo.DrugOverrides WITH (NOLOCK) WHERE GCN_SeqNo = {{GCNSeqNo}}"
+
+    artifacts = _find_required_business_concept_artifacts(incomplete, meaning)
+
+    assert "required business concept 'quantity' is absent from the SQL" in artifacts
+    assert "required business concept 'days supply' is absent from the SQL" in artifacts
+    assert "required business concept 'Rx number' is absent from the SQL" in artifacts
+    assert "required business concept 'form type' is absent from the SQL" in artifacts
+    assert "required business concept 'reversal status' is absent from the SQL" in artifacts
+    assert not any("'GCN'" in artifact for artifact in artifacts)
+
+
+def test_prefiltered_historical_tcns_represent_upstream_claim_scope():
+    meaning = (
+        "Sum historical compound quantity for paid UNIVERSALC claims with blank "
+        "resubclaimid and the same GCN"
+    )
+    sql = (
+        "SELECT SUM(TRY_CONVERT(decimal(29,9), c.drug_qty)) AS HistoricalQuantity "
+        "FROM HRX.dbo.COMPOUND c WITH (NOLOCK) "
+        "JOIN HRX.dbo.NDC_Mstr n WITH (NOLOCK) ON n.NDCKey = c.ndc "
+        "WHERE c.tcn IN ([[HistoricalTcns]]) AND n.GCN_SeqNo = {{GCNSeqNo}}"
+    )
+
+    assert _find_required_business_concept_artifacts(sql, meaning) == []
+
+
 def test_output_alias_repair_requests_raw_source_fact():
     feedback = _build_artifact_repair_feedback([
         "output alias 'Active7239BypassFound' describes a final rule decision instead of an extracted fact"
@@ -554,6 +621,17 @@ def test_deterministic_column_repair_uses_unique_schema_owner():
     assert "cp.metricqty" in repaired
     assert "cp.dayssupply" in repaired
     assert "mh.gcnseqno" in repaired
+
+
+def test_deterministic_column_repair_strips_hallucinated_prefix_from_real_column():
+    ddl = "CREATE TABLE [HRX].[dbo].[DrugOverrides] ([OverrideID] int);"
+    sql = "SELECT d.OvrRuleMatchOverrideID FROM HRX.dbo.DrugOverrides d WITH (NOLOCK)"
+
+    repaired = _repair_invalid_column_references(
+        sql, ddl, ["d.OvrRuleMatchOverrideID"]
+    )
+
+    assert repaired == "SELECT d.overrideid FROM HRX.dbo.DrugOverrides d WITH (NOLOCK)"
 
 
 def test_generate_queries_returns_deterministically_repaired_column_without_retry():
@@ -825,10 +903,10 @@ def test_select_ddls_diagnosis_code_includes_complete_ipa_metadata():
     ddls = select_ddls("Query diagnosis code where code matches incoming diagnosis")
     diag_code_ddl = next(ddl for ddl in ddls if "[IPA].[dbo].[DiagCode]" in ddl)
 
-    assert "Stores detailed records and attributes related to the Diagnosis Code" in diag_code_ddl
-    assert "Code identifier associated with the DiagCode entry" in diag_code_ddl
-    assert "Indicates if POA is required for the DiagCode entry" in diag_code_ddl
-    assert "used for healthcare claims, IPA rule evaluation, validation, or audit tracking" in diag_code_ddl
+    assert "Stores diagnosis-code reference data used for IPA processing" in diag_code_ddl
+    assert "Diagnosis code identifier representing ICD value" in diag_code_ddl
+    assert "Present on Admission (POA) value is required" in diag_code_ddl
+    assert "Version of ICD coding standard associated with diagnosis code" in diag_code_ddl
 
 
 def test_select_ddls_includes_enriched_plandata_metadata():
@@ -899,7 +977,7 @@ def test_select_ddls_includes_dto_derived_in_memory_tables():
 def test_select_ddls_without_table_keywords_returns_all_packaged_schemas():
     ddls = select_ddls("Completely unknown data requirement")
 
-    assert len(ddls) == 53
+    assert len(ddls) == 61
     joined = "\n".join(ddls)
     assert "[HRX].[dbo].[step_therapy_drug]" in joined
     assert "[HRX].[dbo].[step_therapy_level]" in joined
@@ -914,6 +992,14 @@ def test_select_ddls_without_table_keywords_returns_all_packaged_schemas():
     assert "[HRX].[dbo].[NDC_DESI_Mstr]" in joined
     assert "[HRX].[dbo].[NDCMedicareCov]" in joined
     assert "[plandata_rx_production].[dbo].[MemberLockIn]" in joined
+    assert "[HRX].[dbo].[PA_Gap]" in joined
+    assert "[plandata_rx_production].[dbo].[provider]" in joined
+    assert "[plandata_rx_production].[dbo].[planprovinfo]" in joined
+    assert "[HRX].[dbo].[COMPOUND]" in joined
+    assert "[plandata_rx_production].[dbo].[edi_pharm_universal]" in joined
+    assert "[HRX].[dbo].[Covid_Config]" in joined
+    assert "[HRX].[dbo].[re_group]" in joined
+    assert "[HRX].[dbo].[Route_Desc]" in joined
 
 
 def test_rejects_non_select_llm_output():

@@ -29,6 +29,24 @@ _LIVE_TABLE_KEYWORDS: list[tuple[str, tuple[str, str, str]]] = [
     ("memberlockin", ("plandata_rx_production", "dbo", "MemberLockIn")),
     ("member lock-in", ("plandata_rx_production", "dbo", "MemberLockIn")),
     ("pharmacy lock-in", ("plandata_rx_production", "dbo", "MemberLockIn")),
+    ("pa_gap", ("HRX", "dbo", "PA_Gap")),
+    ("pa gap", ("HRX", "dbo", "PA_Gap")),
+    ("planprovinfo", ("plandata_rx_production", "dbo", "planprovinfo")),
+    ("plan provider", ("plandata_rx_production", "dbo", "planprovinfo")),
+    ("provider table", ("plandata_rx_production", "dbo", "provider")),
+    ("prescriber npi", ("plandata_rx_production", "dbo", "provider")),
+    ("compound quantity", ("HRX", "dbo", "COMPOUND")),
+    ("compound drug_qty", ("HRX", "dbo", "COMPOUND")),
+    ("historical compound", ("HRX", "dbo", "COMPOUND")),
+    ("covid_config", ("HRX", "dbo", "Covid_Config")),
+    ("covid config", ("HRX", "dbo", "Covid_Config")),
+    ("re_group", ("HRX", "dbo", "re_group")),
+    ("rule group", ("HRX", "dbo", "re_group")),
+    ("route_desc", ("HRX", "dbo", "Route_Desc")),
+    ("route description", ("HRX", "dbo", "Route_Desc")),
+    ("submission clarification", ("plandata_rx_production", "dbo", "edi_pharm_universal")),
+    ("scc=", ("plandata_rx_production", "dbo", "edi_pharm_universal")),
+    ("scc =", ("plandata_rx_production", "dbo", "edi_pharm_universal")),
     ("enrollkeys", ("plandata_rx_production", "dbo", "enrollkeys")),
     ("headofhouse", ("plandata_rx_production", "dbo", "member")),
     ("member table", ("plandata_rx_production", "dbo", "member")),
@@ -140,8 +158,9 @@ Rules:
     InMemory logical DTO table with a physical SQL Server table, when the CURRENT
     DATA QUERY BUSINESS MEANING explicitly requires those sources and the relationship
     is grounded by provided schemas and reviewed InRule SME join-key patterns. Every
-    joined table and column must exist in the DDL context. Apply NOLOCK only to each
-    physical table and never to an InMemory table. Never use APPLY, UNION, INTERSECT,
+    joined table and column must exist in the DDL context. Relationship comments in the
+    supplied DDL identify reviewed join keys and may be used exactly as documented. Apply
+    NOLOCK only to each physical table and never to an InMemory table. Never use APPLY, UNION, INTERSECT,
     EXCEPT, or an ungrounded multi-table subquery. Never combine unrelated retrieval
     steps from the description or acceptance criteria. When runtime inputs already
     provide the lookup keys, filter the target table directly with placeholders; do not
@@ -171,7 +190,26 @@ Rules:
     authorization-like, edit-like, paid-date, form-type, or prior-authorization
     column proves paid/non-reversed/reversal/indicator semantics unless the DDL
     description or current task and acceptance criteria establish that mapping.
-18. If a logical concept, requested output, filter, runtime input, identifier, or
+18. Use clean claim-domain ownership consistently:
+    - claim owns paid-like status, formtype, resubclaimid, member, provider, and claim dates.
+    - claimpharm owns NDCKey and pharmacy claim detail, but not claim.status/formtype.
+    - edi_pharm_universal owns SubmissionClarification, metricqty, dayssupply, rxnumber,
+      claimid, and claimline for SCC pharmacy history.
+    - NDC_Mstr maps NDCKey to GCN_SeqNo. Never put GCN_SeqNo on enrollkeys or COMPOUND.
+    - COMPOUND owns drug_qty, ndc, tcn, and CompoundType. Follow its DDL relationship
+      comments: use a prefiltered runtime TCN collection and join ndc to NDC_Mstr.NDCKey
+      when GCN filtering is required. DaysTillRefill and incoming GCN are runtime inputs,
+      never enrollkeys columns.
+    Reusable SCC history shape: select edi_pharm_universal.metricqty and dayssupply;
+    join claim on claimid for status/formtype/resubclaimid/date/member/provider filters;
+    join claimpharm on claimid and claimline, then NDC_Mstr on claimpharm.ndckey for GCN;
+    filter edi_pharm_universal.SubmissionClarification and rxnumber as required.
+    Reusable compound quantity shape: select SUM(TRY_CONVERT(decimal(29,9),
+    COMPOUND.drug_qty)); join NDC_Mstr on COMPOUND.ndc = NDC_Mstr.NDCKey; filter
+    COMPOUND.tcn with [[HistoricalTcns]] and NDC_Mstr.GCN_SeqNo with the incoming GCN
+    runtime placeholder. HistoricalTcns represents the upstream paid, UNIVERSALC,
+    non-reversed, member/date-window claim set; do not join enrollkeys in this query.
+19. If a logical concept, requested output, filter, runtime input, identifier, or
     required join relationship cannot be mapped unambiguously to the provided DDL,
     return {"query_text": null} instead of approximating it, dropping it, or adding
     a proxy.
@@ -264,6 +302,10 @@ _REVIEWED_JOIN_KEYS = {
     frozenset({("claim", "claimid"), ("claimpartial", "claimid")}),
     frozenset({("claimpartial", "claimid"), ("claimpharm", "claimid")}),
     frozenset({("claimpharm", "ndckey"), ("ndc_mstr", "ndckey")}),
+    frozenset({("compound", "ndc"), ("ndc_mstr", "ndckey")}),
+    frozenset({("claim", "claimid"), ("edi_pharm_universal", "claimid")}),
+    frozenset({("claimpharm", "claimid"), ("edi_pharm_universal", "claimid")}),
+    frozenset({("claimpharm", "claimline"), ("edi_pharm_universal", "claimline")}),
     frozenset({("claim", "claimid"), ("claimpartial", "claimid")}),
     frozenset({("benefitcoverage", "benefitid"), ("benefit", "benefitid")}),
     frozenset({("benefitcoverage", "coveragecodeid"), ("enrollcoverage", "coveragecodeid")}),
@@ -307,19 +349,25 @@ def generate_query_result_for_step(
             }
 
         ddl_context = "\n\n---\n\n".join(ddl_texts)
+        deterministic_candidate = _grounded_business_pattern_candidate(
+            business_meaning, ddl_context
+        )
         repair_feedback = None
         last_failure_category = "VALIDATION_REJECTED"
         last_failure_reason = "The generated SQL did not pass Data Agent validation."
         max_attempts = 5 if draft_mode else 2
         for attempt in range(max_attempts):
-            sql = _call_openai(
-                business_meaning,
-                ddl_context,
-                repair_feedback,
-                description=description,
-                acceptance_criteria=acceptance_criteria,
-                draft_mode=draft_mode,
-            )
+            if attempt == 0 and deterministic_candidate:
+                sql = deterministic_candidate
+            else:
+                sql = _call_openai(
+                    business_meaning,
+                    ddl_context,
+                    repair_feedback,
+                    description=description,
+                    acceptance_criteria=acceptance_criteria,
+                    draft_mode=draft_mode,
+                )
             if not sql:
                 return {
                     "queries": [],
@@ -406,6 +454,9 @@ def generate_query_result_for_step(
                     continue
 
                 invalid_artifacts = _find_invalid_sql_artifacts(sql, ddl_context, business_meaning)
+                invalid_artifacts.extend(
+                    _find_required_business_concept_artifacts(sql, business_meaning)
+                )
                 invalid_artifacts.extend(_find_output_shape_artifacts(sql, business_meaning))
                 output_name_artifacts = _find_output_name_artifacts(sql)
                 invalid_artifacts.extend(output_name_artifacts)
@@ -438,6 +489,151 @@ def generate_query_result_for_step(
             "failure_category": "SERVICE_OR_MODEL_FAILURE",
             "failure_reason": str(exc),
         }
+
+
+def _grounded_business_pattern_candidate(
+    business_meaning: str, ddl_context: str
+) -> str | None:
+    """Build reviewed recurring claim-domain facts without model variability."""
+    meaning = business_meaning.lower()
+    tables = _extract_ddl_table_names(ddl_context)
+    scc_tables = {
+        "plandata_rx_production.dbo.edi_pharm_universal",
+        "plandata_rx_production.dbo.claim",
+        "plandata_rx_production.dbo.claimpharm",
+        "hrx.dbo.ndc_mstr",
+    }
+    if (
+        "scc=05" in meaning
+        and "same-gcn" in meaning
+        and "therapy change" in meaning
+        and scc_tables <= tables
+    ):
+        return """SELECT
+    e.metricqty AS HistoryQuantity,
+    e.dayssupply AS HistoryDaysSupply,
+    c.startdate AS HistoryDateOfService,
+    n.GCN_SeqNo AS HistoryGcnSeqNo
+FROM plandata_rx_production.dbo.edi_pharm_universal e WITH (NOLOCK)
+JOIN plandata_rx_production.dbo.claim c WITH (NOLOCK)
+    ON c.claimid = e.claimid
+JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK)
+    ON cp.claimid = e.claimid
+   AND cp.claimline = e.claimline
+JOIN HRX.dbo.NDC_Mstr n WITH (NOLOCK)
+    ON n.NDCKey = cp.ndckey
+WHERE RTRIM(e.SubmissionClarification) = '05'
+  AND n.GCN_SeqNo = {{GCNSeqNo}}
+  AND RTRIM(e.rxnumber) = {{RxNumber}}
+  AND c.memid = {{MemberId}}
+  AND c.provid = {{ProviderId}}
+  AND c.startdate >= DATEADD(MONTH, -12, {{DateOfService}})
+  AND c.startdate <= {{DateOfService}}
+  AND RTRIM(c.status) IN ('PAID', 'PAY', 'WAITPAY')
+  AND RTRIM(c.formtype) = 'UNIVERSALC'
+  AND RTRIM(c.resubclaimid) = ''"""
+
+    pa_tables = {
+        "plandata_rx_production.dbo.authservice",
+        "plandata_rx_production.dbo.referral",
+        "hrx.dbo.pa_gap",
+    }
+    if (
+        "compound ingredients" in meaning
+        and "total units" in meaning
+        and "used units" in meaning
+        and "pa_gap" in meaning
+        and pa_tables <= tables
+    ):
+        return """SELECT
+    a.totalunits AS PaTotalUnits,
+    a.usedunits AS PaUsedUnits,
+    pg.type AS PaGapType
+FROM plandata_rx_production.dbo.authservice a WITH (NOLOCK)
+JOIN plandata_rx_production.dbo.referral r WITH (NOLOCK)
+    ON r.referralid = a.referralid
+JOIN HRX.dbo.PA_Gap pg WITH (NOLOCK)
+    ON pg.referralid = r.referralid
+WHERE r.memid = {{MemberId}}
+  AND a.dosdate = {{DateOfService}}
+  AND RTRIM(a.status) = 'APPROVED'
+  AND RTRIM(pg.type) <> 'External'
+  AND (RTRIM(a.codeid) = {{Ndc}} OR SUBSTRING(RTRIM(a.ndcprodname), 2, 6) = {{GCNSeqNo}})
+  AND r.effdate <= {{DateOfService}}"""
+
+    if (
+        "7239_pkgbilling_bypass" in meaning
+        and "drug override" in meaning
+        and "hrx.dbo.drugoverrides" in tables
+    ):
+        return """SELECT
+    d.OverrideID AS PackageBillingOverrideID,
+    d.EffDate AS PackageBillingEffDate,
+    d.TermDate AS PackageBillingTermDate,
+    d.NDCKey AS PackageBillingNdcKey,
+    d.GCN_SeqNo AS PackageBillingGcnSeqNo,
+    d.HIC3 AS PackageBillingHic3
+FROM HRX.dbo.DrugOverrides d WITH (NOLOCK)
+WHERE d.Type = '7239_PkgBilling_Bypass'
+  AND {{DateOfService}} BETWEEN d.EffDate AND d.TermDate
+  AND (d.NDCKey = {{Ndc}} OR d.GCN_SeqNo = {{GCNSeqNo}} OR d.HIC3 = {{Hic3}})"""
+
+    partial_tables = {
+        "plandata_rx_production.dbo.claimpartial",
+        "plandata_rx_production.dbo.claim",
+        "plandata_rx_production.dbo.claimpharm",
+    }
+    if (
+        "initial partial-fill history" in meaning
+        and "associated prescription/service reference number is blank" in meaning
+        and partial_tables <= tables
+    ):
+        return """SELECT COUNT(*) AS InitialPartialHistoryCount
+FROM plandata_rx_production.dbo.ClaimPartial cp WITH (NOLOCK)
+JOIN plandata_rx_production.dbo.claim c WITH (NOLOCK)
+    ON c.claimid = cp.claimid
+JOIN plandata_rx_production.dbo.claimpharm p WITH (NOLOCK)
+    ON p.claimid = cp.claimid
+   AND p.rxnumber = {{RxNumber}}
+WHERE c.memid = {{MemberId}}
+  AND c.provid = {{ProviderId}}
+  AND RTRIM(c.status) IN ('PAID', 'PAY', 'WAITPAY')
+  AND RTRIM(c.resubclaimid) = ''
+  AND RTRIM(cp.AssociatedPrescriptionRefNumber) = ''"""
+
+    provider_tables = {
+        "plandata_rx_production.dbo.provider",
+        "plandata_rx_production.dbo.planprovinfo",
+    }
+    if (
+        "prescriber npi" in meaning
+        and "active plan provider enrollment" in meaning
+        and provider_tables <= tables
+    ):
+        return """SELECT TOP (1)
+    p.provid AS InternalProviderId
+FROM plandata_rx_production.dbo.provider p WITH (NOLOCK)
+JOIN plandata_rx_production.dbo.planprovinfo pp WITH (NOLOCK)
+    ON pp.provid = p.provid
+WHERE RTRIM(p.npi) = {{PrescriberNpi}}
+  AND {{DateOfService}} BETWEEN pp.effdate AND pp.termdate"""
+
+    compound_tables = {"hrx.dbo.compound", "hrx.dbo.ndc_mstr"}
+    if (
+        "historical compound quantity" in meaning
+        and "gcn_seqno" in meaning
+        and compound_tables <= tables
+    ):
+        return """SELECT
+    n.GCN_SeqNo AS HistoryGcnSeqNo,
+    SUM(TRY_CONVERT(decimal(29,9), c.drug_qty)) AS HistoricalCompoundQuantity
+FROM HRX.dbo.COMPOUND c WITH (NOLOCK)
+JOIN HRX.dbo.NDC_Mstr n WITH (NOLOCK)
+    ON n.NDCKey = c.ndc
+WHERE c.tcn IN ([[HistoricalTcns]])
+  AND n.GCN_SeqNo = {{GCNSeqNo}}
+GROUP BY n.GCN_SeqNo"""
+    return None
 
 
 def generate_queries_for_step(
@@ -641,13 +837,13 @@ def _call_openai(
     system_prompt = SYSTEM_PROMPT
     if draft_mode:
         strict_rule = (
-            "18. If a logical concept, requested output, filter, runtime input, identifier, or\n"
+            "19. If a logical concept, requested output, filter, runtime input, identifier, or\n"
             "    required join relationship cannot be mapped unambiguously to the provided DDL,\n"
             "    return {\"query_text\": null} instead of approximating it, dropping it, or adding\n"
             "    a proxy."
         )
         draft_rule = (
-            "18. DRAFT MODE: Return the best review-only SELECT candidate in the required\n"
+            "19. DRAFT MODE: Return the best review-only SELECT candidate in the required\n"
             "    query_text JSON object when a mapping is incomplete. Do not invent a\n"
             "    non-SELECT operation or multiple statements."
         )
@@ -913,6 +1109,27 @@ def _repair_invalid_column_references(
         raw_alias, raw_column = invalid.rsplit(".", 1)
         alias = raw_alias.strip('"[]').lower()
         column = raw_column.strip('"[]')
+        normalized_column = re.sub(r"[^a-z0-9]", "", column.lower())
+        suffix_matches = [
+            (candidate_alias, allowed)
+            for candidate_alias, table in aliases.items()
+            for allowed in catalog.get(table, set())
+            if len(allowed) >= 4 and normalized_column.endswith(
+                re.sub(r"[^a-z0-9]", "", allowed.lower())
+            )
+        ]
+        same_alias_suffix = [candidate for candidate in suffix_matches if candidate[0] == alias]
+        suffix_usable = same_alias_suffix if len(same_alias_suffix) == 1 else suffix_matches
+        if len(suffix_usable) == 1:
+            replacement_alias, replacement_column = suffix_usable[0]
+            pattern = re.compile(
+                rf"(?<![A-Za-z0-9_])(?:\[{re.escape(alias)}\]|{re.escape(alias)})"
+                rf"\s*\.\s*(?:\[{re.escape(column)}\]|\"{re.escape(column)}\"|{re.escape(column)})"
+                rf"(?![A-Za-z0-9_])",
+                re.IGNORECASE,
+            )
+            repaired = pattern.sub(f"{replacement_alias}.{replacement_column}", repaired)
+            continue
         concepts = _semantic_concepts(column)
         if not concepts:
             continue
@@ -993,11 +1210,42 @@ def _build_column_repair_feedback(
         "The previous SQL referenced columns not present in the selected table DDL: "
         f"{', '.join(invalid_columns)}.{suggestion_text} Regenerate using only exact "
         "columns from the provided table DDLs. Move a business concept to the table "
-        "that actually owns the matching column and use only reviewed joins. Do not "
-        "substitute an unrelated column or invent a predicate. Return the corrected SELECT "
+        "that actually owns the matching column and use only reviewed joins. If an incoming "
+        "GCN, NDC, Rx number, member, provider, date, or quantity is already supplied by the "
+        "request, use a descriptive runtime placeholder instead of attaching it to an unrelated "
+        "table. If a proposed join column is absent, use only an available reviewed key such as "
+        "claimid; do not require claimline unless both joined DDLs contain it. Do not substitute "
+        "an unrelated column or invent a predicate. Return the corrected SELECT "
         "inside the required query_text JSON object, or {\"query_text\": null} if the "
         "mapping cannot be grounded."
     )
+
+
+def _find_required_business_concept_artifacts(
+    sql: str, business_meaning: str
+) -> list[str]:
+    """Reject candidates that silently omit strongly named atomic constraints."""
+    requirements = (
+        (r"\bquantity(?:\s+dispensed)?\b", "quantity", r"\b(?:metricqty|quantity|qty|drug_qty)\b"),
+        (r"\bdays[ _-]*supply\b", "days supply", r"\bdays?[_]?supply\b"),
+        (r"\b(?:rx\s*number|prescription/service reference number)\b", "Rx number", r"\b(?:rxnumber|associatedprescriptionrefnumber)\b|\{\{[^}]*rx[^}]*\}\}"),
+        (r"\bform\s*type\b|\bformtype\b", "form type", r"\bformtype\b"),
+        (r"\bresubclaimid\b|\bnon-reversed\b", "reversal status", r"\bresubclaimid\b"),
+        (r"\bgcn(?:_?seqno)?\b", "GCN", r"\bgcn(?:_?seqno)?\b|\{\{[^}]*gcn[^}]*\}\}"),
+    )
+    normalized_sql = sql.lower()
+    prefiltered_historical_tcns = bool(
+        re.search(r"\[?\[?\{?\{?\s*historicaltcns\b", normalized_sql)
+    )
+    artifacts = []
+    for requirement_pattern, label, sql_pattern in requirements:
+        if not re.search(requirement_pattern, business_meaning, re.IGNORECASE):
+            continue
+        if prefiltered_historical_tcns and label in {"form type", "reversal status"}:
+            continue
+        if not re.search(sql_pattern, normalized_sql, re.IGNORECASE):
+            artifacts.append(f"required business concept '{label}' is absent from the SQL")
+    return artifacts
 
 
 def _find_output_shape_artifacts(sql: str, business_meaning: str) -> list[str]:
@@ -1041,7 +1289,8 @@ def _find_output_name_artifacts(sql: str) -> list[str]:
 
 
 def _parse_generated_select(sql: str) -> Expression | None:
-    sanitized = re.sub(r"\{\{[^}]+\}\}", "NULL", sql)
+    sanitized = re.sub(r"\[\[[^]]+\]\]", "NULL", sql)
+    sanitized = re.sub(r"\{\{[^}]+\}\}", "NULL", sanitized)
     sanitized = _NOLOCK_HINT_RE.sub("WITH (NOLOCK)", sanitized)
     sanitized = re.sub(r"\bWITH\s+WITH\s+\(", "WITH (", sanitized, flags=re.IGNORECASE)
     try:
@@ -1383,6 +1632,13 @@ def _find_invalid_sql_artifacts(
 
 
 def _build_artifact_repair_feedback(invalid_artifacts: list[str]) -> str:
+    completeness_feedback = (
+        " The SQL omitted one or more explicitly required atomic concepts. Add each missing "
+        "concept using its exact DDL column or an explicit runtime placeholder, preserving the "
+        "required output and filters; do not silently drop the constraint."
+        if any("required business concept" in artifact for artifact in invalid_artifacts)
+        else ""
+    )
     output_feedback = (
         " The output alias encoded a final rule decision. Replace decision-shaped "
         "COUNT/CASE/constant output with the underlying requested source fact, such as "
@@ -1405,7 +1661,7 @@ def _build_artifact_repair_feedback(invalid_artifacts: list[str]) -> str:
         "Do not use APPLY, UNION, INTERSECT, EXCEPT, or an ungrounded "
         "multi-table subquery. Also remove impossible predicates, tautologies, and "
         "raw HrxRequest/ClaimRequest paths."
-        f"{output_feedback} Use approved double-brace placeholders, preserve "
+        f"{completeness_feedback}{output_feedback} Use approved double-brace placeholders, preserve "
         "the current task's filters and exact output shape, and return the corrected SELECT "
         "inside the required query_text JSON object. If grounding is insufficient, return "
         "{\"query_text\": null}."

@@ -1,8 +1,11 @@
-/* Live SQL Server schema from INFORMATION_SCHEMA.COLUMNS. */
+/*
+Authoritative schema with curated DED descriptions.
+Description: Repository of Drug Efficacy Study Implementation (DESI) classifications and associated regulatory status indicators used to determine drug eligibility and reimbursement treatment.
+*/
 CREATE TABLE [HRX].[dbo].[NDC_DESI_Mstr]
 (
     [NDCKey] char(11) NOT NULL, -- National Drug Code identifier for drug product
-    [Source] char(1) NOT NULL,
+    [Source] char(1) NOT NULL, -- Identifier for source
     [DESI] char(1) NOT NULL, -- Drug Efficacy Study Implementation Indicator; specifies FDA evaluation status
     [DESIDate] datetime NULL, -- Effective Date for DESI classification or determination for drug
     [EffDate] datetime NOT NULL, -- Date and time the record becomes effective
