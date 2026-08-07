@@ -137,7 +137,9 @@ Rules:
    - If it asks to return values, identifiers, codes, columns, records, or details, project those exact mapped columns. Never replace them with COUNT(*).
    - If it asks for multiple attributes per record, project only those requested attributes, with clear aliases when needed by the stated output.
    - Output aliases must name the extracted business fact, use PascalCase, contain no more than 40 characters, and never read like a full sentence.
-     Prefer names such as Scc05HistoryFound, Scc05HistoryQuantity,
+     A COUNT(*) alias must describe the rows being counted and end in Count; never give it
+     opposite-polarity names such as Missing..., No..., NotFound..., Absent..., or Without....
+     Prefer names such as Scc05HistoryCount, Scc05HistoryQuantity,
      Scc05HistoryDaysSupply, Scc05HistoryDateOfService, or ReversalDays.
    - Do not add extra output columns merely because they are available in the selected table.
 9. Return ONLY one JSON object with exactly this shape:
@@ -389,6 +391,7 @@ def generate_query_result_for_step(
             sql = _normalize_physical_hint_alias_order(sql)
             sql = _normalize_reserved_table_aliases(sql)
             sql = _normalize_missing_physical_table_hints(sql)
+            sql = _normalize_count_output_aliases(sql)
             if sql.upper() == "NO_SUPPORTED_QUERY":
                 print("[generate_queries_for_step] no supported grounded SELECT query")
                 if draft_mode and attempt < max_attempts - 1:
@@ -1266,6 +1269,30 @@ def _find_output_shape_artifacts(sql: str, business_meaning: str) -> list[str]:
     ):
         return ["COUNT(*) output does not match requested values/identifiers/records"]
     return []
+
+
+def _normalize_count_output_aliases(sql: str) -> str:
+    """Name COUNT outputs after the rows counted, never the inverse condition."""
+    pattern = re.compile(
+        r"(?P<count>\bCOUNT\s*\(\s*(?:\*|1)\s*\)\s+AS\s+)"
+        r"(?P<quoted>\[|\")?"
+        r"(?P<alias>(?:Missing|No|NotFound|Absent|Without)[A-Za-z0-9]+)"
+        r"(?(quoted)(?:\]|\"))",
+        re.IGNORECASE,
+    )
+
+    def normalize(match: re.Match[str]) -> str:
+        alias = match.group("alias")
+        fact = re.sub(
+            r"^(?:Missing|No|NotFound|Absent|Without)", "", alias, flags=re.IGNORECASE
+        )
+        if not fact:
+            fact = "MatchingRecord"
+        if not fact.lower().endswith("count"):
+            fact += "Count"
+        return f"{match.group('count')}{fact}"
+
+    return pattern.sub(normalize, sql)
 
 
 def _find_output_name_artifacts(sql: str) -> list[str]:

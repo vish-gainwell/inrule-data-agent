@@ -17,6 +17,7 @@ from inrules_data_agent.generator.generate import (
     _find_required_business_concept_artifacts,
     _find_runtime_column_mapping_artifacts,
     _grounded_business_pattern_candidate,
+    _normalize_count_output_aliases,
     _normalize_missing_physical_table_hints,
     _normalize_physical_hint_alias_order,
     _normalize_reserved_table_aliases,
@@ -368,6 +369,24 @@ def test_output_alias_repair_requests_raw_source_fact():
     assert "underlying requested source fact" in feedback
     assert "matching row ID" in feedback
     assert "Downstream InRule logic decides" in feedback
+
+
+def test_count_output_alias_names_the_rows_counted_not_inverse_condition():
+    sql = (
+        "SELECT TOP (1) COUNT(*) AS MissingActiveNDCDesiMstr "
+        "FROM HRX.dbo.NDC_DESI_Mstr d WITH (NOLOCK)"
+    )
+
+    assert _normalize_count_output_aliases(sql) == (
+        "SELECT TOP (1) COUNT(*) AS ActiveNDCDesiMstrCount "
+        "FROM HRX.dbo.NDC_DESI_Mstr d WITH (NOLOCK)"
+    )
+    assert _normalize_count_output_aliases(
+        "SELECT COUNT(1) AS [NoMatchingProvider] FROM HRX.dbo.Provider"
+    ) == "SELECT COUNT(1) AS MatchingProviderCount FROM HRX.dbo.Provider"
+    assert _normalize_count_output_aliases(
+        "SELECT COUNT(*) AS ActiveRecordCount FROM HRX.dbo.Example"
+    ) == "SELECT COUNT(*) AS ActiveRecordCount FROM HRX.dbo.Example"
 
 
 def test_rejects_7073_sentence_length_output_alias():
