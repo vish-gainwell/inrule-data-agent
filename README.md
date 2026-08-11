@@ -56,7 +56,8 @@ Edit `.env` and fill in your values:
 
 ```env
 OPENAI_API_KEY=sk-...               # Required — OpenAI API key
-OPENAI_MODEL=gpt-4o                 # Model to use for SQL generation
+OPENAI_MODEL=gpt-5.6-luna           # Model to use for SQL generation
+OPENAI_TIMEOUT_SECONDS=180           # Model request timeout for complex queries
 OPENAI_VERIFY_SSL=false
 
 ENVIRONMENT=dev

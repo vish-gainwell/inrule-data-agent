@@ -19,10 +19,12 @@ from inrules_data_agent.generator.generate import (
     _grounded_business_pattern_candidate,
     _normalize_count_output_aliases,
     _normalize_missing_physical_table_hints,
+    _normalize_quoted_runtime_placeholders,
     _normalize_physical_hint_alias_order,
     _normalize_reserved_table_aliases,
     _parse_model_query_response,
     _repair_invalid_column_references,
+    generate_query_result_for_step,
     select_ddls,
 )
 
@@ -77,6 +79,7 @@ def test_rule_context_is_passed_to_data_query_generation():
             "queries": [MOCK_SQL],
             "failure_category": None,
             "failure_reason": None,
+            "generation_attempts": [{"attempt": 1, "outcome": "accepted"}],
         },
     ) as generate_step:
         client = TestClient(create_app())
@@ -107,6 +110,9 @@ def test_rule_context_is_passed_to_data_query_generation():
         draft_mode=False,
     )
     assert response.json()["description"] == "CHIP eligibility rule"
+    assert response.json()["queries"][0]["generation_attempts"] == [
+        {"attempt": 1, "outcome": "accepted"}
+    ]
 
 
 def test_uses_atomic_data_query_reason_when_no_resolved_instruction_exists():
@@ -190,7 +196,7 @@ def test_uses_resolved_query_instruction_and_reports_unmatched_step():
     assert generate_step.call_count == 2
 
 
-def test_draft_mode_does_not_report_validation_rejected_candidate_as_generated():
+def test_draft_mode_returns_safe_schema_valid_candidate_with_review_warnings():
     with patch(
         "inrules_data_agent.generator.generate.select_ddls",
         return_value=["CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int NULL);"],
@@ -215,14 +221,93 @@ def test_draft_mode_does_not_report_validation_rejected_candidate_as_generated()
         )
 
     result = response.json()["step_queries"][0]
+    assert result["matched"] is True
+    assert result["query_generated"] is True
+    assert result["validation_status"] == "DRAFT_REQUIRES_REVIEW"
+    assert "1 = 0/1 predicate" in result["review_warnings"]
+    assert result["failure_category"] is None
+    assert result["failure_reason"] is None
+    assert result["queries"] == [
+        "SELECT Id FROM HRX.dbo.KnownTable WITH (NOLOCK) WHERE 1 = 1"
+    ]
+
+
+def test_strict_mode_still_rejects_semantically_incomplete_candidate():
+    with patch(
+        "inrules_data_agent.generator.generate.select_ddls",
+        return_value=["CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int NULL);"],
+    ), patch(
+        "inrules_data_agent.generator.generate._call_openai",
+        return_value="SELECT Id FROM HRX.dbo.KnownTable WITH (NOLOCK) WHERE 1 = 1",
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "edit_id": "strict-test",
+                "generation_mode": "strict",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Retrieve a value from an unresolved source.",
+                    "requires_data_query": True,
+                }],
+            },
+        )
+
+    result = response.json()["step_queries"][0]
     assert result["matched"] is False
-    assert result["query_generated"] is False
-    assert "validation_status" not in result
-    assert "review_notes" not in result
-    assert "publishable" not in result
     assert result["failure_category"] == "VALIDATION_REJECTED"
-    assert "1 = 0/1 predicate" in result["failure_reason"]
     assert result["queries"] == []
+
+
+def test_draft_mode_retries_model_null_with_runtime_placeholder_instruction():
+    candidate = "SELECT {{SystemProcessingHalt}} AS SystemProcessingHalt"
+    with (
+        patch(
+            "inrules_data_agent.generator.generate.select_ddls",
+            return_value=["CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int NULL);"],
+        ),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=["NO_SUPPORTED_QUERY", candidate],
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            "Determine whether a system-related condition prevents processing.",
+            description="Processing halted due to a system condition.",
+            acceptance_criteria="Stop when processing cannot continue.",
+            draft_mode=True,
+        )
+
+    assert result["queries"] == [candidate]
+    assert result["validation_status"] == "DRAFT_REQUIRES_REVIEW"
+    repair_feedback = call_openai.call_args_list[1].args[2]
+    assert "do not return null" in repair_feedback
+    assert "authoritative business meaning" in repair_feedback
+    assert "do not use irAuthor contracts" in repair_feedback
+    assert "maximum available grounded DDL facts" in repair_feedback
+    assert "tableless SELECT only when no DDL table maps" in repair_feedback
+
+
+def test_draft_mode_returns_safe_runtime_only_select_with_warning():
+    candidate = "SELECT {{PrescriberIdQualifier}} AS PrescriberIdQualifier"
+    with (
+        patch(
+            "inrules_data_agent.generator.generate.select_ddls",
+            return_value=["CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int NULL);"],
+        ),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=candidate,
+        ),
+    ):
+        result = generate_query_result_for_step(
+            "Confirm the submitted Prescriber ID Qualifier indicates NPI.",
+            draft_mode=True,
+        )
+
+    assert result["queries"] == [candidate]
+    assert result["validation_status"] == "DRAFT_REQUIRES_REVIEW"
+    assert "SELECT has no table reference" in result["review_warnings"]
 
 
 def test_draft_mode_does_not_return_unknown_table_candidate():
@@ -329,6 +414,46 @@ def test_grounded_compound_pattern_uses_prefiltered_tcns():
     assert "SUM(TRY_CONVERT(decimal(29,9), c.drug_qty))" in sql
 
 
+def test_required_business_concepts_accept_approved_runtime_placeholders():
+    sql = (
+        "SELECT {{QuantityDispensed}} AS QuantityDispensed, n.PS AS PackageSize "
+        "FROM HRX.dbo.NDC_Mstr n WITH (NOLOCK) "
+        "WHERE n.NDCKey = {{ClaimTransaction.Ndc}}"
+    )
+
+    assert _find_required_business_concept_artifacts(
+        sql, "The claim quantity dispensed is not an exact multiple of the package size."
+    ) == []
+    assert _find_required_business_concept_artifacts(
+        "SELECT {{DaysSupply}} AS DaysSupply FROM InMemory.dbo.DRUG",
+        "Return the current claim days supply.",
+    ) == []
+    assert _find_required_business_concept_artifacts(
+        "SELECT cp.IntendedQuantityToBeDispensed, cp.IntendedDaysSupply "
+        "FROM plandata_rx_production.dbo.ClaimPartial cp WITH (NOLOCK)",
+        "Return the intended quantity and intended days supply.",
+    ) == []
+
+
+def test_system_prompt_honors_routed_runtime_input_query_contracts():
+    assert "Honor the routed query task" in SYSTEM_PROMPT
+    assert "Do not return null merely" in SYSTEM_PROMPT
+
+
+def test_selected_occurrence_requires_a_correlation_key():
+    meaning = "For the same selected DUR event occurrence, return the severity value."
+    uncorrelated = "SELECT e.SeverityLevel FROM InMemory.dbo.EVENT e"
+    correlated = (
+        "SELECT e.SeverityLevel FROM InMemory.dbo.EVENT e "
+        "WHERE e.NdcIndex = {{EventIndex}}"
+    )
+
+    assert _find_required_business_concept_artifacts(uncorrelated, meaning) == [
+        "required business concept 'selected occurrence' is absent from the SQL"
+    ]
+    assert _find_required_business_concept_artifacts(correlated, meaning) == []
+
+
 def test_required_business_concepts_reject_silently_incomplete_sql():
     meaning = (
         "Return same-GCN history quantity and days supply by Rx number, with formtype "
@@ -371,6 +496,20 @@ def test_output_alias_repair_requests_raw_source_fact():
     assert "Downstream InRule logic decides" in feedback
 
 
+def test_exactly_quoted_runtime_placeholders_are_normalized_to_parameters():
+    sql = (
+        "SELECT * FROM HRX.dbo.Example WITH (NOLOCK) "
+        "WHERE MemberId = '{{MemberId}}' AND Status LIKE '{{Status}}%' "
+        "AND LiteralValue = 'keep me'"
+    )
+
+    assert _normalize_quoted_runtime_placeholders(sql) == (
+        "SELECT * FROM HRX.dbo.Example WITH (NOLOCK) "
+        "WHERE MemberId = {{MemberId}} AND Status LIKE '{{Status}}%' "
+        "AND LiteralValue = 'keep me'"
+    )
+
+
 def test_count_output_alias_names_the_rows_counted_not_inverse_condition():
     sql = (
         "SELECT TOP (1) COUNT(*) AS MissingActiveNDCDesiMstr "
@@ -389,7 +528,7 @@ def test_count_output_alias_names_the_rows_counted_not_inverse_condition():
     ) == "SELECT COUNT(*) AS ActiveRecordCount FROM HRX.dbo.Example"
 
 
-def test_rejects_7073_sentence_length_output_alias():
+def test_output_alias_validation_allows_domain_facts_but_rejects_rule_decisions():
     artifacts = _find_output_name_artifacts(
         "SELECT COUNT(*) AS ErBypassDueToScc0580PercentSameGcnPaidHistory "
         "FROM HRX.dbo.ClaimHistory WITH (NOLOCK)"
@@ -402,9 +541,26 @@ def test_rejects_7073_sentence_length_output_alias():
         "SELECT COUNT(*) AS Scc05HistoryFound FROM HRX.dbo.ClaimHistory WITH (NOLOCK)"
     ) == []
     assert _find_output_name_artifacts(
-        "SELECT COUNT(*) AS Scc05HistoryBypass FROM HRX.dbo.ClaimHistory WITH (NOLOCK)"
+        "SELECT COUNT(*) AS PackageBillingBypassOverrideCount "
+        "FROM HRX.dbo.DrugOverrides WITH (NOLOCK)"
+    ) == []
+    assert _find_output_name_artifacts(
+        "SELECT OverrideID AS ActivePackageBillingBypassOverrideId "
+        "FROM HRX.dbo.DrugOverrides WITH (NOLOCK)"
+    ) == []
+    assert _find_output_name_artifacts(
+        "SELECT COUNT(*) AS ActiveExclusionCount "
+        "FROM HRX.dbo.DrugOverrides WITH (NOLOCK)"
+    ) == []
+    assert _find_output_name_artifacts(
+        "SELECT COUNT(*) AS ShouldBypass FROM HRX.dbo.ClaimHistory WITH (NOLOCK)"
     ) == [
-        "output alias 'Scc05HistoryBypass' describes a final rule decision instead of an extracted fact"
+        "output alias 'ShouldBypass' describes a final rule decision instead of an extracted fact"
+    ]
+    assert _find_output_name_artifacts(
+        "SELECT COUNT(*) AS BypassDecision FROM HRX.dbo.ClaimHistory WITH (NOLOCK)"
+    ) == [
+        "output alias 'BypassDecision' describes a final rule decision instead of an extracted fact"
     ]
 
 
@@ -502,6 +658,44 @@ def test_structured_model_response_parser_enforces_query_text_contract():
         '{"query_text":"SELECT 1","reason":"extra"}'
     ) == "INVALID_STRUCTURED_RESPONSE"
     assert _parse_model_query_response('{"query_text":""}') == "INVALID_STRUCTURED_RESPONSE"
+
+
+def test_generation_attempts_preserve_rejected_candidate_and_final_success():
+    ddl = "CREATE TABLE [HRX].[dbo].[DrugOverrides] ([NDCKey] int NULL);"
+    invalid = "SELECT MissingColumn FROM HRX.dbo.DrugOverrides WITH (NOLOCK)"
+    corrected = "SELECT NDCKey FROM HRX.dbo.DrugOverrides WITH (NOLOCK)"
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[invalid, corrected],
+        ),
+    ):
+        result = generate_query_result_for_step("Return DrugOverrides NDCKey values")
+
+    assert result["queries"] == [corrected]
+    assert result["failure_category"] is None
+    assert result["generation_attempts"] == [
+        {
+            "attempt": 1,
+            "source": "model",
+            "outcome": "rejected",
+            "failure_category": "COLUMN_NOT_IN_DDL",
+            "failure_reason": (
+                "The generated SQL referenced columns outside the selected DDL context: "
+                "MissingColumn"
+            ),
+            "candidate_query_text": invalid,
+        },
+        {
+            "attempt": 2,
+            "source": "model",
+            "outcome": "accepted",
+            "failure_category": None,
+            "failure_reason": None,
+            "candidate_query_text": corrected,
+        },
+    ]
 
 
 def test_generate_queries_retries_invalid_structured_model_response():
@@ -827,8 +1021,10 @@ def test_matched_true_when_openai_returns_sql():
     assert result["queries"] == [MOCK_SQL]
 
 
-def test_matched_false_when_openai_returns_none():
-    with patch("inrules_data_agent.generator.generate._call_openai", return_value=None):
+def test_empty_model_completion_is_retried_before_failure():
+    with patch(
+        "inrules_data_agent.generator.generate._call_openai", return_value=None
+    ) as call_openai:
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
@@ -847,6 +1043,29 @@ def test_matched_false_when_openai_returns_none():
     result = response.json()["queries"][0]
     assert result["matched"] is False
     assert result["queries"] == []
+    assert result["failure_category"] == "EMPTY_MODEL_COMPLETION"
+    assert call_openai.call_count == 4
+
+
+def test_repeated_rejected_candidate_stops_repairs_early():
+    ddl = "CREATE TABLE [HRX].[dbo].[DrugOverrides] ([NDCKey] int NULL);"
+    repeated = "SELECT MissingColumn FROM HRX.dbo.DrugOverrides WITH (NOLOCK)"
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=repeated,
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step("Return DrugOverrides NDCKey values")
+
+    assert result["queries"] == []
+    assert result["failure_category"] == "COLUMN_NOT_IN_DDL"
+    assert call_openai.call_count == 2
+    assert [attempt["failure_category"] for attempt in result["generation_attempts"]] == [
+        "COLUMN_NOT_IN_DDL",
+        "REPEATED_MODEL_CANDIDATE",
+    ]
 
 
 def test_bulk_generate_queries_returns_result_per_item_in_order():

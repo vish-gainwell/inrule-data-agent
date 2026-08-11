@@ -5,7 +5,7 @@ import os
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import httpx
 import pyodbc
@@ -211,10 +211,12 @@ Rules:
     COMPOUND.tcn with [[HistoricalTcns]] and NDC_Mstr.GCN_SeqNo with the incoming GCN
     runtime placeholder. HistoricalTcns represents the upstream paid, UNIVERSALC,
     non-reversed, member/date-window claim set; do not join enrollkeys in this query.
-19. If a logical concept, requested output, filter, runtime input, identifier, or
-    required join relationship cannot be mapped unambiguously to the provided DDL,
-    return {"query_text": null} instead of approximating it, dropping it, or adding
-    a proxy.
+19. Honor the routed query task. When part of the requested contract is an approved
+    runtime input, project or filter with its descriptive placeholder and retrieve the
+    remaining grounded source facts from the provided DDL. Do not return null merely
+    because downstream InRule could also perform the comparison or calculation. Return
+    {"query_text": null} only when no safe query contract can be formed without inventing
+    a table, column, relationship, or business value.
 """.strip()
 
 _UNSAFE_SQL_RE = re.compile(
@@ -336,6 +338,44 @@ def generate_query_result_for_step(
     selected DDL and never returns non-SELECT or multi-statement SQL.
     """
 
+    generation_attempts: list[dict[str, Any]] = []
+
+    def result(
+        queries: list[str],
+        failure_category: str | None,
+        failure_reason: str | None,
+        *,
+        validation_status: str | None = None,
+        review_warnings: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "queries": queries,
+            "failure_category": failure_category,
+            "failure_reason": failure_reason,
+            "validation_status": validation_status,
+            "review_warnings": review_warnings or [],
+            "generation_attempts": generation_attempts,
+        }
+
+    def record_attempt(
+        attempt: int,
+        source: str,
+        outcome: str,
+        category: str | None = None,
+        reason: str | None = None,
+        candidate_query_text: str | None = None,
+    ) -> None:
+        generation_attempts.append(
+            {
+                "attempt": attempt + 1,
+                "source": source,
+                "outcome": outcome,
+                "failure_category": category,
+                "failure_reason": reason,
+                "candidate_query_text": candidate_query_text,
+            }
+        )
+
     try:
         ddl_texts = select_ddls(
             business_meaning,
@@ -344,11 +384,11 @@ def generate_query_result_for_step(
         )
         if not ddl_texts:
             print("[generate_queries_for_step] no DDL context selected")
-            return {
-                "queries": [],
-                "failure_category": "NO_SCHEMA_CONTEXT",
-                "failure_reason": "No DDL schema context was selected for this query task.",
-            }
+            return result(
+                [],
+                "NO_SCHEMA_CONTEXT",
+                "No DDL schema context was selected for this query task.",
+            )
 
         ddl_context = "\n\n---\n\n".join(ddl_texts)
         deterministic_candidate = _grounded_business_pattern_candidate(
@@ -357,9 +397,11 @@ def generate_query_result_for_step(
         repair_feedback = None
         last_failure_category = "VALIDATION_REJECTED"
         last_failure_reason = "The generated SQL did not pass Data Agent validation."
-        max_attempts = 5 if draft_mode else 2
+        max_attempts = 6 if draft_mode else 4
+        seen_candidates: set[str] = set()
         for attempt in range(max_attempts):
-            if attempt == 0 and deterministic_candidate:
+            source = "deterministic_pattern" if attempt == 0 and deterministic_candidate else "model"
+            if source == "deterministic_pattern":
                 sql = deterministic_candidate
             else:
                 sql = _call_openai(
@@ -371,53 +413,99 @@ def generate_query_result_for_step(
                     draft_mode=draft_mode,
                 )
             if not sql:
-                return {
-                    "queries": [],
-                    "failure_category": "MODEL_RETURNED_NO_QUERY",
-                    "failure_reason": "The model returned no SQL for the grounded query task.",
-                }
+                record_attempt(
+                    attempt,
+                    source,
+                    "rejected",
+                    "EMPTY_MODEL_COMPLETION",
+                    "The model returned empty content for this generation attempt.",
+                )
+                if attempt < max_attempts - 1:
+                    repair_feedback = (
+                        "The previous completion was empty. Return exactly one JSON object with "
+                        "query_text containing one grounded SELECT, or null only when the provided "
+                        "DDL cannot support any requested source fact."
+                    )
+                    continue
+                return result(
+                    [],
+                    "EMPTY_MODEL_COMPLETION",
+                    "The model returned empty content on every generation attempt.",
+                )
             if sql == "INVALID_STRUCTURED_RESPONSE":
+                record_attempt(
+                    attempt,
+                    source,
+                    "rejected",
+                    "INVALID_MODEL_RESPONSE",
+                    "The model did not return the required query_text JSON object.",
+                )
                 if attempt < max_attempts - 1:
                     repair_feedback = _build_structured_response_repair_feedback()
                     continue
-                return {
-                    "queries": [],
-                    "failure_category": "INVALID_MODEL_RESPONSE",
-                    "failure_reason": "The model did not return the required query_text JSON object.",
-                }
+                return result(
+                    [],
+                    "INVALID_MODEL_RESPONSE",
+                    "The model did not return the required query_text JSON object.",
+                )
 
             sql = _clean_sql(sql)
+            sql = _normalize_quoted_runtime_placeholders(sql)
             sql = _normalize_inmemory_table_hints(sql)
             sql = _normalize_physical_hint_alias_order(sql)
             sql = _normalize_reserved_table_aliases(sql)
             sql = _normalize_missing_physical_table_hints(sql)
             sql = _normalize_count_output_aliases(sql)
             if sql.upper() == "NO_SUPPORTED_QUERY":
+                reason = "The model explicitly reported that no grounded query could be produced."
+                record_attempt(
+                    attempt, source, "rejected", "NO_SUPPORTED_GROUNDED_QUERY", reason
+                )
                 print("[generate_queries_for_step] no supported grounded SELECT query")
                 if draft_mode and attempt < max_attempts - 1:
                     repair_feedback = (
-                        "Try again by extracting only one atomic source fact from the current "
-                        "business meaning. Prefer a grounded existence count or the specifically "
-                        "requested source columns. Do not calculate the final rule decision, "
-                        "combine separate retrieval stages, or import unrelated rule context. "
-                        "Return {\"query_text\": null} only if no such fact maps to the DDL."
+                        "The upstream agent requires a DataQuery, so do not return null. Build the "
+                        "best safe SELECT from the authoritative business meaning. Include the "
+                        "maximum available grounded DDL facts, even for a partial mapping, and "
+                        "supplement them with descriptive runtime placeholders. Return a tableless "
+                        "SELECT only when no DDL table maps to any part of the business meaning. "
+                        "Use description and acceptance criteria only as context; "
+                        "do not use irAuthor contracts or invent database objects."
                     )
                     continue
-                return {
-                    "queries": [],
-                    "failure_category": "NO_SUPPORTED_GROUNDED_QUERY",
-                    "failure_reason": "The task could not be mapped to a safe, grounded SELECT query after all generation attempts.",
-                }
+                return result(
+                    [],
+                    "NO_SUPPORTED_GROUNDED_QUERY",
+                    "The task could not be mapped to a safe, grounded SELECT query after all generation attempts.",
+                )
+
+            candidate_fingerprint = re.sub(r"\s+", " ", sql).strip().casefold()
+            if candidate_fingerprint in seen_candidates:
+                reason = (
+                    "The model repeated a previously rejected SQL candidate without applying "
+                    "the requested repair."
+                )
+                record_attempt(
+                    attempt,
+                    source,
+                    "rejected",
+                    "REPEATED_MODEL_CANDIDATE",
+                    reason,
+                    sql,
+                )
+                return result([], last_failure_category, last_failure_reason)
+            seen_candidates.add(candidate_fingerprint)
+
             if not _is_safe_select_sql(sql):
+                reason = "The generated output was not a safe single SELECT statement."
+                record_attempt(
+                    attempt, source, "rejected", "VALIDATION_REJECTED", reason, sql
+                )
                 print("[generate_queries_for_step] rejected unsafe or non-SELECT SQL")
                 if not _UNSAFE_SQL_RE.search(sql) and attempt < max_attempts - 1:
                     repair_feedback = _build_parse_repair_feedback()
                     continue
-                return {
-                    "queries": [],
-                    "failure_category": "VALIDATION_REJECTED",
-                    "failure_reason": "The generated output was not a safe single SELECT statement.",
-                }
+                return result([], "VALIDATION_REJECTED", reason)
 
             invalid_tables = _find_invalid_table_refs(sql, ddl_context)
             if invalid_tables == ["unparseable or multiple-statement T-SQL"]:
@@ -425,12 +513,16 @@ def generate_query_result_for_step(
                 last_failure_reason = (
                     "The model did not return exactly one parseable T-SQL SELECT statement."
                 )
+                record_attempt(
+                    attempt,
+                    source,
+                    "rejected",
+                    last_failure_category,
+                    last_failure_reason,
+                    sql,
+                )
                 if attempt == max_attempts - 1:
-                    return {
-                        "queries": [],
-                        "failure_category": last_failure_category,
-                        "failure_reason": last_failure_reason,
-                    }
+                    return result([], last_failure_category, last_failure_reason)
                 repair_feedback = _build_parse_repair_feedback()
                 continue
             if not invalid_tables:
@@ -449,8 +541,16 @@ def generate_query_result_for_step(
                         + ", ".join(invalid_columns)
                     )
                     print("[generate_queries_for_step] rejected SQL with columns outside schema context: " + ", ".join(invalid_columns))
+                    record_attempt(
+                        attempt,
+                        source,
+                        "rejected",
+                        last_failure_category,
+                        last_failure_reason,
+                        sql,
+                    )
                     if attempt == max_attempts - 1:
-                        return {"queries": [], "failure_category": last_failure_category, "failure_reason": last_failure_reason}
+                        return result([], last_failure_category, last_failure_reason)
                     repair_feedback = _build_column_repair_feedback(
                         invalid_columns, sql, ddl_context
                     )
@@ -464,13 +564,45 @@ def generate_query_result_for_step(
                 output_name_artifacts = _find_output_name_artifacts(sql)
                 invalid_artifacts.extend(output_name_artifacts)
                 if not invalid_artifacts:
-                    return {"queries": [sql], "failure_category": None, "failure_reason": None}
+                    record_attempt(attempt, source, "accepted", candidate_query_text=sql)
+                    return result(
+                        [sql], None, None, validation_status="VALIDATED"
+                    )
+
+                if draft_mode:
+                    warning_reason = (
+                        "The safe DDL-grounded query requires review: "
+                        + ", ".join(invalid_artifacts)
+                    )
+                    record_attempt(
+                        attempt,
+                        source,
+                        "accepted_with_warnings",
+                        None,
+                        warning_reason,
+                        sql,
+                    )
+                    return result(
+                        [sql],
+                        None,
+                        None,
+                        validation_status="DRAFT_REQUIRES_REVIEW",
+                        review_warnings=invalid_artifacts,
+                    )
 
                 last_failure_category = "VALIDATION_REJECTED"
                 last_failure_reason = "The generated SQL was rejected: " + ", ".join(invalid_artifacts)
+                record_attempt(
+                    attempt,
+                    source,
+                    "rejected",
+                    last_failure_category,
+                    last_failure_reason,
+                    sql,
+                )
                 print("[generate_queries_for_step] rejected SQL with invalid predicates: " + ", ".join(invalid_artifacts))
                 if attempt == max_attempts - 1:
-                    return {"queries": [], "failure_category": last_failure_category, "failure_reason": last_failure_reason}
+                    return result([], last_failure_category, last_failure_reason)
                 repair_feedback = _build_artifact_repair_feedback(invalid_artifacts)
                 continue
 
@@ -479,19 +611,23 @@ def generate_query_result_for_step(
                 "The generated SQL referenced tables outside the selected DDL context: "
                 + ", ".join(invalid_tables)
             )
+            record_attempt(
+                attempt,
+                source,
+                "rejected",
+                last_failure_category,
+                last_failure_reason,
+                sql,
+            )
             print("[generate_queries_for_step] rejected SQL with tables outside schema context: " + ", ".join(invalid_tables))
             if attempt == max_attempts - 1:
-                return {"queries": [], "failure_category": last_failure_category, "failure_reason": last_failure_reason}
+                return result([], last_failure_category, last_failure_reason)
             repair_feedback = _build_table_repair_feedback(invalid_tables, ddl_context)
 
-        return {"queries": [], "failure_category": last_failure_category, "failure_reason": last_failure_reason}
+        return result([], last_failure_category, last_failure_reason)
     except Exception as exc:
         print(f"[generate_queries_for_step] error: {exc}")
-        return {
-            "queries": [],
-            "failure_category": "SERVICE_OR_MODEL_FAILURE",
-            "failure_reason": str(exc),
-        }
+        return result([], "SERVICE_OR_MODEL_FAILURE", str(exc))
 
 
 def _grounded_business_pattern_candidate(
@@ -823,10 +959,11 @@ def _call_openai(
         print("[generate_queries_for_step] OPENAI_API_KEY is not set; returning no query")
         return None
 
-    model = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    model = os.environ.get("OPENAI_MODEL", "gpt-5.6-luna")
     base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENAI_API_BASE")
     verify_ssl = os.environ.get("OPENAI_VERIFY_SSL", "false").lower() in {"1", "true", "yes"}
-    http_client = httpx.Client(verify=verify_ssl, timeout=20.0)
+    timeout_seconds = float(os.environ.get("OPENAI_TIMEOUT_SECONDS", "180"))
+    http_client = httpx.Client(verify=verify_ssl, timeout=timeout_seconds)
     client_kwargs = {"api_key": api_key, "http_client": http_client}
     if base_url:
         client_kwargs["base_url"] = base_url
@@ -839,18 +976,17 @@ def _call_openai(
     )
     system_prompt = SYSTEM_PROMPT
     if draft_mode:
-        strict_rule = (
-            "19. If a logical concept, requested output, filter, runtime input, identifier, or\n"
-            "    required join relationship cannot be mapped unambiguously to the provided DDL,\n"
-            "    return {\"query_text\": null} instead of approximating it, dropping it, or adding\n"
-            "    a proxy."
+        system_prompt += (
+            "\n\n20. DRAFT MODE: The upstream agent has authoritatively routed this task for a\n"
+            "    DataQuery. Always return the best safe review-only SELECT candidate. Include\n"
+            "    the maximum available DDL-backed source facts even when they satisfy only part\n"
+            "    of the business meaning, and supplement them with descriptive runtime\n"
+            "    placeholders. Use a tableless SELECT only when no DDL table maps to any part\n"
+            "    of the authoritative business meaning.\n"
+            "    Use the description and acceptance criteria only as supporting context. Never\n"
+            "    use irAuthor DataSet names, record items, fallback SQL, assumptions, or\n"
+            "    configuration to determine the query. In draft mode, do not return null."
         )
-        draft_rule = (
-            "19. DRAFT MODE: Return the best review-only SELECT candidate in the required\n"
-            "    query_text JSON object when a mapping is incomplete. Do not invent a\n"
-            "    non-SELECT operation or multiple statements."
-        )
-        system_prompt = SYSTEM_PROMPT.replace(strict_rule, draft_rule)
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_message},
@@ -864,7 +1000,7 @@ def _call_openai(
         "response_format": {"type": "json_object"},
     }
     if model.lower().startswith(("gpt-5", "o1", "o3", "o4")):
-        request_kwargs["max_completion_tokens"] = 600
+        request_kwargs["max_completion_tokens"] = 4000
     else:
         request_kwargs["temperature"] = 0
         request_kwargs["max_tokens"] = 600
@@ -942,6 +1078,11 @@ def _normalize_reserved_table_aliases(sql: str) -> str:
                 flags=re.IGNORECASE,
             )
     return "".join(parts)
+
+
+def _normalize_quoted_runtime_placeholders(sql: str) -> str:
+    """Treat an exactly quoted runtime placeholder as a parameter, not text."""
+    return re.sub(r"'(?P<placeholder>\{\{[^{}]+\}\})'", r"\g<placeholder>", sql)
 
 
 def _clean_sql(text: str) -> str:
@@ -1229,12 +1370,25 @@ def _find_required_business_concept_artifacts(
 ) -> list[str]:
     """Reject candidates that silently omit strongly named atomic constraints."""
     requirements = (
-        (r"\bquantity(?:\s+dispensed)?\b", "quantity", r"\b(?:metricqty|quantity|qty|drug_qty)\b"),
-        (r"\bdays[ _-]*supply\b", "days supply", r"\bdays?[_]?supply\b"),
+        (
+            r"\bquantity(?:\s+dispensed)?\b",
+            "quantity",
+            r"\b(?:metricqty|qty|drug_qty|[a-z0-9_]*quantity[a-z0-9_]*)\b|\{\{[^}]*(?:quantity|qty)[^}]*\}\}",
+        ),
+        (
+            r"\bdays[ _-]*supply\b",
+            "days supply",
+            r"\b[a-z0-9_]*days?[_]?supply[a-z0-9_]*\b|\{\{[^}]*days?[_]?(?:supply)?[^}]*\}\}",
+        ),
         (r"\b(?:rx\s*number|prescription/service reference number)\b", "Rx number", r"\b(?:rxnumber|associatedprescriptionrefnumber)\b|\{\{[^}]*rx[^}]*\}\}"),
         (r"\bform\s*type\b|\bformtype\b", "form type", r"\bformtype\b"),
         (r"\bresubclaimid\b|\bnon-reversed\b", "reversal status", r"\bresubclaimid\b"),
         (r"\bgcn(?:_?seqno)?\b", "GCN", r"\bgcn(?:_?seqno)?\b|\{\{[^}]*gcn[^}]*\}\}"),
+        (
+            r"\b(?:same|selected)\b[^.\n]{0,80}\b(?:event|history)?\s*occurrence\b",
+            "selected occurrence",
+            r"\b(?:ndcindex|previcn|icn)\b|\{\{[^}]*(?:index|occurrence|event|icn)[^}]*\}\}|\[\[[^]]+\]\]",
+        ),
     )
     normalized_sql = sql.lower()
     prefiltered_historical_tcns = bool(
@@ -1308,11 +1462,24 @@ def _find_output_name_artifacts(sql: str) -> list[str]:
             artifacts.append(f"output alias {alias!r} exceeds 40 characters")
         elif not re.fullmatch(r"[A-Z][A-Za-z0-9]*", alias):
             artifacts.append(f"output alias {alias!r} must use PascalCase")
-        elif re.search(r"(?:Bypass|Deny|Post|Decision|Applies|Eligible)", alias):
+        elif _is_decision_shaped_output_alias(alias):
             artifacts.append(
                 f"output alias {alias!r} describes a final rule decision instead of an extracted fact"
             )
     return artifacts
+
+
+def _is_decision_shaped_output_alias(alias: str) -> bool:
+    """Reject explicit rule outcomes without blocking domain source-fact names."""
+    return bool(
+        re.search(
+            r"^(?:Should|Must|Can|Is)(?:Bypass|Denied|Deny|Posted|Post|Eligible|Applicable)"
+            r"|(?:Bypass|Deny|Denial|Post|Posting|Eligibility|Applicability)Decision$"
+            r"|(?:Bypass|Denial|Posting|Eligibility)Applies$",
+            alias,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _parse_generated_select(sql: str) -> Expression | None:

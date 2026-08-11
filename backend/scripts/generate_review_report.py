@@ -139,7 +139,7 @@ def make_client() -> tuple[OpenAI, str]:
     base = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENAI_API_BASE")
     if base:
         kwargs["base_url"] = base
-    return OpenAI(**kwargs), os.environ.get("OPENAI_MODEL", "gpt-4o")
+    return OpenAI(**kwargs), os.environ.get("OPENAI_MODEL", "gpt-5.6-luna")
 
 
 def call_model(client: OpenAI, model: str, messages: list[dict], json_mode: bool = False) -> str:

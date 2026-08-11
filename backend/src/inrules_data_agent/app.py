@@ -187,6 +187,9 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
                 "data_query": data_query,
                 "failure_category": None if matched else result["failure_category"],
                 "failure_reason": None if matched else result["failure_reason"],
+                "validation_status": result.get("validation_status"),
+                "review_warnings": result.get("review_warnings", []),
+                "generation_attempts": result.get("generation_attempts", []),
                 "queries": assembled,
                 "matched": matched,
             }
