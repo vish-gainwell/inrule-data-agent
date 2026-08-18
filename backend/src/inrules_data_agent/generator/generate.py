@@ -56,6 +56,9 @@ _LIVE_TABLE_KEYWORDS: list[tuple[str, tuple[str, str, str]]] = [
     ("ndcmedicarecov", ("HRX", "dbo", "NDCMedicareCov")),
     ("ndc medicare cov", ("HRX", "dbo", "NDCMedicareCov")),
     ("part b drug coverage", ("HRX", "dbo", "NDCMedicareCov")),
+    ("ndcmaintdetails", ("HRX", "dbo", "NDCMaintDetails")),
+    ("ndc maint details", ("HRX", "dbo", "NDCMaintDetails")),
+    ("maxscriptdays", ("HRX", "dbo", "NDC_Mstr")),
 ]
 
 SYSTEM_PROMPT = """
@@ -126,10 +129,12 @@ Rules:
    unrelated runtime entity paths.
 
 6. Several columns in plandata_rx_production.dbo.claim are CHAR (fixed-width, space-padded).
-   Always wrap them in RTRIM() for comparisons:
-   - RTRIM(status) IN ('PAID', 'PAY', 'WAITPAY', 'DENY', 'WAITDENY', 'REV')
+   Always wrap them in RTRIM() for comparisons and use only the status family required
+   by the current business meaning:
+   - Paid, non-reversed history: RTRIM(status) IN ('PAID', 'PAY', 'WAITPAY')
+     together with RTRIM(resubclaimid) = ''. Never include DENY, WAITDENY, or REV.
+   - Include denied, waiting-denial, or reversal statuses only when explicitly required.
    - RTRIM(formtype) = 'UNIVERSALC'
-   - RTRIM(resubclaimid) = ''   (empty resubmission — spaces, not null)
    - RTRIM(memid), RTRIM(provid) for member and provider ID comparisons
 
 7. Preserve any other literal values specified in the business requirement so the
@@ -215,6 +220,26 @@ Rules:
     join claim on claimid for status/formtype/resubclaimid/date/member/provider filters;
     join claimpharm on claimid and claimline, then NDC_Mstr on claimpharm.ndckey for GCN;
     filter edi_pharm_universal.SubmissionClarification and rxnumber as required.
+      Reusable prescription-history shape: when the task identifies a prescription by
+    provider plus Rx/prescription-reference number, preserve both predicates. For an
+    oldest/earliest occurrence use TOP (1) with ascending Fill_Date and a stable key as
+    a tie-breaker; do not replace provider scope with member scope or order by the value
+    being returned when the task names Fill_Date as the occurrence order.
+      Primary/fallback lookup shape: when the task names an authoritative primary table
+    and a fallback source, a fallback-only query is incomplete. Retrieve the primary fact
+    first using its exact live DDL. If the requested value is absent from that table's DDL,
+    return null rather than inventing the column or silently substituting the fallback.
+    NDC maintenance matching uses exact DDL names Planid, EffDate, TermDate, NDCKey,
+    GCN_SeqNo, and TC; use inclusive DOS filtering and, when one row is requested, rank
+    exact NDC before GCN sequence before therapeutic class, then latest EffDate and
+    ChangedDate. Use semantic {{PlanId}} and {{TherapeuticClass}} inputs when concrete DTO
+    paths are not supplied; never map either input to the NDC code.
+      Pattern and effective-period shape: preserve an explicitly supplied LIKE/contains/
+    wildcard comparison; never collapse it to equality. When history must belong to the
+    same season, configuration period, or effective override set as the incoming claim,
+    constrain both the incoming date and the historical row date to the same effective/
+    termination columns from the same configuration alias. A lookback window alone does
+    not prove same-period membership.
     Reusable compound quantity shape: select SUM(TRY_CONVERT(decimal(29,9),
     COMPOUND.drug_qty)); join NDC_Mstr on COMPOUND.ndc = NDC_Mstr.NDCKey; filter
     COMPOUND.tcn with [[HistoricalTcns]] and NDC_Mstr.GCN_SeqNo with the incoming GCN
@@ -568,6 +593,9 @@ def generate_query_result_for_step(
                 invalid_artifacts = _find_invalid_sql_artifacts(sql, ddl_context, business_meaning)
                 invalid_artifacts.extend(
                     _find_required_business_concept_artifacts(sql, business_meaning)
+                )
+                invalid_artifacts.extend(
+                    _find_deterministic_selection_artifacts(sql, business_meaning)
                 )
                 invalid_artifacts.extend(_find_output_shape_artifacts(sql, business_meaning))
                 output_name_artifacts = _find_output_name_artifacts(sql)
@@ -1389,7 +1417,13 @@ def _find_required_business_concept_artifacts(
             "days supply",
             r"\b[a-z0-9_]*days?[_]?supply[a-z0-9_]*\b|\{\{[^}]*days?[_]?(?:supply)?[^}]*\}\}",
         ),
-        (r"\b(?:rx\s*number|prescription/service reference number)\b", "Rx number", r"\b(?:rxnumber|associatedprescriptionrefnumber)\b|\{\{[^}]*rx[^}]*\}\}"),
+        (r"\b(?:rx\s*number|prescription(?:/service)? reference number)\b", "Rx number", r"\b(?:rxnumber|rx_nbr|associatedprescriptionrefnumber)\b|\{\{[^}]*(?:rx|prescription)[^}]*\}\}"),
+        (
+            r"\b(?:same|current|incoming|submitted)\b[^.\n]{0,80}\b(?:provider|pharmacy)\b|"
+            r"\b(?:provider|pharmacy)\b[^.\n]{0,80}\b(?:rx|prescription)",
+            "provider scope",
+            r"\b(?:provid|providerid|provider_npi|pharmacynpi)\b|\{\{[^}]*(?:provider|pharmacy)[^}]*\}\}",
+        ),
         (r"\bform\s*type\b|\bformtype\b", "form type", r"\bformtype\b"),
         (r"\bresubclaimid\b|\bnon-reversed\b", "reversal status", r"\bresubclaimid\b"),
         (r"\bgcn(?:_?seqno)?\b", "GCN", r"\bgcn(?:_?seqno)?\b|\{\{[^}]*gcn[^}]*\}\}"),
@@ -1400,6 +1434,12 @@ def _find_required_business_concept_artifacts(
         ),
     )
     normalized_sql = sql.lower()
+    where_match = re.search(
+        r"\bwhere\b(?P<where>.*?)(?:\bgroup\s+by\b|\border\s+by\b|\bhaving\b|$)",
+        normalized_sql,
+        re.IGNORECASE | re.DOTALL,
+    )
+    where_sql = where_match.group("where") if where_match else ""
     prefiltered_historical_tcns = bool(
         re.search(r"\[?\[?\{?\{?\s*historicaltcns\b", normalized_sql)
     )
@@ -1409,9 +1449,87 @@ def _find_required_business_concept_artifacts(
             continue
         if prefiltered_historical_tcns and label in {"form type", "reversal status"}:
             continue
-        if not re.search(sql_pattern, normalized_sql, re.IGNORECASE):
+        search_sql = where_sql if label == "provider scope" else normalized_sql
+        if not re.search(sql_pattern, search_sql, re.IGNORECASE):
             artifacts.append(f"required business concept '{label}' is absent from the SQL")
+    if re.search(r"\bndc\s*maint(?:enance)?\s*details\b|\bndcmaintdetails\b", business_meaning, re.IGNORECASE) and not re.search(
+        r"\bndcmaintdetails\b", normalized_sql, re.IGNORECASE
+    ):
+        artifacts.append("required primary source 'NDCMaintDetails' is absent from the SQL")
+
+    physical_claim_history = bool(re.search(
+        r"\b(?:from|join)\s+(?:\[[^]]+\]|[a-z0-9_]+)\s*\.\s*(?:\[[^]]+\]|[a-z0-9_]+)\s*\.\s*\[?claim\]?\b",
+        normalized_sql,
+        re.IGNORECASE,
+    ))
+    if physical_claim_history and re.search(r"\bpaid\b", business_meaning, re.IGNORECASE):
+        status_match = re.search(
+            r"\bstatus\s*\)?\s+in\s*\((?P<values>[^)]*)\)",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+        if status_match is None:
+            artifacts.append("paid physical claim history has no status filter")
+        else:
+            statuses = {
+                value.upper()
+                for value in re.findall(r"'([^']+)'", status_match.group("values"))
+            }
+            forbidden = sorted(statuses & {"DENY", "WAITDENY", "REV"})
+            if forbidden:
+                artifacts.append(
+                    "paid physical claim history includes non-paid statuses: "
+                    + ", ".join(forbidden)
+                )
+
+    if re.search(r"\bLIKE\b|%[^%]+%|\b(?:contains|wildcard)\b", business_meaning, re.IGNORECASE) and not re.search(
+        r"\bLIKE\b", normalized_sql, re.IGNORECASE
+    ):
+        artifacts.append("required comparison operator 'LIKE' is absent from the SQL")
+
+    if re.search(r"\bsame\b[^.\n]{0,80}\b(?:season|period|effective\s+(?:window|override\s+set))\b", business_meaning, re.IGNORECASE):
+        current_window = re.search(
+            r"\{\{[^}]*(?:dateofservice|incomingdate)[^}]*\}\}\s+between\s+"
+            r"(?P<alias>[a-z_][a-z0-9_]*)\.(?:effdate|effectivedate)\s+and\s+"
+            r"(?P=alias)\.(?:termdate|enddate|terminationdate)",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+        if current_window is None:
+            artifacts.append("same-period lookup does not bind the incoming date to an effective window")
+        else:
+            alias = re.escape(current_window.group("alias"))
+            historical_window = re.search(
+                rf"\b[a-z_][a-z0-9_]*\.(?:startdate|dateofservice|fill_?date|rxdate)\s+between\s+"
+                rf"{alias}\.(?:effdate|effectivedate)\s+and\s+"
+                rf"{alias}\.(?:termdate|enddate|terminationdate)",
+                normalized_sql,
+                re.IGNORECASE,
+            )
+            if historical_window is None:
+                artifacts.append("same-period lookup does not bind history to the incoming effective window")
     return artifacts
+
+
+def _find_deterministic_selection_artifacts(
+    sql: str, business_meaning: str
+) -> list[str]:
+    """Require deterministic ordering when one historical/configuration row is selected."""
+    if not re.search(r"\bTOP\s*\(\s*1\s*\)", sql, re.IGNORECASE):
+        return []
+    order_match = re.search(r"\bORDER\s+BY\b(?P<order>.+)$", sql, re.IGNORECASE | re.DOTALL)
+    if order_match is None:
+        return ["TOP (1) selection has no ORDER BY"]
+    order = order_match.group("order")
+    if re.search(r"\b(?:oldest|earliest|first\s+(?:paid|filled|qualifying)?\s*(?:claim|occurrence|fill|record))\b", business_meaning, re.IGNORECASE):
+        first_direction = re.search(r"\b(?:ASC|DESC)\b", order, re.IGNORECASE)
+        if first_direction and first_direction.group(0).upper() == "DESC":
+            return ["oldest/earliest TOP (1) selection must order ascending"]
+    if re.search(r"\b(?:latest|newest|most\s+recent)\b", business_meaning, re.IGNORECASE):
+        first_direction = re.search(r"\b(?:ASC|DESC)\b", order, re.IGNORECASE)
+        if first_direction and first_direction.group(0).upper() == "ASC":
+            return ["latest/newest TOP (1) selection must order descending"]
+    return []
 
 
 def _find_output_shape_artifacts(sql: str, business_meaning: str) -> list[str]:

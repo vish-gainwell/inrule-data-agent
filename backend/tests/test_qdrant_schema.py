@@ -135,7 +135,7 @@ def test_select_ddls_falls_back_to_packaged_catalog_when_qdrant_fails():
     ):
         result = select_ddls("Return active member rate-code values")
 
-    assert len(result) == 61
+    assert len(result) == 62
     assert "[InMemory].[dbo]" in result[0]
     assert any("[plandata_rx_production].[dbo].[claim]" in ddl for ddl in result)
     assert any("[HRX].[dbo].[DrugCoverage]" in ddl for ddl in result)

@@ -13,6 +13,7 @@ from inrules_data_agent.generator.generate import (
     _build_artifact_repair_feedback,
     _build_user_message,
     _column_repair_suggestions,
+    _find_deterministic_selection_artifacts,
     _find_output_name_artifacts,
     _find_required_business_concept_artifacts,
     _find_runtime_column_mapping_artifacts,
@@ -456,8 +457,8 @@ def test_selected_occurrence_requires_a_correlation_key():
 
 def test_required_business_concepts_reject_silently_incomplete_sql():
     meaning = (
-        "Return same-GCN history quantity and days supply by Rx number, with formtype "
-        "UNIVERSALC and blank resubclaimid"
+        "Return same-GCN history quantity and days supply by Rx number for the current "
+        "provider, with formtype UNIVERSALC and blank resubclaimid"
     )
     incomplete = "SELECT COUNT(*) FROM HRX.dbo.DrugOverrides WITH (NOLOCK) WHERE GCN_SeqNo = {{GCNSeqNo}}"
 
@@ -466,9 +467,97 @@ def test_required_business_concepts_reject_silently_incomplete_sql():
     assert "required business concept 'quantity' is absent from the SQL" in artifacts
     assert "required business concept 'days supply' is absent from the SQL" in artifacts
     assert "required business concept 'Rx number' is absent from the SQL" in artifacts
+    assert "required business concept 'provider scope' is absent from the SQL" in artifacts
     assert "required business concept 'form type' is absent from the SQL" in artifacts
     assert "required business concept 'reversal status' is absent from the SQL" in artifacts
     assert not any("'GCN'" in artifact for artifact in artifacts)
+
+
+def test_provider_scope_must_be_a_history_filter_not_only_an_output():
+    meaning = "Return the oldest prescription for the current provider and Rx number."
+    projection_only = (
+        "SELECT h.ProviderId, h.RxNumber FROM InMemory.dbo.MEMBER_HISTORY h "
+        "WHERE h.RxNumber = {{RxNumber}}"
+    )
+
+    assert _find_required_business_concept_artifacts(projection_only, meaning) == [
+        "required business concept 'provider scope' is absent from the SQL"
+    ]
+
+
+def test_required_business_concepts_preserve_primary_before_fallback():
+    meaning = (
+        "Read the plan/date-effective NDCMaintDetails value first; when it is missing "
+        "or zero use NDCParameters as the fallback."
+    )
+    fallback_only = (
+        "SELECT p.PARAMETER_VALUE FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'DEA_DAYS_2'"
+    )
+
+    assert _find_required_business_concept_artifacts(fallback_only, meaning) == [
+        "required primary source 'NDCMaintDetails' is absent from the SQL"
+    ]
+
+
+def test_paid_physical_history_rejects_non_paid_statuses():
+    meaning = "Count paid, non-reversed historical claims for the member."
+    sql = (
+        "SELECT COUNT(*) AS PaidHistoryCount "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "WHERE RTRIM(c.status) IN ('PAID', 'PAY', 'WAITPAY', 'DENY', 'WAITDENY', 'REV') "
+        "AND RTRIM(c.resubclaimid) = ''"
+    )
+
+    assert _find_required_business_concept_artifacts(sql, meaning) == [
+        "paid physical claim history includes non-paid statuses: DENY, REV, WAITDENY"
+    ]
+
+
+def test_required_like_and_same_period_semantics_are_preserved():
+    meaning = (
+        "Return history in the same vaccine season where override Type LIKE "
+        "'%Vaccine%' and both dates use the same effective period."
+    )
+    exact_and_history_only = (
+        "SELECT mh.GCNSeqNo FROM InMemory.dbo.MEMBER_HISTORY mh "
+        "JOIN HRX.dbo.DrugOverrides d WITH (NOLOCK) ON d.GCN_SeqNo = mh.GCNSeqNo "
+        "WHERE d.Type = 'Vaccine' "
+        "AND mh.DateOfService BETWEEN d.EffDate AND d.TermDate"
+    )
+    artifacts = _find_required_business_concept_artifacts(
+        exact_and_history_only, meaning
+    )
+
+    assert "required comparison operator 'LIKE' is absent from the SQL" in artifacts
+    assert (
+        "same-period lookup does not bind the incoming date to an effective window"
+        in artifacts
+    )
+
+
+def test_top_one_selection_requires_business_direction():
+    assert _find_deterministic_selection_artifacts(
+        "SELECT TOP (1) h.RxDateWritten FROM InMemory.dbo.MEMBER_HISTORY h",
+        "Return the oldest qualifying prescription occurrence.",
+    ) == ["TOP (1) selection has no ORDER BY"]
+    assert _find_deterministic_selection_artifacts(
+        "SELECT TOP (1) h.RxDateWritten FROM InMemory.dbo.MEMBER_HISTORY h "
+        "ORDER BY h.Fill_Date DESC, h.ClaimId",
+        "Return the oldest qualifying prescription occurrence.",
+    ) == ["oldest/earliest TOP (1) selection must order ascending"]
+    assert _find_deterministic_selection_artifacts(
+        "SELECT TOP (1) h.RxDateWritten FROM InMemory.dbo.MEMBER_HISTORY h "
+        "ORDER BY h.Fill_Date ASC, h.ClaimId",
+        "Return the oldest qualifying prescription occurrence.",
+    ) == []
+
+
+def test_prompt_preserves_history_scope_and_primary_lookup():
+    assert "preserve both predicates" in SYSTEM_PROMPT
+    assert "ascending Fill_Date" in SYSTEM_PROMPT
+    assert "a fallback-only query is incomplete" in SYSTEM_PROMPT
+    assert "exact NDC before GCN sequence before therapeutic class" in SYSTEM_PROMPT
 
 
 def test_prefiltered_historical_tcns_represent_upstream_claim_scope():
@@ -810,6 +899,41 @@ def test_generate_queries_repairs_semantically_incompatible_runtime_column():
     assert result["matched"] is True
     assert result["queries"] == [corrected]
     assert call_openai.call_count == 2
+
+
+def test_generate_queries_repairs_prescription_history_scope_and_ordering():
+    ddl = (
+        "CREATE TABLE [InMemory].[dbo].[MEMBER_HISTORY] "
+        "([ProviderId] nvarchar(max), [RxNumber] nvarchar(max), "
+        "[Fill_Date] datetime, [RxDateWritten] datetime, [ClaimId] bigint);"
+    )
+    wrong = (
+        "SELECT TOP (1) h.RxDateWritten AS DatePrescriptionWritten "
+        "FROM InMemory.dbo.MEMBER_HISTORY h "
+        "WHERE h.RxNumber = {{RxNumber}} ORDER BY h.RxDateWritten ASC"
+    )
+    corrected = (
+        "SELECT TOP (1) h.RxDateWritten AS DatePrescriptionWritten "
+        "FROM InMemory.dbo.MEMBER_HISTORY h "
+        "WHERE h.ProviderId = {{ProviderId}} AND h.RxNumber = {{RxNumber}} "
+        "ORDER BY h.Fill_Date ASC, h.ClaimId ASC"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[wrong, corrected],
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            "Return the oldest prescription occurrence for the current provider and "
+            "submitted Rx number, ordered by earliest Fill_Date."
+        )
+
+    assert result["queries"] == [corrected]
+    assert result["validation_status"] == "VALIDATED"
+    assert call_openai.call_count == 2
+    assert "provider scope" in call_openai.call_args_list[1].args[2]
 
 
 def test_deterministic_column_repair_uses_unique_schema_owner():
@@ -1174,8 +1298,8 @@ def test_select_ddls_adds_live_schema_for_history_support_tables():
         create=True,
     ) as read_live_schema:
         ddls = select_ddls(
-            "Query claim JOIN claimpharm and enrollkeys LEFT JOIN member "
-            "using NDC_Limits DaysTillRefill"
+            "Query claim JOIN claimpharm and enrollkeys LEFT JOIN member using "
+            "NDC_Limits DaysTillRefill and NDCMaintDetails MaxScriptDays"
         )
 
     joined = "\n".join(ddls)
@@ -1183,7 +1307,25 @@ def test_select_ddls_adds_live_schema_for_history_support_tables():
     assert "CREATE TABLE [plandata_rx_production].[dbo].[enrollkeys]" in joined
     assert "CREATE TABLE [plandata_rx_production].[dbo].[member]" in joined
     assert "CREATE TABLE [HRX].[dbo].[NDC_Limits]" in joined
-    assert read_live_schema.call_count == 4
+    assert "CREATE TABLE [HRX].[dbo].[NDCMaintDetails]" in joined
+    assert "CREATE TABLE [HRX].[dbo].[NDC_Mstr]" in joined
+    assert read_live_schema.call_count == 6
+
+
+def test_packaged_ndc_maintenance_schema_uses_verified_physical_columns():
+    with (
+        patch("inrules_data_agent.generator.generate.retrieve_schema_ddls", return_value=[]),
+        patch("inrules_data_agent.generator.generate._read_live_schema_table", return_value=None),
+    ):
+        ddls = select_ddls("Read NDCMaintDetails for the current plan and date")
+
+    ddl = next(ddl for ddl in ddls if "[HRX].[dbo].[NDCMaintDetails]" in ddl)
+    assert "[Planid] varchar(15) NOT NULL" in ddl
+    assert "[GCN_SeqNo] char(6) NOT NULL" in ddl
+    assert "[TC] char(3) NOT NULL" in ddl
+    assert "[EffDate] smalldatetime NOT NULL" in ddl
+    assert "[TermDate] smalldatetime NOT NULL" in ddl
+    assert "[MaxScriptDays]" not in ddl
 
 
 def test_select_ddls_includes_dto_derived_in_memory_tables():
@@ -1215,7 +1357,7 @@ def test_select_ddls_includes_dto_derived_in_memory_tables():
 def test_select_ddls_without_table_keywords_returns_all_packaged_schemas():
     ddls = select_ddls("Completely unknown data requirement")
 
-    assert len(ddls) == 61
+    assert len(ddls) == 62
     joined = "\n".join(ddls)
     assert "[HRX].[dbo].[step_therapy_drug]" in joined
     assert "[HRX].[dbo].[step_therapy_level]" in joined
@@ -1437,6 +1579,7 @@ def test_generate_queries_accepts_reviewed_member_history_drugoverride_gcn_join(
         "JOIN HRX.dbo.DrugOverrides dox WITH (NOLOCK) "
         "ON dox.GCN_SeqNo = mh.GCNSeqNo "
         "WHERE dox.Type LIKE '%FluVaccine%' "
+        "AND {{DateOfService}} BETWEEN dox.EffDate AND dox.TermDate "
         "AND mh.DateOfService BETWEEN dox.EffDate AND dox.TermDate"
     )
     with (
@@ -1451,8 +1594,10 @@ def test_generate_queries_accepts_reviewed_member_history_drugoverride_gcn_join(
                 "steps": [{
                     "step_number": 2,
                     "business_meaning": (
-                        "Return MEMBER_HISTORY GCNSeqNo and DateOfService rows whose GCN "
-                        "matches a DrugOverrides GCN_SeqNo classified as FluVaccine"
+                        "Return MEMBER_HISTORY GCNSeqNo and DateOfService rows in the same "
+                        "vaccine season whose GCN matches DrugOverrides GCN_SeqNo where "
+                        "Type LIKE '%FluVaccine%' and both incoming and history dates fall "
+                        "within the same effective period"
                     ),
                     "requires_data_query": True,
                 }],
