@@ -119,10 +119,11 @@ Rules:
    never a reason to reject an otherwise table-and-column-grounded query. Do not
    invent inputs that are not required by the current atomic business fact.
 
-5. Hardcode any literal values that are specified in the business requirement exactly as written
-   (e.g. if business_meaning says Type = '3013_Opioid', use '3013_Opioid' verbatim;
-   if it says status = 'PAID', use 'PAID').
-   Do NOT invent or substitute values not present in the requirement.
+5. Preserve every literal value specified in the business requirement exactly as written
+   in the semantic candidate SQL (e.g. Type = '3013_Opioid' or status = 'PAID').
+   Do NOT invent or substitute values. The downstream DataQuery contract builder will
+   convert reusable assignment literals into named QueryParams; do not replace them with
+   unrelated runtime entity paths.
 
 6. Several columns in plandata_rx_production.dbo.claim are CHAR (fixed-width, space-padded).
    Always wrap them in RTRIM() for comparisons:
@@ -131,7 +132,8 @@ Rules:
    - RTRIM(resubclaimid) = ''   (empty resubmission — spaces, not null)
    - RTRIM(memid), RTRIM(provid) for member and provider ID comparisons
 
-7. Hardcode any other literal values specified in the business requirement.
+7. Preserve any other literal values specified in the business requirement so the
+   contract builder can bind them as edit-specific DataPackage query parameters.
 8. Determine the output shape from the CURRENT DATA QUERY BUSINESS MEANING before writing SQL:
    - If it asks for a count, existence check, or count comparison, return COUNT(*) or the requested aggregate.
    - If it asks to return values, identifiers, codes, columns, records, or details, project those exact mapped columns. Never replace them with COUNT(*).
@@ -202,7 +204,14 @@ Rules:
       comments: use a prefiltered runtime TCN collection and join ndc to NDC_Mstr.NDCKey
       when GCN filtering is required. DaysTillRefill and incoming GCN are runtime inputs,
       never enrollkeys columns.
-    Reusable SCC history shape: select edi_pharm_universal.metricqty and dayssupply;
+      Reusable DrugOverrides shape: query HRX.dbo.DrugOverrides directly; use the exact
+      required Type literal plus {{ClaimTransaction.Ndc}},
+      {{ClaimRequest.DrugRequested.GCNSeqNo.Code}}, {{ClaimRequest.DrugRequested.HIC3.Code}},
+      and {{DateOfService}} as lookup values. Never join InMemory.DRUG merely to recover
+      those current-drug values. The contract/reuse layer will convert the Type literal and
+      runtime placeholders into the generic DrugOverrideType, Ndc, GcnSeqNo, Hic3, and
+      DateOfService parameter assignments.
+      Reusable SCC history shape: select edi_pharm_universal.metricqty and dayssupply;
     join claim on claimid for status/formtype/resubclaimid/date/member/provider filters;
     join claimpharm on claimid and claimline, then NDC_Mstr on claimpharm.ndckey for GCN;
     filter edi_pharm_universal.SubmissionClarification and rxnumber as required.

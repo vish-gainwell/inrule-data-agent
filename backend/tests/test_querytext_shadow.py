@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+import pyodbc
 from fastapi.testclient import TestClient
 
 from inrules_data_agent.app import create_app
@@ -10,6 +11,7 @@ from inrules_data_agent.retrieval.querytext_shadow import (
     find_comparison_candidates,
     find_reuse_match,
     find_shadow_match,
+    load_reuse_corpus,
     propose_new_data_query,
     patterns_equivalent,
 )
@@ -178,8 +180,14 @@ def test_shadow_database_failure_keeps_generated_sql(monkeypatch):
     assert result["data_query"] == {
         "data_query_id": None,
         "data_query_name": None,
-        "query_text": sql,
-        "query_params": {},
+        "query_text": (
+            "SELECT {{:output}} FROM HRX.dbo.NDCParameters "
+            "WHERE parameter_name = '{{:ParamName}}'"
+        ),
+        "query_params": {
+            ":output": "parameter_value",
+            ":ParamName": "MAGIC_PLAN",
+        },
         "return_vals": ["parameter_value"],
     }
     assert "querytext_comparison_candidates" not in result
@@ -274,15 +282,127 @@ def test_api_returns_reuse_decision_with_query_params(monkeypatch):
     assert "proposed_new_data_queries" not in result
 
 
-def test_proposed_new_data_query_derives_runtime_params_and_return_values():
+def test_proposed_new_data_query_derives_runtime_literal_output_and_return_contract():
     proposal = propose_new_data_query(
         "SELECT p.PARAMETER_VALUE AS ParameterValue FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
         "WHERE p.PARAMETER_NAME = '7200_LookBack_Days' AND {{DateOfService}} BETWEEN p.EFFDATE AND p.ENDDATE"
     )
 
+    assert "SELECT {{:output}} FROM" in proposal.query_text
+    assert "p.PARAMETER_NAME = '{{:ParamName}}'" in proposal.query_text
     assert "{{:DateOfService}}" in proposal.query_text
-    assert proposal.proposed_query_params == {":DateOfService": "{{DateOfService}}"}
+    assert proposal.proposed_query_params == {
+        ":output": "p.PARAMETER_VALUE",
+        ":ParamName": "7200_LookBack_Days",
+        ":DateOfService": "{{DateOfService}}",
+    }
     assert proposal.proposed_return_vals == ["ParameterValue"]
+
+
+def test_proposed_drug_override_query_parameterizes_assignment_and_runtime_values():
+    proposal = propose_new_data_query(
+        "SELECT COUNT(*) AS ExclusionOverrideCount "
+        "FROM HRX.dbo.DrugOverrides AS o WITH (NOLOCK) "
+        "WHERE o.Type = '7672_Excluded' "
+        "AND (o.NDCKey = {{ClaimTransaction.Ndc}} "
+        "OR o.GCN_SeqNo = {{ClaimRequest.DrugRequested.GCNSeqNo.Code}} "
+        "OR o.HIC3 = {{ClaimRequest.DrugRequested.HIC3.Code}}) "
+        "AND {{DateOfService}} BETWEEN o.EffDate AND o.TermDate"
+    )
+
+    assert "SELECT {{:output}} FROM" in proposal.query_text
+    assert "o.Type = '{{:DrugOverrideType}}'" in proposal.query_text
+    assert "o.NDCKey = {{:Ndc}}" in proposal.query_text
+    assert proposal.proposed_query_params == {
+        ":output": "COUNT(*)",
+        ":DrugOverrideType": "7672_Excluded",
+        ":Ndc": "{{ClaimTransaction.Ndc}}",
+        ":GcnSeqNo": "{{ClaimRequest.DrugRequested.GCNSeqNo.Code}}",
+        ":Hic3": "{{ClaimRequest.DrugRequested.HIC3.Code}}",
+        ":DateOfService": "{{DateOfService}}",
+    }
+    assert proposal.proposed_return_vals == ["ExclusionOverrideCount"]
+
+
+def test_reuse_corpus_falls_back_to_templates_without_assignment_permissions():
+    class FakeCursor:
+        rows = []
+
+        def execute(self, sql):
+            if "DataPackageDataQuery" in sql:
+                raise pyodbc.Error("SELECT permission denied")
+            self.rows = [
+                (
+                    68,
+                    "DrugOverrides_ByTypeAndDrugAndDOS",
+                    1,
+                    "select {{:output}} from DrugOverrides where Type = '{{:DrugOverrideType}}'",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            ]
+            return self
+
+        def fetchall(self):
+            return self.rows
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def cursor(self):
+            return FakeCursor()
+
+    with patch(
+        "inrules_data_agent.retrieval.querytext_shadow.pyodbc.connect",
+        return_value=FakeConnection(),
+    ):
+        corpus = load_reuse_corpus()
+
+    query, assignments = corpus[68]
+    assert query.name == "DrugOverrides_ByTypeAndDrugAndDOS"
+    assert assignments == ()
+
+
+def test_reuse_match_binds_mixed_literal_and_runtime_drug_override_parameters():
+    query = StoredQueryText(
+        68,
+        "DrugOverrides_ByTypeAndDrugAndDOS",
+        1,
+        "select {{:output}} from DrugOverrides (nolock) "
+        "where Type = '{{:DrugOverrideType}}' "
+        "and (NDCKey = '{{:Ndc}}' or GCN_SeqNo = '{{:GcnSeqNo}}' or HIC3 = '{{:Hic3}}') "
+        "and '{{:DateOfService}}' between effdate and termdate",
+    )
+    generated = (
+        "SELECT COUNT(*) AS ExclusionOverrideCount "
+        "FROM HRX.dbo.DrugOverrides AS o WITH (NOLOCK) "
+        "WHERE o.Type = '7672_Excluded' "
+        "AND (o.NDCKey = {{ClaimTransaction.Ndc}} "
+        "OR o.GCN_SeqNo = {{ClaimRequest.DrugRequested.GCNSeqNo.Code}} "
+        "OR o.HIC3 = {{ClaimRequest.DrugRequested.HIC3.Code}}) "
+        "AND {{DateOfService}} BETWEEN o.EffDate AND o.TermDate"
+    )
+
+    match = find_reuse_match(generated, {68: (query, ())})
+
+    assert match is not None
+    assert match.data_query_id == 68
+    assert match.proposed_query_params == {
+        "DrugOverrideType": "7672_Excluded",
+        "Ndc": "{{ClaimTransaction.Ndc}}",
+        "GcnSeqNo": "{{ClaimRequest.DrugRequested.GCNSeqNo.Code}}",
+        "Hic3": "{{ClaimRequest.DrugRequested.HIC3.Code}}",
+        "DateOfService": "{{DateOfService}}",
+    }
 
 
 def test_reuse_match_rejects_template_with_extra_predicate():

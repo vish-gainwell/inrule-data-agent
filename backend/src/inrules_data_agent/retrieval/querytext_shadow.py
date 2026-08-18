@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -311,24 +312,41 @@ def load_querytext_rows() -> tuple[StoredQueryText, ...]:
 
 
 def load_reuse_corpus() -> dict[int, tuple[StoredQueryText, tuple[DataQueryAssignmentExample, ...]]]:
-    """Load generic SELECT DataQueries and their observed edit assignments."""
+    """Load generic DataQueries, using assignment evidence when permissions allow it."""
     with pyodbc.connect(_connection_string(), timeout=15) as connection:
-        rows = connection.cursor().execute(
-            """
-            SELECT
-                dq.DataQueryId, dq.Name, dq.DbId, dq.QueryText,
-                dp.DataPackageId, dp.DataPackageName,
-                dpdq.QueryParams, dpdq.ReturnVals, dpdq.Priority,
-                dpdq.Active, dpdq.IsDataSet
-            FROM [ClaimEngine].[dbo].[DataQuery] dq
-            LEFT JOIN [ClaimEngine].[dbo].[DataPackageDataQuery] dpdq
-                ON dpdq.DataQuery_Id = dq.DataQueryId
-            LEFT JOIN [ClaimEngine].[dbo].[DataPackage] dp
-                ON dp.DataPackageId = dpdq.DataPackage_Id
-            WHERE dq.QueryType = 'select' AND dq.QueryText IS NOT NULL
-            ORDER BY dq.DataQueryId, dpdq.Priority
-            """
-        ).fetchall()
+        cursor = connection.cursor()
+        try:
+            rows = cursor.execute(
+                """
+                SELECT
+                    dq.DataQueryId, dq.Name, dq.DbId, dq.QueryText,
+                    dp.DataPackageId, dp.DataPackageName,
+                    dpdq.QueryParams, dpdq.ReturnVals, dpdq.Priority,
+                    dpdq.Active, dpdq.IsDataSet
+                FROM [ClaimEngine].[dbo].[DataQuery] dq
+                LEFT JOIN [ClaimEngine].[dbo].[DataPackageDataQuery] dpdq
+                    ON dpdq.DataQuery_Id = dq.DataQueryId
+                LEFT JOIN [ClaimEngine].[dbo].[DataPackage] dp
+                    ON dp.DataPackageId = dpdq.DataPackage_Id
+                WHERE dq.QueryType = 'select' AND dq.QueryText IS NOT NULL
+                ORDER BY dq.DataQueryId, dpdq.Priority
+                """
+            ).fetchall()
+        except pyodbc.Error as exc:
+            print(
+                "[dataquery_reuse] assignment metadata unavailable; "
+                f"matching against DataQuery templates only: {exc}"
+            )
+            rows = cursor.execute(
+                """
+                SELECT
+                    dq.DataQueryId, dq.Name, dq.DbId, dq.QueryText,
+                    NULL, NULL, NULL, NULL, NULL, NULL, NULL
+                FROM [ClaimEngine].[dbo].[DataQuery] dq
+                WHERE dq.QueryType = 'select' AND dq.QueryText IS NOT NULL
+                ORDER BY dq.DataQueryId
+                """
+            ).fetchall()
     corpus: dict[int, tuple[StoredQueryText, list[DataQueryAssignmentExample]]] = {}
     for row in rows:
         query = StoredQueryText(int(row[0]), str(row[1]), int(row[2]), str(row[3]))
@@ -426,6 +444,28 @@ def _generated_runtime_values(sql: str) -> list[str]:
     ]
 
 
+def _generated_parameter_values(sql: str, template_sql: str) -> list[str]:
+    """Return runtime values and assignment literals in generated predicate order."""
+    fixed_literals = Counter(_generated_string_literals(template_sql))
+    token_re = re.compile(
+        r"\{\{:?(?P<runtime>[^{}]+)\}\}|N?'(?P<literal>(?:''|[^'])*)'",
+        re.IGNORECASE,
+    )
+    values: list[str] = []
+    for match in token_re.finditer(sql):
+        runtime = match.group("runtime")
+        if runtime is not None:
+            if runtime.strip().lower().lstrip(":") != "output":
+                values.append(f"{{{{{runtime.strip()}}}}}")
+            continue
+        literal = (match.group("literal") or "").replace("''", "'")
+        if fixed_literals[literal]:
+            fixed_literals[literal] -= 1
+        else:
+            values.append(literal)
+    return values
+
+
 def _generated_string_literals(sql: str) -> list[str]:
     try:
         statement = sqlglot.parse_one(_sentinelize(sql), read="tsql")
@@ -444,10 +484,8 @@ def _projection_columns(sql: str) -> list[str]:
     return [expression.alias_or_name or expression.sql(dialect="tsql") for expression in statement.expressions]
 
 
-def _proposed_parameter_name(runtime_path: str, used: set[str]) -> str:
-    words = re.findall(r"[A-Za-z0-9]+", runtime_path)
-    base = "".join(word[:1].upper() + word[1:] for word in words) or "RuntimeValue"
-    name = base
+def _unique_parameter_name(base: str, used: set[str]) -> str:
+    name = base or "Value"
     suffix = 2
     while name.lower() in used:
         name = f"{base}{suffix}"
@@ -456,20 +494,106 @@ def _proposed_parameter_name(runtime_path: str, used: set[str]) -> str:
     return name
 
 
-def propose_new_data_query(generated_sql: str) -> ProposedDataQuery:
-    """Create a reviewable generic-query contract from generated SQL.
+def _proposed_parameter_name(runtime_path: str, used: set[str]) -> str:
+    normalized = re.sub(r"[^a-z0-9]", "", runtime_path.lower())
+    special = {
+        "claimtransactionndc": "Ndc",
+        "claimrequestdrugrequestedgcnseqnocode": "GcnSeqNo",
+        "claimrequestdrugrequestedhic3code": "Hic3",
+        "dateofservice": "DateOfService",
+        "memberid": "MemberId",
+        "providerid": "ProviderId",
+        "rxnumber": "RxNumber",
+    }
+    base = special.get(normalized)
+    if base is None:
+        words = re.findall(r"[A-Za-z0-9]+", runtime_path)
+        base = "".join(word[:1].upper() + word[1:] for word in words) or "RuntimeValue"
+    return _unique_parameter_name(base, used)
 
-    Runtime ClaimEngine placeholders become named DataQuery parameters. Business
-    literals remain in the proposed QueryText because their semantic reuse role
-    must be confirmed by the later configuration review.
-    """
+
+def _literal_parameter_name(column: str, sql: str, used: set[str]) -> str:
+    normalized = re.sub(r"[^a-z0-9]", "", column.lower())
+    special = {
+        "parametername": "ParamName",
+        "ndckey": "Ndc",
+        "gcnseqno": "GcnSeqNo",
+        "hic3": "Hic3",
+        "segtype": "SegType",
+        "programid": "ProgramId",
+        "planid": "PlanId",
+    }
+    if normalized == "type" and re.search(r"\bDrugOverrides\b", sql, re.IGNORECASE):
+        base = "DrugOverrideType"
+    else:
+        base = special.get(normalized)
+        if base is None:
+            words = re.findall(r"[A-Za-z0-9]+", column)
+            base = "".join(word[:1].upper() + word[1:] for word in words) or "Value"
+    return _unique_parameter_name(base, used)
+
+
+def _projection_parameter(sql: str) -> str | None:
+    try:
+        statement = sqlglot.parse_one(_sentinelize(sql), read="tsql")
+    except (ParseError, TokenError, ValueError):
+        return None
+    if not isinstance(statement, exp.Select) or not statement.expressions:
+        return None
+    return ", ".join(
+        expression.unalias().sql(dialect="tsql")
+        for expression in statement.expressions
+    )
+
+
+def propose_new_data_query(generated_sql: str) -> ProposedDataQuery:
+    """Create a reusable generic QueryText plus its DataPackage parameter set."""
     params: dict[str, str] = {}
     names_by_runtime: dict[str, str] = {}
     used_names: set[str] = set()
+    query_text = generated_sql
+
+    projection = _projection_parameter(generated_sql)
+    projection_match = re.match(
+        r"(?is)^(?P<prefix>\s*SELECT\s+)(?P<projection>.*?)(?P<from>\s+FROM\s+)",
+        query_text,
+    )
+    if projection and projection_match:
+        params[":output"] = projection
+        used_names.add("output")
+        query_text = (
+            projection_match.group("prefix")
+            + "{{:output}}"
+            + projection_match.group("from")
+            + query_text[projection_match.end():]
+        )
+
+    comparison_literal_re = re.compile(
+        r"(?P<column>(?:\[[^]]+\]|[A-Za-z_]\w*)(?:\s*\.\s*(?:\[[^]]+\]|[A-Za-z_]\w*))?)"
+        r"(?P<spacing>\s*(?:=|<>|!=|LIKE)\s*)"
+        r"(?P<prefix>N?)'(?P<value>(?:''|[^'])*)'",
+        re.IGNORECASE,
+    )
+
+    def replace_literal(match: re.Match[str]) -> str:
+        value = match.group("value").replace("''", "'")
+        if not value or "{{" in value:
+            return match.group(0)
+        column = re.split(r"\s*\.\s*", match.group("column"))[-1].strip("[]")
+        name = _literal_parameter_name(column, generated_sql, used_names)
+        params[f":{name}"] = value
+        return (
+            match.group("column")
+            + match.group("spacing")
+            + match.group("prefix")
+            + f"'{{{{:{name}}}}}'"
+        )
+
+    query_text = comparison_literal_re.sub(replace_literal, query_text)
 
     def replace_runtime(match: re.Match[str]) -> str:
         runtime_path = match.group(1).strip()
-        if runtime_path.startswith(":"):
+        if match.group(0).startswith("{{:"):
             return match.group(0)
         name = names_by_runtime.get(runtime_path)
         if name is None:
@@ -478,7 +602,7 @@ def propose_new_data_query(generated_sql: str) -> ProposedDataQuery:
             params[f":{name}"] = f"{{{{{runtime_path}}}}}"
         return f"{{{{:{name}}}}}"
 
-    query_text = _PLACEHOLDER_RE.sub(replace_runtime, generated_sql)
+    query_text = _PLACEHOLDER_RE.sub(replace_runtime, query_text)
     return ProposedDataQuery(query_text, params, _projection_columns(generated_sql))
 
 
@@ -503,8 +627,8 @@ def find_reuse_match(
         projection_matches = candidate.projection == "dynamic" or candidate.projection == target.projection
         if not projection_matches:
             continue
+        names = _template_parameter_names(query.query_text)
         if candidate.predicates == target.predicates:
-            names = _template_parameter_names(query.query_text)
             runtime_values = _generated_runtime_values(generated_sql)
             if names:
                 if len(names) != len(runtime_values):
@@ -513,11 +637,10 @@ def find_reuse_match(
             else:
                 params = {}
         else:
-            names = _template_parameter_names(query.query_text)
-            literals = _generated_string_literals(generated_sql)
-            if not names or len(names) != len(literals):
+            values = _generated_parameter_values(generated_sql, query.query_text)
+            if not names or len(names) != len(values):
                 continue
-            params = dict(zip(names, literals, strict=True))
+            params = dict(zip(names, values, strict=True))
             template_with_values = query.query_text
             for name, value in params.items():
                 template_with_values = re.sub(
