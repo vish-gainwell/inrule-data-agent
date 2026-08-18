@@ -562,6 +562,37 @@ def test_reject_code_configuration_list_stays_effective_and_occurrence_independe
     assert _find_required_business_concept_artifacts(corrected, meaning) == []
 
 
+def test_selected_history_row_requires_stable_identifier_correlation():
+    meaning = "Return Quantity Prescribed from the selected original paid claim."
+    repeated_search = (
+        "SELECT s.QuantityPrescribed AS OriginalQuantityPrescribed "
+        "FROM InMemory.dbo.SCHEDULEII s "
+        "WHERE s.MemberId = {{MemberId}} AND s.ProviderId = {{ProviderId}} "
+        "AND s.RXNumber = {{RxNumber}}"
+    )
+    keyed_lookup = (
+        "SELECT s.QuantityPrescribed AS OriginalQuantityPrescribed "
+        "FROM InMemory.dbo.SCHEDULEII s "
+        "WHERE s.ClaimId = {{OriginalClaimId}}"
+    )
+    initial_selection = (
+        "SELECT s.ClaimId AS OriginalClaimId, "
+        "s.QuantityPrescribed AS OriginalQuantityPrescribed "
+        "FROM InMemory.dbo.SCHEDULEII s "
+        "WHERE s.MemberId = {{MemberId}} AND s.ProviderId = {{ProviderId}} "
+        "AND s.RXNumber = {{RxNumber}}"
+    )
+
+    assert _find_required_business_concept_artifacts(repeated_search, meaning) == [
+        "selected-row lookup repeats history without a stable claim identifier"
+    ]
+    assert _find_required_business_concept_artifacts(keyed_lookup, meaning) == []
+    assert _find_required_business_concept_artifacts(
+        initial_selection,
+        "Select an original paid CII claim and return its ClaimId and Quantity Prescribed.",
+    ) == []
+
+
 def test_top_one_selection_requires_business_direction():
     assert _find_deterministic_selection_artifacts(
         "SELECT TOP (1) h.RxDateWritten FROM InMemory.dbo.MEMBER_HISTORY h",
@@ -999,6 +1030,48 @@ def test_generate_queries_repairs_reject_code_configuration_list_lookup():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "configuration-list query" in call_openai.call_args_list[1].args[2]
+
+
+def test_generate_queries_repairs_selected_row_to_use_stable_identifier():
+    ddls = [
+        "CREATE TABLE [InMemory].[dbo].[SCHEDULEII] "
+        "([ClaimId] nvarchar(max), [MemberId] nvarchar(max), "
+        "[ProviderId] nvarchar(max), [RXNumber] nvarchar(max), "
+        "[QuantityPrescribed] decimal(29,9));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[ClaimPartial] "
+        "([claimid] char(15), [AssociatedPrescriptionRefNumber] varchar(50), "
+        "[IntendedQuantityToBeDispensed] decimal(29,9));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] "
+        "([claimid] char(15), [memid] char(15), [provid] char(15));",
+    ]
+    wrong = (
+        "SELECT cp.IntendedQuantityToBeDispensed AS OriginalQuantityPrescribed "
+        "FROM plandata_rx_production.dbo.ClaimPartial cp WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "ON c.claimid = cp.claimid "
+        "WHERE c.memid = {{MemberId}} AND c.provid = {{ProviderId}} "
+        "AND cp.AssociatedPrescriptionRefNumber = {{RxNumber}}"
+    )
+    corrected = (
+        "SELECT s.QuantityPrescribed AS OriginalQuantityPrescribed "
+        "FROM InMemory.dbo.SCHEDULEII s "
+        "WHERE s.ClaimId = {{OriginalClaimId}}"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[wrong, corrected],
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            "Return Quantity Prescribed from the selected original paid claim."
+        )
+
+    assert result["queries"] == [corrected]
+    assert result["validation_status"] == "VALIDATED"
+    assert call_openai.call_count == 2
+    assert "stable claim identifier" in call_openai.call_args_list[1].args[2]
 
 
 def test_deterministic_column_repair_uses_unique_schema_owner():

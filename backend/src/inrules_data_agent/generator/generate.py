@@ -225,6 +225,12 @@ Rules:
     oldest/earliest occurrence use TOP (1) with ascending Fill_Date and a stable key as
     a tie-breaker; do not replace provider scope with member scope or order by the value
     being returned when the task names Fill_Date as the occurrence order.
+      Selected-row correlation shape: the query that selects an original/history row must
+    return its stable identifier together with every fact needed by later steps. When a
+    later task explicitly asks for a value from that selected row, filter by a semantic
+    runtime identifier such as {{OriginalClaimId}}; never repeat the broad member/provider/
+    Rx history search because it may choose a different row. If the original query already
+    returned the needed fact, downstream logic should reuse that DataQuery result directly.
       Primary/fallback lookup shape: when the task names an authoritative primary table
     and a fallback source, a fallback-only query is incomplete. Retrieve the primary fact
     first using its exact live DDL. If the requested value is absent from that table's DDL,
@@ -1548,6 +1554,29 @@ def _find_required_business_concept_artifacts(
             re.IGNORECASE,
         ):
             artifacts.append("effective Reject_Code lookup is missing the EFFDATE/ENDDATE DOS filter")
+
+    selected_prior_row = bool(re.search(
+        r"\bfrom\s+(?:the\s+)?selected\s+(?:original|prior|history|historical)\b|"
+        r"\bpreviously\s+selected\s+(?:claim|row|record)\b|"
+        r"\bselected\s+(?:in|by)\s+(?:the\s+)?(?:prior|previous|earlier)\s+step\b",
+        business_meaning,
+        re.IGNORECASE,
+    ))
+    if selected_prior_row:
+        stable_claim_correlation = bool(
+            re.search(
+                r"\b(?:[a-z_][a-z0-9_]*\.)?claimid\b\s*=\s*"
+                r"\{\{[^}]*(?:original|selected|prior)[^}]*claimid[^}]*\}\}|"
+                r"\{\{[^}]*(?:original|selected|prior)[^}]*claimid[^}]*\}\}\s*=\s*"
+                r"\b(?:[a-z_][a-z0-9_]*\.)?claimid\b",
+                normalized_sql,
+                re.IGNORECASE,
+            )
+        )
+        if not stable_claim_correlation:
+            artifacts.append(
+                "selected-row lookup repeats history without a stable claim identifier"
+            )
     return artifacts
 
 
