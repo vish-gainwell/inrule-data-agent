@@ -536,6 +536,32 @@ def test_required_like_and_same_period_semantics_are_preserved():
     )
 
 
+def test_reject_code_configuration_list_stays_effective_and_occurrence_independent():
+    meaning = (
+        "Return the approved NDCParameters Reject_Code list for the submitted COB "
+        "reject-code occurrence scope."
+    )
+    wrong = (
+        "SELECT COUNT(*) AS MatchCount "
+        "FROM plandata_rx_production.dbo.edi_pharm_universal e WITH (NOLOCK) "
+        "JOIN HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "ON e.OtherPayerRejects = p.PARAMETER_VALUE "
+        "WHERE p.PARAMETER_NAME = 'REJECT_CODE'"
+    )
+    corrected = (
+        "SELECT p.PARAMETER_VALUE AS RejectCode "
+        "FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'REJECT_CODE' "
+        "AND {{DateOfService}} BETWEEN p.EFFDATE AND p.ENDDATE"
+    )
+
+    artifacts = _find_required_business_concept_artifacts(wrong, meaning)
+    assert any("configuration-list query re-queries" in item for item in artifacts)
+    assert "configuration-list query returns an aggregate instead of configured values" in artifacts
+    assert "effective Reject_Code lookup is missing the EFFDATE/ENDDATE DOS filter" in artifacts
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+
+
 def test_top_one_selection_requires_business_direction():
     assert _find_deterministic_selection_artifacts(
         "SELECT TOP (1) h.RxDateWritten FROM InMemory.dbo.MEMBER_HISTORY h",
@@ -934,6 +960,45 @@ def test_generate_queries_repairs_prescription_history_scope_and_ordering():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "provider scope" in call_openai.call_args_list[1].args[2]
+
+
+def test_generate_queries_repairs_reject_code_configuration_list_lookup():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[edi_pharm_universal] "
+        "([OtherPayerRejects] char(3), [claimid] bigint);",
+        "CREATE TABLE [HRX].[dbo].[NDCParameters] "
+        "([PARAMETER_NAME] varchar(100), [PARAMETER_VALUE] varchar(100), "
+        "[EFFDATE] datetime, [ENDDATE] datetime);",
+    ]
+    wrong = (
+        "SELECT COUNT(*) AS MatchCount "
+        "FROM plandata_rx_production.dbo.edi_pharm_universal e WITH (NOLOCK) "
+        "JOIN HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "ON e.OtherPayerRejects = p.PARAMETER_VALUE "
+        "WHERE p.PARAMETER_NAME = 'REJECT_CODE'"
+    )
+    corrected = (
+        "SELECT p.PARAMETER_VALUE AS RejectCode "
+        "FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'REJECT_CODE' "
+        "AND {{DateOfService}} BETWEEN p.EFFDATE AND p.ENDDATE"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[wrong, corrected],
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            "Return the approved NDCParameters Reject_Code list for the submitted COB "
+            "reject-code occurrence scope."
+        )
+
+    assert result["queries"] == [corrected]
+    assert result["validation_status"] == "VALIDATED"
+    assert call_openai.call_count == 2
+    assert "configuration-list query" in call_openai.call_args_list[1].args[2]
 
 
 def test_deterministic_column_repair_uses_unique_schema_owner():

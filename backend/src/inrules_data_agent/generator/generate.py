@@ -240,6 +240,14 @@ Rules:
     constrain both the incoming date and the historical row date to the same effective/
     termination columns from the same configuration alias. A lookback window alone does
     not prove same-period membership.
+      Reusable effective configuration-list shape: query the configuration table directly
+    and return its configured values. Do not join physical transaction/history tables merely
+    to re-read submitted request occurrences; the downstream rule retains the current
+    occurrence index and submitted count boundary. In particular, the approved Other Payer
+    Reject Code list is SELECT PARAMETER_VALUE FROM HRX.dbo.NDCParameters WHERE
+    PARAMETER_NAME = 'REJECT_CODE' AND {{DateOfService}} BETWEEN EFFDATE AND ENDDATE.
+    The DataQuery returns the active list; downstream occurrence-aware logic compares only
+    the submitted reject-code positions allowed by the request's reject count.
     Reusable compound quantity shape: select SUM(TRY_CONVERT(decimal(29,9),
     COMPOUND.drug_qty)); join NDC_Mstr on COMPOUND.ndc = NDC_Mstr.NDCKey; filter
     COMPOUND.tcn with [[HistoricalTcns]] and NDC_Mstr.GCN_SeqNo with the incoming GCN
@@ -1508,6 +1516,38 @@ def _find_required_business_concept_artifacts(
             )
             if historical_window is None:
                 artifacts.append("same-period lookup does not bind history to the incoming effective window")
+
+    reject_code_list = bool(re.search(
+        r"\bndcparameters\b[^.\n]{0,100}\breject[_ ]?code\b|"
+        r"\breject[_ ]?code\b[^.\n]{0,100}\bndcparameters\b",
+        business_meaning,
+        re.IGNORECASE,
+    ))
+    if reject_code_list:
+        table_names = {
+            canonical
+            for match in _SQL_TABLE_RE.finditer(sql)
+            if (canonical := _canonical_table_ref(match.group(1)))
+        }
+        extra_tables = sorted(
+            table for table in table_names
+            if table != "hrx.dbo.ndcparameters"
+        )
+        if extra_tables:
+            artifacts.append(
+                "configuration-list query re-queries submitted or historical data: "
+                + ", ".join(extra_tables)
+            )
+        if re.search(r"\bCOUNT\s*\(", normalized_sql, re.IGNORECASE):
+            artifacts.append("configuration-list query returns an aggregate instead of configured values")
+        if not re.search(
+            r"\{\{[^}]*dateofservice[^}]*\}\}\s+between\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s+and\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?enddate",
+            normalized_sql,
+            re.IGNORECASE,
+        ):
+            artifacts.append("effective Reject_Code lookup is missing the EFFDATE/ENDDATE DOS filter")
     return artifacts
 
 
