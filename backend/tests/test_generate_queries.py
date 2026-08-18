@@ -662,15 +662,15 @@ def test_grounded_package_billing_pattern_uses_reviewed_type_literal():
     assert "7239_PkgBilling_Bypass" not in candidate
 
 
-def test_initial_partial_scalar_requires_service_date_and_stable_tie_breaker():
+def test_scalar_row_selection_requires_direction_and_stable_tie_breaker_generically():
     meaning = "Return the Rx Written Date from the qualifying initial partial claim."
     unordered = (
         "SELECT DISTINCT p.rxdatewritten FROM plandata_rx_production.dbo.claimpharm p"
     )
-    wrong_date = (
+    wrong_direction = (
         "SELECT TOP (1) p.rxdatewritten FROM plandata_rx_production.dbo.claimpharm p "
         "JOIN plandata_rx_production.dbo.claim c ON c.claimid = p.claimid "
-        "ORDER BY p.rxdatewritten ASC, c.claimid ASC"
+        "ORDER BY p.rxdatewritten DESC, c.claimid ASC"
     )
     no_tie_breaker = (
         "SELECT TOP (1) p.rxdatewritten FROM plandata_rx_production.dbo.claimpharm p "
@@ -682,17 +682,33 @@ def test_initial_partial_scalar_requires_service_date_and_stable_tie_breaker():
         "JOIN plandata_rx_production.dbo.claim c ON c.claimid = p.claimid "
         "ORDER BY c.startdate ASC, c.claimid ASC, p.claimline ASC"
     )
+    unrelated_latest = (
+        "SELECT TOP (1) r.Value FROM HRX.dbo.RuleConfiguration r "
+        "ORDER BY r.ChangedTimestamp DESC, r.RuleKey ASC"
+    )
+    unrelated_earliest = (
+        "SELECT TOP (1) e.Status FROM HRX.dbo.AuthorizationEvent e "
+        "ORDER BY e.EventTimestamp ASC, e.AuthorizationEventKey ASC"
+    )
 
     assert _find_deterministic_selection_artifacts(unordered, meaning) == [
-        "initial-partial scalar lookup must use TOP (1)"
+        "business-defined scalar row selection must use TOP (1)"
     ]
-    assert _find_deterministic_selection_artifacts(wrong_date, meaning) == [
-        "initial-partial TOP (1) must order first by service date"
+    assert _find_deterministic_selection_artifacts(wrong_direction, meaning) == [
+        "earliest/initial scalar row selection must order ascending"
     ]
     assert _find_deterministic_selection_artifacts(no_tie_breaker, meaning) == [
-        "initial-partial TOP (1) is missing the stable ClaimId tie-breaker"
+        "business-defined scalar row selection is missing a stable tie-breaker"
     ]
     assert _find_deterministic_selection_artifacts(deterministic, meaning) == []
+    assert _find_deterministic_selection_artifacts(
+        unrelated_latest,
+        "Return the value from the latest qualifying configuration record.",
+    ) == []
+    assert _find_deterministic_selection_artifacts(
+        unrelated_earliest,
+        "Return the status from the earliest qualifying authorization event.",
+    ) == []
     assert _find_deterministic_selection_artifacts(
         "SELECT COUNT(*) FROM plandata_rx_production.dbo.ClaimPartial",
         "Count qualifying initial partial claims.",
@@ -708,7 +724,7 @@ def test_top_one_selection_requires_business_direction():
         "SELECT TOP (1) h.RxDateWritten FROM InMemory.dbo.MEMBER_HISTORY h "
         "ORDER BY h.Fill_Date DESC, h.ClaimId",
         "Return the oldest qualifying prescription occurrence.",
-    ) == ["oldest/earliest TOP (1) selection must order ascending"]
+    ) == ["earliest/initial scalar row selection must order ascending"]
     assert _find_deterministic_selection_artifacts(
         "SELECT TOP (1) h.RxDateWritten FROM InMemory.dbo.MEMBER_HISTORY h "
         "ORDER BY h.Fill_Date ASC, h.ClaimId",

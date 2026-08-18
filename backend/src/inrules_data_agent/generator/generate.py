@@ -227,12 +227,13 @@ Rules:
     oldest/earliest occurrence use TOP (1) with ascending Fill_Date and a stable key as
     a tie-breaker; do not replace provider scope with member scope or order by the value
     being returned when the task names Fill_Date as the occurrence order.
-      Initial-partial scalar shape: count/existence queries may aggregate every qualifying
-    partial row. When returning a date, Rx value, or other scalar fact from the qualifying
-    initial partial, use TOP (1) and order by chronological service date ascending, then
-    stable ClaimId ascending; add claimline as a final tie-breaker when a physical line join
-    can duplicate a claim. Physical history uses claim.startdate, while InMemory.PARTIAL uses
-    Dos. Never use DISTINCT as a substitute for selecting the business-defined initial row.
+      Deterministic scalar row-selection shape: when the task requests a fact from one
+    initial/first/earliest/oldest/latest/newest qualifying row, use TOP (1) with ORDER BY.
+    Derive the precedence column and ASC/DESC direction from the current business meaning
+    and supplied DDL descriptions, then add a documented primary key or stable identifier as
+    a tie-breaker; add further grain keys when joins can duplicate the selected row. Never
+    hard-code domain-specific date or ID columns, and never use DISTINCT as a substitute for
+    selecting the business-defined row. Aggregate count/existence queries remain set-based.
       Selected-row correlation shape: the query that selects an original/history row must
     return its stable identifier together with every fact needed by later steps. When a
     later task explicitly asks for a value from that selected row, filter by a semantic
@@ -622,7 +623,9 @@ def generate_query_result_for_step(
                     _find_required_business_concept_artifacts(sql, business_meaning)
                 )
                 invalid_artifacts.extend(
-                    _find_deterministic_selection_artifacts(sql, business_meaning)
+                    _find_deterministic_selection_artifacts(
+                        sql, business_meaning, ddl_context
+                    )
                 )
                 invalid_artifacts.extend(_find_output_shape_artifacts(sql, business_meaning))
                 output_name_artifacts = _find_output_name_artifacts(sql)
@@ -1651,57 +1654,84 @@ def _find_required_business_concept_artifacts(
 
 
 def _find_deterministic_selection_artifacts(
-    sql: str, business_meaning: str
+    sql: str, business_meaning: str, ddl_context: str = ""
 ) -> list[str]:
-    """Require deterministic ordering when one historical/configuration row is selected."""
-    has_top_one = bool(re.search(r"\bTOP\s*\(\s*1\s*\)", sql, re.IGNORECASE))
-    initial_partial_scalar = bool(
-        re.search(
-            r"\binitial\s+(?:[\"']?p[\"']?\s+)?partial(?:-fill)?(?:\s+claim)?\b",
-            business_meaning,
-            re.IGNORECASE,
-        )
-        and not re.search(r"\b(?:COUNT|SUM|MIN|MAX|AVG)\s*\(", sql, re.IGNORECASE)
+    """Require deterministic ordering for a business-defined single-row scalar."""
+
+    aggregate_query = bool(
+        re.search(r"\b(?:COUNT|SUM|MIN|MAX|AVG)\s*\(", sql, re.IGNORECASE)
     )
-    if initial_partial_scalar and not has_top_one:
-        return ["initial-partial scalar lookup must use TOP (1)"]
+    ascending_selection = bool(re.search(
+        r"\b(?:earliest|oldest)\b|"
+        r"\b(?:initial|first)\b[^.\n]{0,80}"
+        r"\b(?:claim|row|record|occurrence|fill|entry|result)\b",
+        business_meaning,
+        re.IGNORECASE,
+    ))
+    descending_selection = bool(re.search(
+        r"\b(?:latest|newest|most\s+recent)\b[^.\n]{0,80}"
+        r"\b(?:claim|row|record|occurrence|fill|entry|result)?\b",
+        business_meaning,
+        re.IGNORECASE,
+    ))
+    scalar_row_selection = not aggregate_query and (
+        ascending_selection or descending_selection
+    )
+    has_top_one = bool(re.search(r"\bTOP\s*\(\s*1\s*\)", sql, re.IGNORECASE))
+    if scalar_row_selection and not has_top_one:
+        return ["business-defined scalar row selection must use TOP (1)"]
     if not has_top_one:
         return []
-    order_match = re.search(r"\bORDER\s+BY\b(?P<order>.+)$", sql, re.IGNORECASE | re.DOTALL)
+
+    order_match = re.search(
+        r"\bORDER\s+BY\b(?P<order>.+)$", sql, re.IGNORECASE | re.DOTALL
+    )
     if order_match is None:
         return ["TOP (1) selection has no ORDER BY"]
     order = order_match.group("order")
-    if initial_partial_scalar:
-        order_terms = [term.strip() for term in order.split(",")]
-        first_term = order_terms[0] if order_terms else ""
-        if not re.search(
-            r"(?:(?:\[[^]]+\]|[a-z_][a-z0-9_]*)\s*\.\s*)?"
-            r"\[?(?:startdate|dos|dateofservice)\]?\b",
-            first_term,
-            re.IGNORECASE,
-        ):
-            return ["initial-partial TOP (1) must order first by service date"]
-        if re.search(r"\bDESC\b", first_term, re.IGNORECASE):
-            return ["initial-partial service-date ordering must be ascending"]
-        claim_id_term = next(
+    order_terms = [term.strip() for term in order.split(",") if term.strip()]
+    first_direction = re.search(
+        r"\b(?:ASC|DESC)\b", order_terms[0] if order_terms else "", re.IGNORECASE
+    )
+    if ascending_selection and first_direction and first_direction.group(0).upper() == "DESC":
+        return ["earliest/initial scalar row selection must order ascending"]
+    if descending_selection and first_direction and first_direction.group(0).upper() == "ASC":
+        return ["latest/newest scalar row selection must order descending"]
+
+    if scalar_row_selection:
+        primary_key_columns = {
+            column.casefold()
+            for key_list in re.findall(
+                r"\bPRIMARY\s+KEY\s*\(([^)]*)\)", ddl_context, re.IGNORECASE
+            )
+            for column in re.findall(r"\[?([A-Za-z_][A-Za-z0-9_]*)\]?", key_list)
+        }
+        stable_term = next(
             (
                 term for term in order_terms[1:]
-                if re.search(r"\bclaimid\b", term, re.IGNORECASE)
+                if (
+                    (column_match := re.search(
+                        r"(?:\.|^)\s*\[?([A-Za-z_][A-Za-z0-9_]*)\]?"
+                        r"(?:\s+(?:ASC|DESC))?\s*$",
+                        term,
+                        re.IGNORECASE,
+                    ))
+                    and (
+                        column_match.group(1).casefold() in primary_key_columns
+                        or re.search(
+                            r"(?:id|key|sequence|seq|ordinal|line)$",
+                            column_match.group(1),
+                            re.IGNORECASE,
+                        )
+                    )
+                )
             ),
             None,
         )
-        if claim_id_term is None:
-            return ["initial-partial TOP (1) is missing the stable ClaimId tie-breaker"]
-        if re.search(r"\bDESC\b", claim_id_term, re.IGNORECASE):
-            return ["initial-partial ClaimId tie-breaker must be ascending"]
-    if re.search(r"\b(?:oldest|earliest|first\s+(?:paid|filled|qualifying)?\s*(?:claim|occurrence|fill|record))\b", business_meaning, re.IGNORECASE):
-        first_direction = re.search(r"\b(?:ASC|DESC)\b", order, re.IGNORECASE)
-        if first_direction and first_direction.group(0).upper() == "DESC":
-            return ["oldest/earliest TOP (1) selection must order ascending"]
-    if re.search(r"\b(?:latest|newest|most\s+recent)\b", business_meaning, re.IGNORECASE):
-        first_direction = re.search(r"\b(?:ASC|DESC)\b", order, re.IGNORECASE)
-        if first_direction and first_direction.group(0).upper() == "ASC":
-            return ["latest/newest TOP (1) selection must order descending"]
+        if stable_term is None:
+            return [
+                "business-defined scalar row selection is missing a stable tie-breaker"
+            ]
     return []
 
 
