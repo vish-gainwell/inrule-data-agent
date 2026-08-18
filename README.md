@@ -188,6 +188,19 @@ validated generated SQL is returned unchanged.
 | `POST` | `/generate_queries/bulk` | Generate SQL for multiple Criteria Analyzer JSON payloads |
 | `POST` | `/execute_query` | Execute a SELECT query against the live DB |
 
+`GET /health`, single-generation responses, and bulk responses include
+`data_agent_runtime` metadata with the loaded package version, implementation path,
+build SHA (when `DATA_AGENT_BUILD_SHA` is set), and model name. Report integrations
+should retain this metadata so the executed standalone, installed, or bundled source
+can be identified.
+
+Bulk requests use `{"items": [...]}` and may set a top-level `generation_mode` default.
+An item's explicit `generation_mode` takes precedence. Items are processed in input
+order, and an unexpected failure is returned as a `BULK_ITEM_FAILURE` for that item
+without discarding successful sibling responses. The bulk envelope reports
+`total_items`, `successful_items`, `failed_items`, and an `available` or `partial`
+status.
+
 ### 7. Run backend tests
 
 ```bash

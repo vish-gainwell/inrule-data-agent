@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import time
+from importlib.metadata import PackageNotFoundError, version
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -44,6 +45,7 @@ class GenerateQueriesRequest(BaseModel):
 
 class BulkGenerateQueriesRequest(BaseModel):
     items: list[GenerateQueriesRequest]
+    generation_mode: str | None = None
 
 
 class ExecuteQueryRequest(BaseModel):
@@ -52,6 +54,24 @@ class ExecuteQueryRequest(BaseModel):
 
 
 _CRITERION_REF_RE = re.compile(r"(?:acceptance\s+criteria|AC)?\s*(\d+)", re.IGNORECASE)
+
+
+def _package_version() -> str:
+    try:
+        return version("inrules-data-agent")
+    except PackageNotFoundError:
+        return "unpackaged"
+
+
+def _data_agent_runtime() -> dict[str, str | None]:
+    """Identify the implementation that handled a request without exposing secrets."""
+
+    return {
+        "package_version": _package_version(),
+        "build_sha": os.environ.get("DATA_AGENT_BUILD_SHA"),
+        "implementation_path": str(Path(__file__).resolve()),
+        "model": os.environ.get("OPENAI_MODEL"),
+    }
 
 
 def _acceptance_criteria_for_step(
@@ -205,6 +225,56 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
         "data_agent_status": "available",
         "data_agent_mode": "in_process",
         "generation_mode": "draft" if draft_mode else "strict",
+        "data_agent_runtime": _data_agent_runtime(),
+    }
+
+
+def build_bulk_generate_queries_response(
+    request: BulkGenerateQueriesRequest,
+) -> dict[str, Any]:
+    """Generate every item in order while isolating unexpected item failures."""
+
+    responses = []
+    failed_items = 0
+    for item in request.items:
+        effective_item = item
+        if request.generation_mode and "generation_mode" not in item.model_fields_set:
+            effective_item = item.model_copy(
+                update={"generation_mode": request.generation_mode}
+            )
+        try:
+            responses.append(build_generate_queries_response(effective_item))
+        except Exception as exc:
+            failed_items += 1
+            required_steps = [
+                step.step_number for step in effective_item.steps
+                if step.requires_data_query
+            ]
+            responses.append(
+                {
+                    "edit_id": effective_item.edit_id,
+                    "description": effective_item.description,
+                    "acceptance_criteria": effective_item.acceptance_criteria,
+                    "queries": [],
+                    "step_queries": [],
+                    "unmatched_steps": required_steps,
+                    "inconclusive_steps": [],
+                    "data_agent_status": "unavailable",
+                    "data_agent_mode": "in_process",
+                    "generation_mode": effective_item.generation_mode,
+                    "failure_category": "BULK_ITEM_FAILURE",
+                    "failure_reason": str(exc),
+                    "data_agent_runtime": _data_agent_runtime(),
+                }
+            )
+    return {
+        "items": responses,
+        "total_items": len(responses),
+        "successful_items": len(responses) - failed_items,
+        "failed_items": failed_items,
+        "data_agent_status": "partial" if failed_items else "available",
+        "generation_mode": request.generation_mode,
+        "data_agent_runtime": _data_agent_runtime(),
     }
 
 
@@ -265,7 +335,7 @@ def _db_connection_string() -> str:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="InRule Data Agent", version="0.2.0")
+    app = FastAPI(title="InRule Data Agent", version=_package_version())
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -275,8 +345,8 @@ def create_app() -> FastAPI:
     )
 
     @app.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    def health() -> dict[str, Any]:
+        return {"status": "ok", "data_agent_runtime": _data_agent_runtime()}
 
     @app.post("/generate_queries")
     def generate_queries(request: GenerateQueriesRequest) -> dict[str, Any]:
@@ -284,12 +354,7 @@ def create_app() -> FastAPI:
 
     @app.post("/generate_queries/bulk")
     def bulk_generate_queries(request: BulkGenerateQueriesRequest) -> dict[str, Any]:
-        return {
-            "items": [
-                build_generate_queries_response(item)
-                for item in request.items
-            ]
-        }
+        return build_bulk_generate_queries_response(request)
 
     @app.post("/execute_query")
     def execute_query(request: ExecuteQueryRequest) -> dict[str, Any]:

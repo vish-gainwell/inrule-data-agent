@@ -37,9 +37,19 @@ def test_create_app_smoke():
     assert app is not None
 
 
-def test_health():
+def test_health_identifies_the_loaded_data_agent_implementation():
     client = TestClient(create_app())
-    assert client.get("/health").json() == {"status": "ok"}
+
+    body = client.get("/health").json()
+
+    assert body["status"] == "ok"
+    assert body["data_agent_runtime"]["package_version"]
+    assert body["data_agent_runtime"]["implementation_path"].endswith(
+        "inrules_data_agent\\app.py"
+    ) or body["data_agent_runtime"]["implementation_path"].endswith(
+        "inrules_data_agent/app.py"
+    )
+    assert "model" in body["data_agent_runtime"]
 
 
 def test_requires_data_query_filter_skips_false_steps():
@@ -70,6 +80,7 @@ def test_requires_data_query_filter_skips_false_steps():
     assert len(body["queries"]) == 1
     assert body["queries"][0]["step_number"] == 2
     assert body["queries"][0]["queries"] == [MOCK_SQL]
+    assert body["data_agent_runtime"]["implementation_path"]
     call_openai.assert_called_once()
 
 
@@ -1506,6 +1517,94 @@ def test_bulk_generate_queries_returns_result_per_item_in_order():
     assert len(body["items"][1]["queries"]) == 1
     assert body["items"][1]["queries"][0]["step_number"] == 3
     assert body["items"][1]["queries"][0]["queries"] == [MOCK_SQL]
+    assert [item["generation_mode"] for item in body["items"]] == ["strict", "strict"]
+    assert body["total_items"] == 2
+    assert body["successful_items"] == 2
+    assert body["failed_items"] == 0
+    assert body["data_agent_status"] == "available"
+    assert body["data_agent_runtime"]["implementation_path"]
+
+
+def test_bulk_generate_queries_isolates_item_failures_and_preserves_order():
+    first = {
+        "edit_id": "1001",
+        "description": None,
+        "acceptance_criteria": None,
+        "queries": [],
+        "step_queries": [],
+        "unmatched_steps": [],
+        "inconclusive_steps": [],
+        "data_agent_status": "available",
+        "data_agent_mode": "in_process",
+        "generation_mode": "strict",
+        "data_agent_runtime": {},
+    }
+    with patch(
+        "inrules_data_agent.app.build_generate_queries_response",
+        side_effect=[first, RuntimeError("isolated generation failure")],
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries/bulk",
+            json={
+                "generation_mode": "strict",
+                "items": [
+                    {"edit_id": "1001", "steps": []},
+                    {
+                        "edit_id": "1002",
+                        "steps": [
+                            {
+                                "step_number": 7,
+                                "business_meaning": "Return an external configuration value.",
+                                "requires_data_query": True,
+                            }
+                        ],
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["edit_id"] for item in body["items"]] == ["1001", "1002"]
+    assert body["items"][1]["data_agent_status"] == "unavailable"
+    assert body["items"][1]["failure_category"] == "BULK_ITEM_FAILURE"
+    assert body["items"][1]["failure_reason"] == "isolated generation failure"
+    assert body["items"][1]["unmatched_steps"] == [7]
+    assert body["items"][1]["generation_mode"] == "strict"
+    assert body["successful_items"] == 1
+    assert body["failed_items"] == 1
+    assert body["data_agent_status"] == "partial"
+
+
+def test_bulk_item_generation_mode_overrides_bulk_default_when_explicit():
+    modes = []
+
+    def capture_mode(request):
+        modes.append(request.generation_mode)
+        return {
+            "edit_id": request.edit_id,
+            "step_queries": [],
+            "queries": [],
+            "unmatched_steps": [],
+        }
+
+    with patch(
+        "inrules_data_agent.app.build_generate_queries_response",
+        side_effect=capture_mode,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries/bulk",
+            json={
+                "generation_mode": "strict",
+                "items": [
+                    {"edit_id": "1001", "steps": []},
+                    {"edit_id": "1002", "generation_mode": "draft", "steps": []},
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    assert modes == ["strict", "draft"]
 
 
 def test_select_ddls_lists_in_memory_frontier_before_physical_fallback():
