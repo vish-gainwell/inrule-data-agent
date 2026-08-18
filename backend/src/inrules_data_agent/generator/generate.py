@@ -260,6 +260,14 @@ Rules:
     constrain both the incoming date and the historical row date to the same effective/
     termination columns from the same configuration alias. A lookback window alone does
     not prove same-period membership.
+      Configuration-backed enrollment shape: an active member/date enrollment is insufficient
+    when eligibility depends on configured program, plan, rate-code, or other classification
+    identifiers. Preserve the required SegType predicate and filter the DDL-owned enrollment
+    classification column against a semantic list parameter representing identifiers already
+    resolved through their configuration effective window, such as [[EffectiveProgramIds]].
+    Do not join InMemory enrollment data to a physical configuration table. The reusable
+    configuration-list query retrieves active identifiers; the enrollment contract consumes
+    that list and retains member and enrollment effective/termination-date scope.
       Reusable effective configuration-list shape: query the configuration table directly
     and return its configured values. Do not join physical transaction/history tables merely
     to re-read submitted request occurrences; the downstream rule retains the current
@@ -1482,6 +1490,60 @@ def _find_required_business_concept_artifacts(
         search_sql = where_sql if label == "provider scope" else normalized_sql
         if not re.search(sql_pattern, search_sql, re.IGNORECASE):
             artifacts.append(f"required business concept '{label}' is absent from the SQL")
+    configuration_backed_enrollment = bool(
+        re.search(r"\benrollment\b", business_meaning, re.IGNORECASE)
+        and re.search(
+            r"\b(?:configured|medicare|program|plan|rate[- ]?code)\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+        and re.search(
+            r"\b(?:from|join)\s+(?:\[?inmemory\]?\s*\.\s*)?"
+            r"(?:\[?dbo\]?\s*\.\s*)?\[?enrollment\]?\b",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+    )
+    if configuration_backed_enrollment:
+        if re.search(r"\b(?:external|ext)\b", business_meaning, re.IGNORECASE) and not re.search(
+            r"(?:(?:\[[^]]+\]|[a-z_][a-z0-9_]*)\s*\.\s*)?\[?segtype\]?\s*"
+            r"(?:=\s*'EXT'|LIKE\s*'EXT%')",
+            sql,
+            re.IGNORECASE,
+        ):
+            artifacts.append(
+                "configuration-backed enrollment is missing the required EXT SegType filter"
+            )
+
+        if re.search(r"\brate[- ]?code\b", business_meaning, re.IGNORECASE):
+            classification_column = "ratecode"
+            classification_label = "RateCode"
+        elif re.search(
+            r"\b(?:part\s*[bd]|plan(?:\s+ids?)?)\b",
+            business_meaning,
+            re.IGNORECASE,
+        ):
+            classification_column = r"(?:benefitplanid|planid)"
+            classification_label = "PlanId"
+        else:
+            classification_column = "programid"
+            classification_label = "ProgramId"
+        effective_list = (
+            r"(?:\[\[[^]]*(?:effective|active|configured)[^]]*\]\]|"
+            r"\{\{[^}]*(?:effective|active|configured)[^}]*\}\})"
+        )
+        if not re.search(
+            rf"(?:(?:\[[^]]+\]|[a-z_][a-z0-9_]*)\s*\.\s*)?"
+            rf"\[?{classification_column}\]?\s*(?:IN\s*\(\s*{effective_list}\s*\)|"
+            rf"=\s*{effective_list})",
+            sql,
+            re.IGNORECASE,
+        ):
+            artifacts.append(
+                "configuration-backed enrollment is missing effective configured "
+                f"{classification_label} scope"
+            )
+
     if re.search(r"\bndc\s*maint(?:enance)?\s*details\b|\bndcmaintdetails\b", business_meaning, re.IGNORECASE) and not re.search(
         r"\bndcmaintdetails\b", normalized_sql, re.IGNORECASE
     ):
