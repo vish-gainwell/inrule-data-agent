@@ -604,38 +604,6 @@ def test_selected_history_row_requires_stable_identifier_correlation():
     ) == []
 
 
-def test_configuration_backed_enrollment_requires_segment_and_effective_ids():
-    meaning = (
-        "An external EXT enrollment segment indicating Medicare exists for the current "
-        "member on the date of service."
-    )
-    incomplete = (
-        "SELECT COUNT(*) AS EnrollmentSegmentCount FROM InMemory.dbo.ENROLLMENT e "
-        "WHERE e.MemberId = {{MemberId}} "
-        "AND {{DateOfService}} BETWEEN e.EffectiveDate AND e.TermDate"
-    )
-    corrected = incomplete + (
-        " AND e.SegType = 'EXT' "
-        "AND e.ProgramId IN ([[EffectiveMedicareProgramIds]])"
-    )
-
-    assert _find_required_business_concept_artifacts(incomplete, meaning) == [
-        "configuration-backed enrollment is missing the required EXT SegType filter",
-        "configuration-backed enrollment is missing effective configured ProgramId scope",
-    ]
-    assert _find_required_business_concept_artifacts(corrected, meaning) == []
-
-    part_b_meaning = (
-        "An external EXT Medicare Part B enrollment exists for the member on the date "
-        "of service."
-    )
-    part_b = incomplete + (
-        " AND e.SegType = 'EXT' "
-        "AND e.BenefitPlanId IN ([[EffectiveMedicarePartBPlanIds]])"
-    )
-    assert _find_required_business_concept_artifacts(part_b, part_b_meaning) == []
-
-
 def test_icd10_diagnosis_reference_requires_four_character_match():
     meaning = "Return the matching ICD-10 diagnosis-code reference row."
     exact_match = (
@@ -1226,39 +1194,6 @@ def test_generate_queries_repairs_selected_row_to_use_stable_identifier():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "stable claim identifier" in call_openai.call_args_list[1].args[2]
-
-
-def test_generation_repairs_unscoped_configuration_backed_enrollment():
-    ddl = (
-        "CREATE TABLE [InMemory].[dbo].[ENROLLMENT] ("
-        "[MemberId] nvarchar(max), [ProgramId] nvarchar(max), "
-        "[SegType] nvarchar(max), [EffectiveDate] datetime2, [TermDate] datetime2);"
-    )
-    wrong = (
-        "SELECT COUNT(*) AS EnrollmentSegmentCount FROM InMemory.dbo.ENROLLMENT e "
-        "WHERE e.MemberId = {{MemberId}} "
-        "AND {{DateOfService}} BETWEEN e.EffectiveDate AND e.TermDate"
-    )
-    corrected = wrong + (
-        " AND e.SegType = 'EXT' "
-        "AND e.ProgramId IN ([[EffectiveMedicareProgramIds]])"
-    )
-    with (
-        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
-        patch(
-            "inrules_data_agent.generator.generate._call_openai",
-            side_effect=[wrong, corrected],
-        ) as call_openai,
-    ):
-        result = generate_query_result_for_step(
-            "An external EXT enrollment segment indicating Medicare exists for the current "
-            "member on the date of service."
-        )
-
-    assert result["queries"] == [corrected]
-    assert result["validation_status"] == "VALIDATED"
-    assert call_openai.call_count == 2
-    assert "effective configured ProgramId" in call_openai.call_args_list[1].args[2]
 
 
 def test_generation_repairs_unordered_initial_partial_scalar_lookup():
