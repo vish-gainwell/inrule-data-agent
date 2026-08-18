@@ -593,6 +593,26 @@ def test_selected_history_row_requires_stable_identifier_correlation():
     ) == []
 
 
+def test_icd10_diagnosis_reference_requires_four_character_match():
+    meaning = "Return the matching ICD-10 diagnosis-code reference row."
+    exact_match = (
+        "SELECT COUNT(*) AS DiagnosisCodeReferenceCount "
+        "FROM IPA.dbo.DiagCode d WITH (NOLOCK) "
+        "WHERE d.codeid = {{DiagnosisCode}} AND d.IcdVersion = '0'"
+    )
+    prefix_match = (
+        "SELECT COUNT(*) AS DiagnosisCodeReferenceCount "
+        "FROM IPA.dbo.DiagCode d WITH (NOLOCK) "
+        "WHERE SUBSTRING(d.codeid, 1, 4) = SUBSTRING({{DiagnosisCode}}, 1, 4) "
+        "AND d.IcdVersion = '0'"
+    )
+
+    assert _find_required_business_concept_artifacts(exact_match, meaning) == [
+        "ICD-10 diagnosis lookup does not compare the first four code characters on both sides"
+    ]
+    assert _find_required_business_concept_artifacts(prefix_match, meaning) == []
+
+
 def test_reviewed_drug_override_type_rejects_edit_prefixed_literal():
     meaning = (
         "Return an active package-billing bypass DrugOverrides match by NDC, GCN, or HIC3."
@@ -1110,6 +1130,40 @@ def test_generate_queries_repairs_selected_row_to_use_stable_identifier():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "stable claim identifier" in call_openai.call_args_list[1].args[2]
+
+
+def test_generation_repairs_exact_icd10_diagnosis_match_to_four_characters():
+    ddl = (
+        "CREATE TABLE [IPA].[dbo].[DiagCode] ("
+        "[codeid] char(8) NOT NULL, [IcdVersion] char(1) NOT NULL, "
+        "[effdate] smalldatetime NOT NULL, [termdate] smalldatetime NOT NULL);"
+    )
+    wrong = (
+        "SELECT COUNT(*) AS DiagnosisCodeReferenceCount "
+        "FROM IPA.dbo.DiagCode d WITH (NOLOCK) "
+        "WHERE d.codeid = {{DiagnosisCode}} AND d.IcdVersion = '0' "
+        "AND {{DateOfService}} BETWEEN d.effdate AND d.termdate"
+    )
+    corrected = wrong.replace(
+        "d.codeid = {{DiagnosisCode}}",
+        "SUBSTRING(d.codeid, 1, 4) = SUBSTRING({{DiagnosisCode}}, 1, 4)",
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[wrong, corrected],
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            "Count matching active ICD-10 diagnosis-code reference rows for the submitted "
+            "diagnosis code and date of service."
+        )
+
+    assert result["queries"] == [corrected]
+    assert result["validation_status"] == "VALIDATED"
+    assert call_openai.call_count == 2
+    assert "first four code characters" in call_openai.call_args_list[1].args[2]
 
 
 def test_generation_repairs_edit_prefixed_package_billing_type():

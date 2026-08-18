@@ -242,6 +242,11 @@ Rules:
     exact NDC before GCN sequence before therapeutic class, then latest EffDate and
     ChangedDate. Use semantic {{PlanId}} and {{TherapeuticClass}} inputs when concrete DTO
     paths are not supplied; never map either input to the NDC code.
+      ICD diagnosis-reference shape: when validating a submitted ICD-10 diagnosis against
+    IPA.dbo.DiagCode, compare the first four characters on both sides, for example
+    SUBSTRING(codeid, 1, 4) = SUBSTRING({{DiagnosisCode}}, 1, 4). Do not replace this with
+    exact full-code equality. Apply the prefix function directly to both operands so SQL null
+    behavior is preserved; retain IcdVersion = '0' and the inclusive DOS effective window.
       Pattern and effective-period shape: preserve an explicitly supplied LIKE/contains/
     wildcard comparison; never collapse it to equality. When history must belong to the
     same season, configuration period, or effective override set as the incoming claim,
@@ -1556,6 +1561,38 @@ def _find_required_business_concept_artifacts(
             re.IGNORECASE,
         ):
             artifacts.append("effective Reject_Code lookup is missing the EFFDATE/ENDDATE DOS filter")
+
+    icd10_diagnosis_reference = bool(
+        re.search(r"\b(?:icd[- ]?10|diagnosis\s+code)\b", business_meaning, re.IGNORECASE)
+        and re.search(r"\b(?:valid|match|reference|found)\b", business_meaning, re.IGNORECASE)
+        and re.search(
+            r"\b(?:from|join)\s+(?:\[?ipa\]?\s*\.\s*)?\[?dbo\]?\s*\.\s*\[?diagcode\]?\b",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+    )
+    if icd10_diagnosis_reference:
+        codeid_prefix = (
+            r"(?:substring\s*\(\s*(?:(?:\[[^]]+\]|[a-z_][a-z0-9_]*)\s*\.\s*)?"
+            r"\[?codeid\]?\s*,\s*1\s*,\s*4\s*\)|"
+            r"left\s*\(\s*(?:(?:\[[^]]+\]|[a-z_][a-z0-9_]*)\s*\.\s*)?"
+            r"\[?codeid\]?\s*,\s*4\s*\))"
+        )
+        runtime_prefix = (
+            r"(?:substring\s*\(\s*\{\{[^}]*(?:diagnosis|diag)[^}]*code[^}]*\}\}"
+            r"\s*,\s*1\s*,\s*4\s*\)|"
+            r"left\s*\(\s*\{\{[^}]*(?:diagnosis|diag)[^}]*code[^}]*\}\}"
+            r"\s*,\s*4\s*\))"
+        )
+        if not re.search(
+            rf"(?:{codeid_prefix}\s*=\s*{runtime_prefix}|"
+            rf"{runtime_prefix}\s*=\s*{codeid_prefix})",
+            sql,
+            re.IGNORECASE,
+        ):
+            artifacts.append(
+                "ICD-10 diagnosis lookup does not compare the first four code characters on both sides"
+            )
 
     reviewed_drug_override_types = (
         (
