@@ -511,6 +511,45 @@ def test_required_business_concepts_preserve_primary_before_fallback():
     ]
 
 
+def test_date_sensitive_parameter_requires_effective_evaluation_window():
+    meaning = (
+        "Return the configured retention threshold used to evaluate the current "
+        "transaction timestamp."
+    )
+    unscoped = (
+        "SELECT p.PARAMETER_VALUE FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'RetentionThreshold'"
+    )
+    placeholder_window = (
+        "SELECT [p].[PARAMETER_VALUE] FROM [HRX].[dbo].[NDCParameters] [p] WITH (NOLOCK) "
+        "WHERE [p].[PARAMETER_NAME] = 'RetentionThreshold' "
+        "AND {{EvaluationDate}} BETWEEN [p].[EFFDATE] AND [p].[ENDDATE]"
+    )
+    current_date_window = (
+        "SELECT p.PARAMETER_VALUE FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'RetentionThreshold' "
+        "AND p.EFFDATE <= CONVERT(date, GETDATE()) "
+        "AND p.ENDDATE >= CONVERT(date, GETDATE())"
+    )
+
+    assert _find_required_business_concept_artifacts(unscoped, meaning) == [
+        "date-sensitive NDCParameters lookup is missing its EFFDATE/ENDDATE evaluation window"
+    ]
+    assert _find_required_business_concept_artifacts(placeholder_window, meaning) == []
+    assert _find_required_business_concept_artifacts(current_date_window, meaning) == []
+
+
+def test_non_date_sensitive_parameter_does_not_require_effective_window():
+    sql = (
+        "SELECT p.PARAMETER_VALUE FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'RetryLimit'"
+    )
+
+    assert _find_required_business_concept_artifacts(
+        sql, "Return the configured retry-limit parameter."
+    ) == []
+
+
 def test_paid_physical_history_rejects_non_paid_statuses():
     meaning = "Count paid, non-reversed historical claims for the member."
     sql = (
@@ -1152,6 +1191,41 @@ def test_generate_queries_repairs_reject_code_configuration_list_lookup():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "configuration-list query" in call_openai.call_args_list[1].args[2]
+
+
+def test_generate_queries_repairs_date_sensitive_parameter_effective_window():
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[NDCParameters] "
+        "([PARAMETER_NAME] varchar(100), [PARAMETER_VALUE] varchar(100), "
+        "[EFFDATE] datetime, [ENDDATE] datetime);"
+    )
+    wrong = (
+        "SELECT p.PARAMETER_VALUE AS RetentionDays "
+        "FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'RetentionThreshold'"
+    )
+    corrected = (
+        "SELECT p.PARAMETER_VALUE AS RetentionDays "
+        "FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'RetentionThreshold' "
+        "AND {{EvaluationDate}} BETWEEN p.EFFDATE AND p.ENDDATE"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[wrong, corrected],
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            "Return the configured retention threshold used to evaluate the current "
+            "transaction timestamp."
+        )
+
+    assert result["queries"] == [corrected]
+    assert result["validation_status"] == "VALIDATED"
+    assert call_openai.call_count == 2
+    assert "EFFDATE/ENDDATE evaluation window" in call_openai.call_args_list[1].args[2]
 
 
 def test_generate_queries_repairs_selected_row_to_use_stable_identifier():

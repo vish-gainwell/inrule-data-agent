@@ -260,6 +260,13 @@ Rules:
     constrain both the incoming date and the historical row date to the same effective/
     termination columns from the same configuration alias. A lookback window alone does
     not prove same-period membership.
+      Date-sensitive parameter shape: when an NDCParameters value is used for a business
+    date/timestamp evaluation, query NDCParameters directly and constrain the applicable
+    runtime evaluation date to EFFDATE/ENDDATE. Preserve the business-specified runtime date
+    source (for example DOS, adjudication date, or current date); do not silently substitute
+    another date. A default/fallback date used when the configured value is missing or invalid
+    remains downstream rule behavior and must not be encoded by broadening the SQL to an
+    ineffective parameter row or by joining unrelated transaction history.
       Reusable effective configuration-list shape: query the configuration table directly
     and return its configured values. Do not join physical transaction/history tables merely
     to re-read submitted request occurrences; the downstream rule retains the current
@@ -1538,6 +1545,38 @@ def _find_required_business_concept_artifacts(
             )
             if historical_window is None:
                 artifacts.append("same-period lookup does not bind history to the incoming effective window")
+
+    date_sensitive_parameter = bool(
+        re.search(r"\bndcparameters\b", normalized_sql, re.IGNORECASE)
+        and re.search(
+            r"\b(?:configured|parameter)\b", business_meaning, re.IGNORECASE
+        )
+        and re.search(
+            r"\b(?:date|timestamp|adjudication|evaluation|current\s+system)\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+    )
+    if date_sensitive_parameter:
+        effective_sql = re.sub(r"[\[\]]", "", sql)
+        runtime_date = (
+            r"(?:\{\{[^}]*(?:date|timestamp)[^}]*\}\}|"
+            r"CONVERT\s*\(\s*date\s*,\s*GETDATE\s*\(\s*\)\s*\)|"
+            r"CAST\s*\(\s*GETDATE\s*\(\s*\)\s+AS\s+date\s*\))"
+        )
+        effective_window = (
+            rf"(?:{runtime_date}\s+BETWEEN\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s+AND\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?enddate|"
+            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s*<=\s*"
+            rf"{runtime_date}\s+AND\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?enddate\s*>=\s*"
+            rf"{runtime_date})"
+        )
+        if not re.search(effective_window, effective_sql, re.IGNORECASE):
+            artifacts.append(
+                "date-sensitive NDCParameters lookup is missing its EFFDATE/ENDDATE evaluation window"
+            )
 
     reject_code_list = bool(re.search(
         r"\bndcparameters\b[^.\n]{0,100}\breject[_ ]?code\b|"
