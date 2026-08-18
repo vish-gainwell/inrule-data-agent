@@ -521,6 +521,7 @@ def _literal_parameter_name(column: str, sql: str, used: set[str]) -> str:
     normalized = re.sub(r"[^a-z0-9]", "", column.lower())
     special = {
         "parametername": "ParamName",
+        "parametervalue": "ParameterValue",
         "ndckey": "Ndc",
         "gcnseqno": "GcnSeqNo",
         "hic3": "Hic3",

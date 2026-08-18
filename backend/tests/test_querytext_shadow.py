@@ -328,14 +328,17 @@ def test_proposed_query_parameterizes_in_lists_and_runtime_comparison_values():
     proposal = propose_new_data_query(
         "SELECT c.claimid AS ClaimId FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
         "WHERE RTRIM(c.status) IN ('PAID', 'WAITPAY', 'PAY') "
+        "AND np.PARAMETER_VALUE IN ('I', 'D', 'L', 'W', 'N') "
         "AND {{CompoundIndicator}} = '1' "
         "AND RTRIM(c.resubclaimid) = ''"
     )
 
     assert "RTRIM(c.status) IN ([[:Statuses]])" in proposal.query_text
+    assert "np.PARAMETER_VALUE IN ([[:ParameterValues]])" in proposal.query_text
     assert "{{:CompoundIndicator}} = '{{:ExpectedCompoundIndicator}}'" in proposal.query_text
     assert "RTRIM(c.resubclaimid) = ''" in proposal.query_text
     assert proposal.proposed_query_params[":Statuses"] == ["PAID", "WAITPAY", "PAY"]
+    assert proposal.proposed_query_params[":ParameterValues"] == ["I", "D", "L", "W", "N"]
     assert proposal.proposed_query_params[":CompoundIndicator"] == "{{CompoundIndicator}}"
     assert proposal.proposed_query_params[":ExpectedCompoundIndicator"] == "1"
 
