@@ -522,6 +522,8 @@ def _literal_parameter_name(column: str, sql: str, used: set[str]) -> str:
     special = {
         "parametername": "ParamName",
         "parametervalue": "ParameterValue",
+        "formtype": "FormType",
+        "priorauth": "PriorAuth",
         "ndckey": "Ndc",
         "gcnseqno": "GcnSeqNo",
         "hic3": "Hic3",
@@ -573,6 +575,28 @@ def propose_new_data_query(generated_sql: str) -> ProposedDataQuery:
             + projection_match.group("from")
             + query_text[projection_match.end():]
         )
+    elif projection:
+        projection_literal_re = re.compile(
+            r"(?P<prefix>N?)'(?P<value>(?:''|[^'])*)'"
+            r"(?P<spacing>\s+AS\s+)(?P<alias>\[[^]]+\]|[A-Za-z_]\w*)",
+            re.IGNORECASE,
+        )
+
+        def replace_projection_literal(match: re.Match[str]) -> str:
+            value = match.group("value").replace("''", "'")
+            if not value or "{{" in value:
+                return match.group(0)
+            alias = match.group("alias").strip("[]")
+            name = _literal_parameter_name(alias, generated_sql, used_names)
+            params[f":{name}"] = value
+            return (
+                match.group("prefix")
+                + f"'{{{{:{name}}}}}'"
+                + match.group("spacing")
+                + match.group("alias")
+            )
+
+        query_text = projection_literal_re.sub(replace_projection_literal, query_text)
 
     simple_column = (
         r"(?:\[[^]]+\]|[A-Za-z_]\w*)"

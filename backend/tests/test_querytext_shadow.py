@@ -299,6 +299,29 @@ def test_proposed_new_data_query_derives_runtime_literal_output_and_return_contr
     assert proposal.proposed_return_vals == ["ParameterValue"]
 
 
+def test_proposed_parameter_only_query_parameterizes_literal_return_values():
+    proposal = propose_new_data_query(
+        "SELECT {{ProviderId}} AS ProviderId, {{DateOfService}} AS DateOfService, "
+        "'MSCD00000000102' AS ExceptionAttributeCode, 'S' AS ExceptionAttributeValue"
+    )
+
+    assert "{{:ProviderId}} AS ProviderId" in proposal.query_text
+    assert "'{{:ExceptionAttributeCode}}' AS ExceptionAttributeCode" in proposal.query_text
+    assert "'{{:ExceptionAttributeValue}}' AS ExceptionAttributeValue" in proposal.query_text
+    assert proposal.proposed_query_params == {
+        ":ExceptionAttributeCode": "MSCD00000000102",
+        ":ExceptionAttributeValue": "S",
+        ":ProviderId": "{{ProviderId}}",
+        ":DateOfService": "{{DateOfService}}",
+    }
+    assert proposal.proposed_return_vals == [
+        "ProviderId",
+        "DateOfService",
+        "ExceptionAttributeCode",
+        "ExceptionAttributeValue",
+    ]
+
+
 def test_proposed_drug_override_query_parameterizes_assignment_and_runtime_values():
     proposal = propose_new_data_query(
         "SELECT COUNT(*) AS ExclusionOverrideCount "
