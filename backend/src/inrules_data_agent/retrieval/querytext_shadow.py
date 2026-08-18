@@ -53,7 +53,7 @@ class DataQueryAssignmentExample:
 @dataclass(frozen=True)
 class ProposedDataQuery:
     query_text: str
-    proposed_query_params: dict[str, str]
+    proposed_query_params: dict[str, object]
     proposed_return_vals: list[str]
 
     def as_dict(self) -> dict[str, object]:
@@ -513,6 +513,11 @@ def _proposed_parameter_name(runtime_path: str, used: set[str]) -> str:
 
 
 def _literal_parameter_name(column: str, sql: str, used: set[str]) -> str:
+    runtime_match = _PLACEHOLDER_RE.fullmatch(column.strip())
+    if runtime_match:
+        runtime_name = re.sub(r"[^A-Za-z0-9]", "", runtime_match.group(1).lstrip(":"))
+        base = f"Expected{runtime_name or 'Value'}"
+        return _unique_parameter_name(base, used)
     normalized = re.sub(r"[^a-z0-9]", "", column.lower())
     special = {
         "parametername": "ParamName",
@@ -548,7 +553,7 @@ def _projection_parameter(sql: str) -> str | None:
 
 def propose_new_data_query(generated_sql: str) -> ProposedDataQuery:
     """Create a reusable generic QueryText plus its DataPackage parameter set."""
-    params: dict[str, str] = {}
+    params: dict[str, object] = {}
     names_by_runtime: dict[str, str] = {}
     used_names: set[str] = set()
     query_text = generated_sql
@@ -568,8 +573,45 @@ def propose_new_data_query(generated_sql: str) -> ProposedDataQuery:
             + query_text[projection_match.end():]
         )
 
+    simple_column = (
+        r"(?:\[[^]]+\]|[A-Za-z_]\w*)"
+        r"(?:\s*\.\s*(?:\[[^]]+\]|[A-Za-z_]\w*))?"
+    )
+    column_or_runtime = (
+        rf"(?:\{{\{{:?[^{{}}]+\}}\}}|"
+        rf"(?:RTRIM|LTRIM)\s*\(\s*{simple_column}\s*\)|"
+        rf"{simple_column})"
+    )
+    in_literal_re = re.compile(
+        rf"(?P<column>{column_or_runtime})(?P<spacing>\s+IN\s*)"
+        r"\((?P<values>\s*N?'(?:''|[^'])*'(?:\s*,\s*N?'(?:''|[^'])*')+\s*)\)",
+        re.IGNORECASE,
+    )
+
+    def replace_in_literals(match: re.Match[str]) -> str:
+        values = [
+            value.replace("''", "'")
+            for value in re.findall(r"N?'((?:''|[^'])*)'", match.group("values"), re.IGNORECASE)
+        ]
+        if not values or any(not value or "{{" in value for value in values):
+            return match.group(0)
+        column = re.split(r"\s*\.\s*", match.group("column"))[-1].strip("[]")
+        singular = _literal_parameter_name(column, generated_sql, set())
+        plural = (
+            f"{singular}es"
+            if singular.lower().endswith(("status", "class"))
+            else singular
+            if singular.lower().endswith("s")
+            else f"{singular}s"
+        )
+        name = _unique_parameter_name(plural, used_names)
+        params[f":{name}"] = values
+        return match.group("column") + match.group("spacing") + f"([[:{name}]])"
+
+    query_text = in_literal_re.sub(replace_in_literals, query_text)
+
     comparison_literal_re = re.compile(
-        r"(?P<column>(?:\[[^]]+\]|[A-Za-z_]\w*)(?:\s*\.\s*(?:\[[^]]+\]|[A-Za-z_]\w*))?)"
+        rf"(?P<column>{column_or_runtime})"
         r"(?P<spacing>\s*(?:=|<>|!=|LIKE)\s*)"
         r"(?P<prefix>N?)'(?P<value>(?:''|[^'])*)'",
         re.IGNORECASE,
