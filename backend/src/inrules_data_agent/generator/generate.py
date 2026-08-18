@@ -227,6 +227,12 @@ Rules:
     oldest/earliest occurrence use TOP (1) with ascending Fill_Date and a stable key as
     a tie-breaker; do not replace provider scope with member scope or order by the value
     being returned when the task names Fill_Date as the occurrence order.
+      Initial-partial scalar shape: count/existence queries may aggregate every qualifying
+    partial row. When returning a date, Rx value, or other scalar fact from the qualifying
+    initial partial, use TOP (1) and order by chronological service date ascending, then
+    stable ClaimId ascending; add claimline as a final tie-breaker when a physical line join
+    can duplicate a claim. Physical history uses claim.startdate, while InMemory.PARTIAL uses
+    Dos. Never use DISTINCT as a substitute for selecting the business-defined initial row.
       Selected-row correlation shape: the query that selects an original/history row must
     return its stable identifier together with every fact needed by later steps. When a
     later task explicitly asks for a value from that selected row, filter by a semantic
@@ -1648,12 +1654,46 @@ def _find_deterministic_selection_artifacts(
     sql: str, business_meaning: str
 ) -> list[str]:
     """Require deterministic ordering when one historical/configuration row is selected."""
-    if not re.search(r"\bTOP\s*\(\s*1\s*\)", sql, re.IGNORECASE):
+    has_top_one = bool(re.search(r"\bTOP\s*\(\s*1\s*\)", sql, re.IGNORECASE))
+    initial_partial_scalar = bool(
+        re.search(
+            r"\binitial\s+(?:[\"']?p[\"']?\s+)?partial(?:-fill)?(?:\s+claim)?\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+        and not re.search(r"\b(?:COUNT|SUM|MIN|MAX|AVG)\s*\(", sql, re.IGNORECASE)
+    )
+    if initial_partial_scalar and not has_top_one:
+        return ["initial-partial scalar lookup must use TOP (1)"]
+    if not has_top_one:
         return []
     order_match = re.search(r"\bORDER\s+BY\b(?P<order>.+)$", sql, re.IGNORECASE | re.DOTALL)
     if order_match is None:
         return ["TOP (1) selection has no ORDER BY"]
     order = order_match.group("order")
+    if initial_partial_scalar:
+        order_terms = [term.strip() for term in order.split(",")]
+        first_term = order_terms[0] if order_terms else ""
+        if not re.search(
+            r"(?:(?:\[[^]]+\]|[a-z_][a-z0-9_]*)\s*\.\s*)?"
+            r"\[?(?:startdate|dos|dateofservice)\]?\b",
+            first_term,
+            re.IGNORECASE,
+        ):
+            return ["initial-partial TOP (1) must order first by service date"]
+        if re.search(r"\bDESC\b", first_term, re.IGNORECASE):
+            return ["initial-partial service-date ordering must be ascending"]
+        claim_id_term = next(
+            (
+                term for term in order_terms[1:]
+                if re.search(r"\bclaimid\b", term, re.IGNORECASE)
+            ),
+            None,
+        )
+        if claim_id_term is None:
+            return ["initial-partial TOP (1) is missing the stable ClaimId tie-breaker"]
+        if re.search(r"\bDESC\b", claim_id_term, re.IGNORECASE):
+            return ["initial-partial ClaimId tie-breaker must be ascending"]
     if re.search(r"\b(?:oldest|earliest|first\s+(?:paid|filled|qualifying)?\s*(?:claim|occurrence|fill|record))\b", business_meaning, re.IGNORECASE):
         first_direction = re.search(r"\b(?:ASC|DESC)\b", order, re.IGNORECASE)
         if first_direction and first_direction.group(0).upper() == "DESC":

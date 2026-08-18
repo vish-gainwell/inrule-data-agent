@@ -662,6 +662,43 @@ def test_grounded_package_billing_pattern_uses_reviewed_type_literal():
     assert "7239_PkgBilling_Bypass" not in candidate
 
 
+def test_initial_partial_scalar_requires_service_date_and_stable_tie_breaker():
+    meaning = "Return the Rx Written Date from the qualifying initial partial claim."
+    unordered = (
+        "SELECT DISTINCT p.rxdatewritten FROM plandata_rx_production.dbo.claimpharm p"
+    )
+    wrong_date = (
+        "SELECT TOP (1) p.rxdatewritten FROM plandata_rx_production.dbo.claimpharm p "
+        "JOIN plandata_rx_production.dbo.claim c ON c.claimid = p.claimid "
+        "ORDER BY p.rxdatewritten ASC, c.claimid ASC"
+    )
+    no_tie_breaker = (
+        "SELECT TOP (1) p.rxdatewritten FROM plandata_rx_production.dbo.claimpharm p "
+        "JOIN plandata_rx_production.dbo.claim c ON c.claimid = p.claimid "
+        "ORDER BY c.startdate ASC"
+    )
+    deterministic = (
+        "SELECT TOP (1) p.rxdatewritten FROM plandata_rx_production.dbo.claimpharm p "
+        "JOIN plandata_rx_production.dbo.claim c ON c.claimid = p.claimid "
+        "ORDER BY c.startdate ASC, c.claimid ASC, p.claimline ASC"
+    )
+
+    assert _find_deterministic_selection_artifacts(unordered, meaning) == [
+        "initial-partial scalar lookup must use TOP (1)"
+    ]
+    assert _find_deterministic_selection_artifacts(wrong_date, meaning) == [
+        "initial-partial TOP (1) must order first by service date"
+    ]
+    assert _find_deterministic_selection_artifacts(no_tie_breaker, meaning) == [
+        "initial-partial TOP (1) is missing the stable ClaimId tie-breaker"
+    ]
+    assert _find_deterministic_selection_artifacts(deterministic, meaning) == []
+    assert _find_deterministic_selection_artifacts(
+        "SELECT COUNT(*) FROM plandata_rx_production.dbo.ClaimPartial",
+        "Count qualifying initial partial claims.",
+    ) == []
+
+
 def test_top_one_selection_requires_business_direction():
     assert _find_deterministic_selection_artifacts(
         "SELECT TOP (1) h.RxDateWritten FROM InMemory.dbo.MEMBER_HISTORY h",
@@ -1141,6 +1178,50 @@ def test_generate_queries_repairs_selected_row_to_use_stable_identifier():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "stable claim identifier" in call_openai.call_args_list[1].args[2]
+
+
+def test_generation_repairs_unordered_initial_partial_scalar_lookup():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[ClaimPartial] ("
+        "[claimid] char(15), [DispensingStatus] char(1), "
+        "[AssociatedPrescriptionRefNumber] char(15));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ("
+        "[claimid] char(15), [startdate] smalldatetime);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] ("
+        "[claimid] char(15), [claimline] int, [rxdatewritten] char(10));",
+    ]
+    unordered = (
+        "SELECT DISTINCT p.rxdatewritten AS InitialPartialRxWrittenDate "
+        "FROM plandata_rx_production.dbo.ClaimPartial cp WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "ON c.claimid = cp.claimid "
+        "JOIN plandata_rx_production.dbo.claimpharm p WITH (NOLOCK) "
+        "ON p.claimid = cp.claimid"
+    )
+    corrected = (
+        "SELECT TOP (1) p.rxdatewritten AS InitialPartialRxWrittenDate "
+        "FROM plandata_rx_production.dbo.ClaimPartial cp WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "ON c.claimid = cp.claimid "
+        "JOIN plandata_rx_production.dbo.claimpharm p WITH (NOLOCK) "
+        "ON p.claimid = cp.claimid "
+        "ORDER BY c.startdate ASC, c.claimid ASC, p.claimline ASC"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[unordered, corrected],
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            "Return the Rx Written Date from the qualifying initial partial claim."
+        )
+
+    assert result["queries"] == [corrected]
+    assert result["validation_status"] == "VALIDATED"
+    assert call_openai.call_count == 2
+    assert "TOP (1)" in call_openai.call_args_list[1].args[2]
 
 
 def test_generation_repairs_exact_icd10_diagnosis_match_to_four_characters():
