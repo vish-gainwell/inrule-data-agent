@@ -122,9 +122,11 @@ Rules:
    never a reason to reject an otherwise table-and-column-grounded query. Do not
    invent inputs that are not required by the current atomic business fact.
 
-5. Preserve every literal value specified in the business requirement exactly as written
-   in the semantic candidate SQL (e.g. Type = '3013_Opioid' or status = 'PAID').
-   Do NOT invent or substitute values. The downstream DataQuery contract builder will
+5. Preserve every authoritative literal value specified in the business requirement exactly
+   as written in the semantic candidate SQL (e.g. Type = '3013_Opioid' or status = 'PAID').
+   Never synthesize a configuration literal by prepending the current edit ID; numeric prefixes
+   are valid only when they are part of the exact reviewed source value. Do NOT invent or
+   substitute values. The downstream DataQuery contract builder will
    convert reusable assignment literals into named QueryParams; do not replace them with
    unrelated runtime entity paths.
 
@@ -210,7 +212,7 @@ Rules:
       when GCN filtering is required. DaysTillRefill and incoming GCN are runtime inputs,
       never enrollkeys columns.
       Reusable DrugOverrides shape: query HRX.dbo.DrugOverrides directly; use the exact
-      required Type literal plus {{ClaimTransaction.Ndc}},
+      reviewed Type literal without deriving it from the edit ID, plus {{ClaimTransaction.Ndc}},
       {{ClaimRequest.DrugRequested.GCNSeqNo.Code}}, {{ClaimRequest.DrugRequested.HIC3.Code}},
       and {{DateOfService}} as lookup values. Never join InMemory.DRUG merely to recover
       those current-drug values. The contract/reuse layer will convert the Type literal and
@@ -752,8 +754,8 @@ WHERE r.memid = {{MemberId}}
   AND r.effdate <= {{DateOfService}}"""
 
     if (
-        "7239_pkgbilling_bypass" in meaning
-        and "drug override" in meaning
+        re.search(r"\bpackage[- ]billing\b[^.\n]{0,80}\bbypass\b|\bbypass\b[^.\n]{0,80}\bpackage[- ]billing\b", meaning)
+        and "override" in meaning
         and "hrx.dbo.drugoverrides" in tables
     ):
         return """SELECT
@@ -764,7 +766,7 @@ WHERE r.memid = {{MemberId}}
     d.GCN_SeqNo AS PackageBillingGcnSeqNo,
     d.HIC3 AS PackageBillingHic3
 FROM HRX.dbo.DrugOverrides d WITH (NOLOCK)
-WHERE d.Type = '7239_PkgBilling_Bypass'
+WHERE d.Type = 'PkgBilling_Bypass'
   AND {{DateOfService}} BETWEEN d.EffDate AND d.TermDate
   AND (d.NDCKey = {{Ndc}} OR d.GCN_SeqNo = {{GCNSeqNo}} OR d.HIC3 = {{Hic3}})"""
 
@@ -1554,6 +1556,31 @@ def _find_required_business_concept_artifacts(
             re.IGNORECASE,
         ):
             artifacts.append("effective Reject_Code lookup is missing the EFFDATE/ENDDATE DOS filter")
+
+    reviewed_drug_override_types = (
+        (
+            re.compile(
+                r"\bpackage[- ]billing\b[^.\n]{0,80}\bbypass\b|"
+                r"\bbypass\b[^.\n]{0,80}\bpackage[- ]billing\b",
+                re.IGNORECASE,
+            ),
+            "PkgBilling_Bypass",
+        ),
+    )
+    if re.search(r"\bdrugoverrides\b", normalized_sql, re.IGNORECASE):
+        for concept_pattern, required_type in reviewed_drug_override_types:
+            if not concept_pattern.search(business_meaning):
+                continue
+            type_literals = re.findall(
+                r"(?:(?:\[[^]]+\]|[a-z_][a-z0-9_]*)\s*\.\s*)?\[?type\]?\s*=\s*N?'([^']*)'",
+                sql,
+                re.IGNORECASE,
+            )
+            if required_type.casefold() not in {value.casefold() for value in type_literals}:
+                found = ", ".join(repr(value) for value in type_literals) or "none"
+                artifacts.append(
+                    f"reviewed DrugOverrides Type literal '{required_type}' is required; found {found}"
+                )
 
     selected_prior_row = bool(re.search(
         r"\bfrom\s+(?:the\s+)?selected\s+(?:original|prior|history|historical)\b|"

@@ -593,6 +593,44 @@ def test_selected_history_row_requires_stable_identifier_correlation():
     ) == []
 
 
+def test_reviewed_drug_override_type_rejects_edit_prefixed_literal():
+    meaning = (
+        "Return an active package-billing bypass DrugOverrides match by NDC, GCN, or HIC3."
+    )
+    wrong = (
+        "SELECT COUNT(*) AS PackageBillingOverrideCount "
+        "FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE d.Type = '7239_PkgBilling_Bypass' "
+        "AND (d.NDCKey = {{Ndc}} OR d.GCN_SeqNo = {{GcnSeqNo}} "
+        "OR d.HIC3 = {{Hic3}})"
+    )
+    corrected = wrong.replace("7239_PkgBilling_Bypass", "PkgBilling_Bypass")
+
+    assert _find_required_business_concept_artifacts(wrong, meaning) == [
+        "reviewed DrugOverrides Type literal 'PkgBilling_Bypass' is required; "
+        "found '7239_PkgBilling_Bypass'"
+    ]
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+
+
+def test_grounded_package_billing_pattern_uses_reviewed_type_literal():
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[DrugOverrides] ("
+        "[OverrideID] int NOT NULL, [NDCKey] char(11) NULL, "
+        "[GCN_SeqNo] char(6) NULL, [HIC3] char(3) NULL, "
+        "[Type] varchar(50) NOT NULL, [EffDate] datetime NOT NULL, "
+        "[TermDate] datetime NOT NULL);"
+    )
+
+    candidate = _grounded_business_pattern_candidate(
+        "Return the package-billing bypass drug override for the incoming drug.", ddl
+    )
+
+    assert candidate is not None
+    assert "d.Type = 'PkgBilling_Bypass'" in candidate
+    assert "7239_PkgBilling_Bypass" not in candidate
+
+
 def test_top_one_selection_requires_business_direction():
     assert _find_deterministic_selection_artifacts(
         "SELECT TOP (1) h.RxDateWritten FROM InMemory.dbo.MEMBER_HISTORY h",
@@ -766,7 +804,7 @@ def test_generation_repairs_reserved_alias_then_runs_normal_validation():
     generated = (
         "SELECT DO.OverrideID AS OverrideId "
         "FROM HRX.dbo.DrugOverrides WITH (NOLOCK) AS DO "
-        "WHERE DO.Type = '7239_PkgBilling_Bypass' "
+        "WHERE DO.Type = 'PkgBilling_Bypass' "
         "AND DO.NDCKey = {{ClaimTransaction.Ndc}} "
         "AND {{DateOfService}} BETWEEN DO.EffDate AND DO.TermDate"
     )
@@ -1072,6 +1110,45 @@ def test_generate_queries_repairs_selected_row_to_use_stable_identifier():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "stable claim identifier" in call_openai.call_args_list[1].args[2]
+
+
+def test_generation_repairs_edit_prefixed_package_billing_type():
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[DrugOverrides] ("
+        "[OverrideID] int NOT NULL, [NDCKey] char(11) NULL, "
+        "[GCN_SeqNo] char(6) NULL, [HIC3] char(3) NULL, "
+        "[Type] varchar(50) NOT NULL, [EffDate] datetime NOT NULL, "
+        "[TermDate] datetime NOT NULL);"
+    )
+    wrong = (
+        "SELECT COUNT(*) AS PackageBillingOverrideCount "
+        "FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE d.Type = '7239_PkgBilling_Bypass' "
+        "AND {{DateOfService}} BETWEEN d.EffDate AND d.TermDate "
+        "AND (d.NDCKey = {{ClaimTransaction.Ndc}} "
+        "OR d.GCN_SeqNo = {{ClaimRequest.DrugRequested.GCNSeqNo.Code}} "
+        "OR d.HIC3 = {{ClaimRequest.DrugRequested.HIC3.Code}})"
+    )
+    corrected = wrong.replace("7239_PkgBilling_Bypass", "PkgBilling_Bypass")
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._grounded_business_pattern_candidate",
+            return_value=None,
+        ),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[wrong, corrected],
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            "Return the active package-billing bypass DrugOverrides count for the current drug."
+        )
+
+    assert result["queries"] == [corrected]
+    assert result["validation_status"] == "VALIDATED"
+    assert call_openai.call_count == 2
+    assert "PkgBilling_Bypass" in call_openai.call_args_list[1].args[2]
 
 
 def test_deterministic_column_repair_uses_unique_schema_owner():
