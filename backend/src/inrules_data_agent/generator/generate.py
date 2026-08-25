@@ -251,11 +251,14 @@ Rules:
     hard-code domain-specific date or ID columns, and never use DISTINCT as a substitute for
     selecting the business-defined row. Aggregate count/existence queries remain set-based.
       Selected-row correlation shape: the query that selects an original/history row must
-    return its stable identifier together with every fact needed by later steps. When a
-    later task explicitly asks for a value from that selected row, filter by a semantic
-    runtime identifier such as {{OriginalClaimId}}; never repeat the broad member/provider/
-    Rx history search because it may choose a different row. If the original query already
-    returned the needed fact, downstream logic should reuse that DataQuery result directly.
+    return its stable identifier together with every fact needed by later steps. When several
+    routed tasks describe the same selected occurrence but no semantic selected-row identifier
+    is supplied, converge on one reusable selection query that returns the identifier and all
+    dependent facts; do not create separate searches for each predicate. When a later task
+    explicitly asks for a value from that selected row, filter by a semantic runtime identifier
+    such as {{OriginalClaimId}} or {{SelectedPartialClaimId}}; an ambiguous {{ClaimId}} must
+    never be assumed to identify a historical row. If the original query already returned the
+    needed fact, downstream logic should reuse that DataQuery result directly.
       Primary/fallback lookup shape: when the task names an authoritative primary table
     and a fallback source, a fallback-only query is incomplete. Retrieve the primary fact
     first using its exact live DDL. If the requested value is absent from that table's DDL,
@@ -822,6 +825,39 @@ WHERE RTRIM(ct.ContractId) <> ''"""
         "plandata_rx_production.dbo.claim",
         "plandata_rx_production.dbo.claimpharm",
     }
+    if (
+        partial_tables <= tables
+        and re.search(
+            r"\b(?:same\s+)?selected\s+(?:prior\s+)?partial(?:-fill)?"
+            r"(?:\s+history)?\s+occurrence\b",
+            meaning,
+        )
+    ):
+        return """SELECT TOP (1)
+    c.claimid AS SelectedPartialClaimId,
+    p.claimline AS SelectedPartialClaimLine,
+    c.startdate AS SelectedPartialDateOfService,
+    RTRIM(p.rxnumber) AS SelectedPartialRxNumber,
+    RTRIM(p.ndckey) AS SelectedPartialNdc,
+    RTRIM(c.provid) AS SelectedPartialProviderId,
+    RTRIM(c.memid) AS SelectedPartialMemberId,
+    RTRIM(cp.DispensingStatus) AS SelectedPartialDispensingStatus,
+    RTRIM(c.status) AS SelectedPartialClaimStatus,
+    RTRIM(c.resubclaimid) AS SelectedPartialResubmissionClaimId,
+    RTRIM(cp.AssociatedPrescriptionRefNumber) AS SelectedPartialAssociatedRxNumber
+FROM plandata_rx_production.dbo.claim c WITH (NOLOCK)
+JOIN plandata_rx_production.dbo.claimpharm p WITH (NOLOCK)
+    ON p.claimid = c.claimid
+JOIN plandata_rx_production.dbo.ClaimPartial cp WITH (NOLOCK)
+    ON cp.claimid = c.claimid
+WHERE RTRIM(c.provid) = {{ProviderId}}
+  AND RTRIM(c.memid) = {{MemberId}}
+  AND RTRIM(c.status) IN ('PAID', 'PAY', 'WAITPAY')
+  AND RTRIM(c.resubclaimid) = ''
+  AND RTRIM(p.ndckey) = {{ClaimTransaction.Ndc}}
+  AND TRY_CONVERT(bigint, RTRIM(p.rxnumber)) =
+      TRY_CONVERT(bigint, {{AssociatedPrescriptionRefNumber}})
+ORDER BY c.startdate DESC, c.claimid DESC, p.claimline DESC"""
     if (
         "initial partial-fill history" in meaning
         and "associated prescription/service reference number is blank" in meaning
@@ -1493,7 +1529,11 @@ def _find_required_business_concept_artifacts(
         (
             r"\b(?:same|selected)\b[^.\n]{0,80}\b(?:event|history)?\s*occurrence\b",
             "selected occurrence",
-            r"\b(?:ndcindex|previcn|icn)\b|\{\{[^}]*(?:index|occurrence|event|icn)[^}]*\}\}|\[\[[^]]+\]\]",
+            r"\b(?:ndcindex|previcn|icn)\b|"
+            r"\{\{[^}]*(?:index|occurrence|event|icn|(?:original|selected|prior)[^}]*claimid)[^}]*\}\}|"
+            r"\bclaimid\b\s+as\s+(?:selected[a-z0-9_]*claimid|"
+            r"[a-z_][a-z0-9_]+selected[a-z0-9_]*claimid)\b|"
+            r"\[\[[^]]+\]\]",
         ),
     )
     normalized_sql = sql.lower()
@@ -1808,6 +1848,7 @@ def _find_required_business_concept_artifacts(
             )
 
     selected_prior_row = bool(re.search(
+        r"\b(?:same\s+)?selected\s+(?:original|prior|history|historical)\b|"
         r"\bfrom\s+(?:the\s+)?selected\s+(?:original|prior|history|historical)\b|"
         r"\bpreviously\s+selected\s+(?:claim|row|record)\b|"
         r"\bselected\s+(?:in|by)\s+(?:the\s+)?(?:prior|previous|earlier)\s+step\b",
@@ -1825,7 +1866,18 @@ def _find_required_business_concept_artifacts(
                 re.IGNORECASE,
             )
         )
-        if not stable_claim_correlation:
+        selected_row_projection = bool(
+            re.search(r"\bTOP\s*\(\s*1\s*\)", sql, re.IGNORECASE)
+            and re.search(
+                r"\b(?:[a-z_][a-z0-9_]*\.)?claimid\b\s+AS\s+"
+                r"(?:selected[a-z0-9_]*claimid|"
+                r"[a-z_][a-z0-9_]+selected[a-z0-9_]*claimid)\b",
+                sql,
+                re.IGNORECASE,
+            )
+            and re.search(r"\bORDER\s+BY\b", sql, re.IGNORECASE)
+        )
+        if not stable_claim_correlation and not selected_row_projection:
             artifacts.append(
                 "selected-row lookup repeats history without a stable claim identifier"
             )

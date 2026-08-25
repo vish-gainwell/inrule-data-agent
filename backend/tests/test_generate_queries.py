@@ -426,6 +426,36 @@ def test_grounded_compound_pattern_uses_prefiltered_tcns():
     assert "SUM(TRY_CONVERT(decimal(29,9), c.drug_qty))" in sql
 
 
+def test_grounded_selected_partial_pattern_returns_one_reusable_latest_row():
+    ddl = "\n".join([
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] "
+        "([claimid] char(15), [memid] char(15), [provid] char(15), "
+        "[startdate] datetime, [status] char(10), [resubclaimid] char(15));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] "
+        "([claimid] char(15), [claimline] int, [rxnumber] char(50), [ndckey] char(11));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[ClaimPartial] "
+        "([claimid] char(15), [DispensingStatus] char(1), "
+        "[AssociatedPrescriptionRefNumber] char(15));",
+    ])
+
+    sql = _grounded_business_pattern_candidate(
+        "The submitted Associated Prescription/Service Reference Number identifies "
+        "the same selected prior partial-fill history occurrence.",
+        ddl,
+    )
+
+    assert sql is not None
+    assert "TOP (1)" in sql
+    assert "c.claimid AS SelectedPartialClaimId" in sql
+    assert "c.startdate AS SelectedPartialDateOfService" in sql
+    assert "RTRIM(c.status) IN ('PAID', 'PAY', 'WAITPAY')" in sql
+    assert "RTRIM(c.resubclaimid) = ''" in sql
+    assert "RTRIM(p.ndckey) = {{ClaimTransaction.Ndc}}" in sql
+    assert "TRY_CONVERT(bigint, {{AssociatedPrescriptionRefNumber}})" in sql
+    assert "ORDER BY c.startdate DESC, c.claimid DESC, p.claimline DESC" in sql
+    assert "{{ClaimId}}" not in sql
+
+
 def test_required_business_concepts_accept_approved_runtime_placeholders():
     sql = (
         "SELECT {{QuantityDispensed}} AS QuantityDispensed, n.PS AS PackageSize "
@@ -682,6 +712,26 @@ def test_selected_history_row_requires_stable_identifier_correlation():
         initial_selection,
         "Select an original paid CII claim and return its ClaimId and Quantity Prescribed.",
     ) == []
+
+
+def test_same_selected_history_occurrence_rejects_ambiguous_claim_id():
+    meaning = "Return status from the same selected prior partial-fill history occurrence."
+    ambiguous = (
+        "SELECT c.status FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "WHERE c.claimid = {{ClaimId}}"
+    )
+    keyed = ambiguous.replace("{{ClaimId}}", "{{SelectedPartialClaimId}}")
+    selection = (
+        "SELECT TOP (1) c.claimid AS SelectedPartialClaimId, c.status "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "ORDER BY c.startdate DESC, c.claimid DESC"
+    )
+
+    ambiguous_artifacts = _find_required_business_concept_artifacts(ambiguous, meaning)
+    assert "required business concept 'selected occurrence' is absent from the SQL" in ambiguous_artifacts
+    assert "selected-row lookup repeats history without a stable claim identifier" in ambiguous_artifacts
+    assert _find_required_business_concept_artifacts(keyed, meaning) == []
+    assert _find_required_business_concept_artifacts(selection, meaning) == []
 
 
 def test_icd10_diagnosis_reference_requires_four_character_match():
@@ -1607,6 +1657,40 @@ def test_generation_repairs_incomplete_contract_term_drug_lookup():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "nonblank ContractId" in call_openai.call_args_list[1].args[2]
+
+
+def test_generation_converges_selected_partial_tasks_on_reusable_latest_row():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] "
+        "([claimid] char(15), [memid] char(15), [provid] char(15), "
+        "[startdate] datetime, [status] char(10), [resubclaimid] char(15));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] "
+        "([claimid] char(15), [claimline] int, [rxnumber] char(50), [ndckey] char(11));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[ClaimPartial] "
+        "([claimid] char(15), [DispensingStatus] char(1), "
+        "[AssociatedPrescriptionRefNumber] char(15));",
+    ]
+    meanings = [
+        "The submitted Associated Prescription/Service Reference Number identifies the "
+        "same selected prior partial-fill history occurrence.",
+        "The same selected prior partial-fill history occurrence has an allowed payable "
+        "claim status.",
+        "Incoming claim date of service equals the date of service for the same selected "
+        "prior partial-fill history occurrence.",
+    ]
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch("inrules_data_agent.generator.generate._call_openai") as call_openai,
+    ):
+        results = [generate_query_result_for_step(meaning) for meaning in meanings]
+
+    queries = [result["queries"][0] for result in results]
+    assert len(set(queries)) == 1
+    assert all(result["validation_status"] == "VALIDATED" for result in results)
+    assert "c.claimid AS SelectedPartialClaimId" in queries[0]
+    assert "ORDER BY c.startdate DESC, c.claimid DESC, p.claimline DESC" in queries[0]
+    call_openai.assert_not_called()
 
 
 def test_deterministic_column_repair_uses_unique_schema_owner():
