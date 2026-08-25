@@ -683,6 +683,27 @@ def test_reviewed_drug_override_type_rejects_edit_prefixed_literal():
     assert _find_required_business_concept_artifacts(corrected, meaning) == []
 
 
+def test_member_exclusion_gcn_uses_reviewed_type_literal():
+    meaning = (
+        "Count active MemberExclusion rows where the exclusion is at the GCN sequence "
+        "number level."
+    )
+    wrong = (
+        "SELECT COUNT(*) AS MemberExclusionCount "
+        "FROM HRX.dbo.MemberExclusion m WITH (NOLOCK) "
+        "WHERE m.Memid = {{MemberId}} AND m.Type = 'GCN_Seqno' "
+        "AND m.Value = {{ClaimRequest.DrugRequested.GCNSeqNo.Code}} "
+        "AND {{DateOfService}} BETWEEN m.EffDate AND m.TermDate"
+    )
+    corrected = wrong.replace("GCN_Seqno", "GCNSEQNO")
+
+    assert _find_required_business_concept_artifacts(wrong, meaning) == [
+        "reviewed MemberExclusion Type literal 'GCNSEQNO' is required; "
+        "found 'GCN_Seqno'"
+    ]
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+
+
 def test_grounded_package_billing_pattern_uses_reviewed_type_literal():
     ddl = (
         "CREATE TABLE [HRX].[dbo].[DrugOverrides] ("
@@ -1385,6 +1406,39 @@ def test_generation_repairs_edit_prefixed_package_billing_type():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "PkgBilling_Bypass" in call_openai.call_args_list[1].args[2]
+
+
+def test_generation_repairs_member_exclusion_gcn_type_literal():
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[MemberExclusion] ("
+        "[Memid] char(15) NOT NULL, [Type] varchar(15) NOT NULL, "
+        "[Value] varchar(15) NOT NULL, [EffDate] smalldatetime NOT NULL, "
+        "[TermDate] smalldatetime NOT NULL);"
+    )
+    wrong = (
+        "SELECT COUNT(*) AS MemberExclusionCount "
+        "FROM HRX.dbo.MemberExclusion m WITH (NOLOCK) "
+        "WHERE m.Memid = {{MemberId}} AND m.Type = 'GCN_Seqno' "
+        "AND m.Value = {{ClaimRequest.DrugRequested.GCNSeqNo.Code}} "
+        "AND {{DateOfService}} BETWEEN m.EffDate AND m.TermDate"
+    )
+    corrected = wrong.replace("GCN_Seqno", "GCNSEQNO")
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[wrong, corrected],
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            "Count active MemberExclusion rows for the current member and date of service "
+            "where the exclusion is at the GCN sequence number level."
+        )
+
+    assert result["queries"] == [corrected]
+    assert result["validation_status"] == "VALIDATED"
+    assert call_openai.call_count == 2
+    assert "GCNSEQNO" in call_openai.call_args_list[1].args[2]
 
 
 def test_deterministic_column_repair_uses_unique_schema_owner():

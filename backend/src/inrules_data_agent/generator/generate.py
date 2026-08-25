@@ -218,6 +218,11 @@ Rules:
       those current-drug values. The contract/reuse layer will convert the Type literal and
       runtime placeholders into the generic DrugOverrideType, Ndc, GcnSeqNo, Hic3, and
       DateOfService parameter assignments.
+      Reusable MemberExclusion shape: query HRX.dbo.MemberExclusion directly and preserve
+    its configured Type discriminator literals exactly. A GCN sequence-number exclusion uses
+    Type = 'GCNSEQNO' (no underscore), with Value matched to the current GCN sequence number;
+    do not derive the stored literal from a display label or physical column spelling. Apply
+    member scope and the inclusive DateOfService EffDate/TermDate window to the same row.
       Reusable SCC history shape: select edi_pharm_universal.metricqty and dayssupply;
     join claim on claimid for status/formtype/resubclaimid/date/member/provider filters;
     join claimpharm on claimid and claimline, then NDC_Mstr on claimpharm.ndckey for GCN;
@@ -1666,6 +1671,27 @@ def _find_required_business_concept_artifacts(
                 artifacts.append(
                     f"reviewed DrugOverrides Type literal '{required_type}' is required; found {found}"
                 )
+
+    member_exclusion_gcn = bool(
+        re.search(r"\bmemberexclusion\b", normalized_sql, re.IGNORECASE)
+        and re.search(
+            r"\bgcn(?:\s+sequence(?:\s+number)?|_?seqno)?\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+    )
+    if member_exclusion_gcn:
+        type_literals = re.findall(
+            r"(?:(?:\[[^]]+\]|[a-z_][a-z0-9_]*)\s*\.\s*)?\[?type\]?\s*=\s*N?'([^']*)'",
+            sql,
+            re.IGNORECASE,
+        )
+        if "gcnseqno" not in {value.casefold() for value in type_literals}:
+            found = ", ".join(repr(value) for value in type_literals) or "none"
+            artifacts.append(
+                "reviewed MemberExclusion Type literal 'GCNSEQNO' is required; "
+                f"found {found}"
+            )
 
     selected_prior_row = bool(re.search(
         r"\bfrom\s+(?:the\s+)?selected\s+(?:original|prior|history|historical)\b|"
