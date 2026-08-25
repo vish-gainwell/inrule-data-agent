@@ -586,6 +586,47 @@ def test_required_like_and_same_period_semantics_are_preserved():
     )
 
 
+def test_current_drug_override_exclusion_requires_all_identifiers_and_active_window():
+    meaning = "Check that the current prescription is not on the configured exclusion list."
+    ndc_only = (
+        "SELECT COUNT(*) AS ExclusionCount "
+        "FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE d.Type = 'State_Exclusion_List' "
+        "AND RTRIM(d.NDCKey) = {{ClaimTransaction.Ndc}}"
+    )
+    corrected = (
+        "SELECT COUNT(*) AS ExclusionCount "
+        "FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE d.Type = 'State_Exclusion_List' "
+        "AND (RTRIM(d.NDCKey) = {{ClaimTransaction.Ndc}} "
+        "OR RTRIM(d.GCN_SeqNo) = {{ClaimRequest.DrugRequested.GCNSeqNo.Code}} "
+        "OR RTRIM(d.HIC3) = {{ClaimRequest.DrugRequested.HIC3.Code}}) "
+        "AND {{DateOfService}} BETWEEN d.EffDate AND d.TermDate"
+    )
+
+    assert _find_required_business_concept_artifacts(ndc_only, meaning) == [
+        "DrugOverrides exclusion lookup is missing current-drug alternatives: GCN_SeqNo, HIC3",
+        "DrugOverrides exclusion lookup is missing its DateOfService EffDate/TermDate window",
+    ]
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+
+
+def test_current_drug_override_exclusion_requires_or_alternatives():
+    meaning = "Return an active exclusion for the incoming drug."
+    sql = (
+        "SELECT COUNT(*) AS ExclusionCount "
+        "FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE d.NDCKey = {{Ndc}} "
+        "AND d.GCN_SeqNo = {{GcnSeqNo}} "
+        "AND d.HIC3 = {{Hic3}} "
+        "AND {{DateOfService}} BETWEEN d.EffDate AND d.TermDate"
+    )
+
+    assert _find_required_business_concept_artifacts(sql, meaning) == [
+        "DrugOverrides exclusion identifiers are not combined as NDC/GCN/HIC3 alternatives"
+    ]
+
+
 def test_reject_code_configuration_list_stays_effective_and_occurrence_independent():
     meaning = (
         "Return the approved NDCParameters Reject_Code list for the submitted COB "
@@ -1293,6 +1334,47 @@ def test_generate_queries_repairs_date_sensitive_parameter_effective_window():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "EFFDATE/ENDDATE evaluation window" in call_openai.call_args_list[1].args[2]
+
+
+def test_generate_queries_repairs_incomplete_drug_override_exclusion_lookup():
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[DrugOverrides] ("
+        "[OverrideID] int NOT NULL, [NDCKey] char(11), [GCN_SeqNo] char(6), "
+        "[HIC3] char(3), [Type] varchar(50), [EffDate] smalldatetime, "
+        "[TermDate] smalldatetime);"
+    )
+    wrong = (
+        "SELECT COUNT(*) AS ExclusionCount "
+        "FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE d.Type = 'State_Exclusion_List' "
+        "AND d.NDCKey = {{ClaimTransaction.Ndc}}"
+    )
+    corrected = (
+        "SELECT COUNT(*) AS ExclusionCount "
+        "FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE d.Type = 'State_Exclusion_List' "
+        "AND (d.NDCKey = {{ClaimTransaction.Ndc}} "
+        "OR d.GCN_SeqNo = {{ClaimRequest.DrugRequested.GCNSeqNo.Code}} "
+        "OR d.HIC3 = {{ClaimRequest.DrugRequested.HIC3.Code}}) "
+        "AND {{DateOfService}} BETWEEN d.EffDate AND d.TermDate"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[wrong, corrected],
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            "Check that the current prescription is not on the configured exclusion list."
+        )
+
+    assert result["queries"] == [corrected]
+    assert result["validation_status"] == "VALIDATED"
+    assert call_openai.call_count == 2
+    repair_feedback = call_openai.call_args_list[1].args[2]
+    assert "GCN_SeqNo, HIC3" in repair_feedback
+    assert "DateOfService EffDate/TermDate" in repair_feedback
 
 
 def test_generate_queries_repairs_selected_row_to_use_stable_identifier():

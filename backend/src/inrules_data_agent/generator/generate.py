@@ -218,6 +218,9 @@ Rules:
       those current-drug values. The contract/reuse layer will convert the Type literal and
       runtime placeholders into the generic DrugOverrideType, Ndc, GcnSeqNo, Hic3, and
       DateOfService parameter assignments.
+    For active current-drug exclusion/existence lookups, combine NDCKey, GCN_SeqNo, and HIC3
+    matches as alternatives and apply the inclusive DateOfService EffDate/TermDate window to
+    that same DrugOverrides row; an NDC-only match is incomplete.
       Reusable MemberExclusion shape: query HRX.dbo.MemberExclusion directly and preserve
     its configured Type discriminator literals exactly. A GCN sequence-number exclusion uses
     Type = 'GCNSEQNO' (no underscore), with Value matched to the current GCN sequence number;
@@ -1576,6 +1579,72 @@ def _find_required_business_concept_artifacts(
             )
             if historical_window is None:
                 artifacts.append("same-period lookup does not bind history to the incoming effective window")
+
+    drug_override_exclusion = bool(
+        re.search(r"\bdrugoverrides\b", normalized_sql, re.IGNORECASE)
+        and re.search(r"\bexclu(?:sion|ded|de)\b", business_meaning, re.IGNORECASE)
+        and re.search(r"\b(?:current|incoming|submitted)\b", business_meaning, re.IGNORECASE)
+    )
+    if drug_override_exclusion:
+        exclusion_sql = re.sub(r"[\[\]]", "", sql)
+        match_patterns = (
+            (
+                "NDCKey",
+                r"\b(?:[a-z_][a-z0-9_]*\.)?ndckey\b[^=\n]{0,20}=\s*"
+                r"\{\{[^}]*ndc[^}]*\}\}",
+            ),
+            (
+                "GCN_SeqNo",
+                r"\b(?:[a-z_][a-z0-9_]*\.)?gcn_seqno\b[^=\n]{0,20}=\s*"
+                r"\{\{[^}]*gcn[^}]*\}\}",
+            ),
+            (
+                "HIC3",
+                r"\b(?:[a-z_][a-z0-9_]*\.)?hic3\b[^=\n]{0,20}=\s*"
+                r"\{\{[^}]*(?:hic3|therapeuticclass)[^}]*\}\}",
+            ),
+        )
+        identifier_matches = [
+            (label, re.search(pattern, exclusion_sql, re.IGNORECASE))
+            for label, pattern in match_patterns
+        ]
+        missing_identifiers = [
+            label for label, match in identifier_matches if match is None
+        ]
+        if missing_identifiers:
+            artifacts.append(
+                "DrugOverrides exclusion lookup is missing current-drug alternatives: "
+                + ", ".join(missing_identifiers)
+            )
+        else:
+            ordered_matches = sorted(
+                (match for _, match in identifier_matches if match is not None),
+                key=lambda match: match.start(),
+            )
+            alternatives_sql = exclusion_sql[
+                ordered_matches[0].start():ordered_matches[-1].end()
+            ]
+            if len(re.findall(r"\bOR\b", alternatives_sql, re.IGNORECASE)) < 2:
+                artifacts.append(
+                    "DrugOverrides exclusion identifiers are not combined as NDC/GCN/HIC3 alternatives"
+                )
+
+        dos = r"\{\{[^}]*dateofservice[^}]*\}\}"
+        effective_window = (
+            rf"(?:{dos}\s+BETWEEN\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s+AND\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?termdate|"
+            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s*<=\s*"
+            rf"{dos}\s+AND\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?termdate\s*>=\s*"
+            rf"{dos}|{dos}\s*>=\s*"
+            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s+AND\s+"
+            rf"{dos}\s*<=\s*(?:[a-z_][a-z0-9_]*\.)?termdate)"
+        )
+        if not re.search(effective_window, exclusion_sql, re.IGNORECASE):
+            artifacts.append(
+                "DrugOverrides exclusion lookup is missing its DateOfService EffDate/TermDate window"
+            )
 
     date_sensitive_parameter = bool(
         re.search(r"\bndcparameters\b", normalized_sql, re.IGNORECASE)
