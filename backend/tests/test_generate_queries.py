@@ -482,6 +482,59 @@ def test_grounded_selected_partial_pattern_returns_one_reusable_latest_row():
     assert "{{ClaimId}}" not in sql
 
 
+def test_grounded_compound_ingredient_max_day_dose_uses_maintenance_scope():
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[NDCMaintDetails] ("
+        "[Planid] varchar(15), [EffDate] smalldatetime, [NDCKey] char(11), "
+        "[GCN_SeqNo] char(6), [TC] char(3), [TermDate] smalldatetime, "
+        "[MaxDayDose] varchar(15), [ChangedDate] smalldatetime);"
+    )
+
+    sql = _grounded_business_pattern_candidate(
+        "For the current compound ingredient occurrence, return the applicable "
+        "plan/date-effective NDCMaintDetails MaxDayDose.",
+        ddl,
+    )
+
+    assert sql is not None
+    assert "FROM HRX.dbo.NDCMaintDetails" in sql
+    assert "nmd.NDCKey = {{IngredientNdc}}" in sql
+    assert "RTRIM(nmd.Planid) = RTRIM({{PlanId}})" in sql
+    assert "{{DateOfService}} BETWEEN nmd.EffDate AND nmd.TermDate" in sql
+    assert "ORDER BY nmd.EffDate DESC, nmd.ChangedDate DESC" in sql
+    assert "nmd.GCN_SeqNo ASC, nmd.TC ASC" in sql
+    assert "NDC_Mstr" not in sql
+    assert "{{ClaimTransaction.Ndc}}" not in sql
+    assert "QuantityDispensed" not in sql
+
+
+def test_compound_ingredient_max_day_dose_validation_rejects_current_drug_source():
+    meaning = (
+        "For the current compound ingredient occurrence, return the applicable "
+        "plan/date-effective MaxDayDose."
+    )
+    wrong = (
+        "SELECT n.MaxDayDose AS MaxDayDose FROM HRX.dbo.NDC_Mstr n WITH (NOLOCK) "
+        "WHERE n.NDCKey = {{ClaimTransaction.Ndc}}"
+    )
+    corrected = (
+        "SELECT TOP (1) nmd.MaxDayDose AS MaxDayDose "
+        "FROM HRX.dbo.NDCMaintDetails nmd WITH (NOLOCK) "
+        "WHERE nmd.NDCKey = {{IngredientNdc}} "
+        "AND RTRIM(nmd.Planid) = RTRIM({{PlanId}}) "
+        "AND {{DateOfService}} BETWEEN nmd.EffDate AND nmd.TermDate "
+        "ORDER BY nmd.EffDate DESC, nmd.ChangedDate DESC, "
+        "nmd.GCN_SeqNo ASC, nmd.TC ASC"
+    )
+
+    artifacts = _find_required_business_concept_artifacts(wrong, meaning)
+    assert "compound-ingredient MaxDayDose lookup is missing NDCMaintDetails" in artifacts
+    assert "compound-ingredient MaxDayDose lookup incorrectly uses NDC_Mstr" in artifacts
+    assert "compound-ingredient MaxDayDose lookup is not scoped by IngredientNdc" in artifacts
+    assert "compound-ingredient MaxDayDose lookup is not scoped by PlanId" in artifacts
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+
+
 def test_grounded_effective_ingredient_desi_pattern_returns_one_attribute_bundle():
     ddl = (
         "CREATE TABLE [HRX].[dbo].[NDC_DESI_Mstr] ("
@@ -1870,6 +1923,37 @@ def test_generation_repairs_incomplete_contract_term_drug_lookup():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "nonblank ContractId" in call_openai.call_args_list[1].args[2]
+
+
+def test_generation_converges_compound_max_day_dose_tasks_on_source_lookup():
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[NDCMaintDetails] ("
+        "[Planid] varchar(15), [EffDate] smalldatetime, [NDCKey] char(11), "
+        "[GCN_SeqNo] char(6), [TC] char(3), [TermDate] smalldatetime, "
+        "[MaxDayDose] varchar(15), [ChangedDate] smalldatetime);"
+    )
+    meanings = [
+        "For the current compound ingredient occurrence, check that an applicable "
+        "plan/date-effective MaxDayDose was found and is not zero.",
+        "For the same current compound ingredient occurrence, compare daily quantity "
+        "dispensed to the applicable MaxDayDose from step 1.",
+    ]
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch("inrules_data_agent.generator.generate._call_openai") as call_openai,
+    ):
+        results = [generate_query_result_for_step(meaning) for meaning in meanings]
+
+    queries = [result["queries"][0] for result in results]
+    assert len(set(queries)) == 1
+    assert all(result["validation_status"] == "VALIDATED" for result in results)
+    assert "FROM HRX.dbo.NDCMaintDetails" in queries[0]
+    assert "nmd.NDCKey = {{IngredientNdc}}" in queries[0]
+    assert "RTRIM(nmd.Planid) = RTRIM({{PlanId}})" in queries[0]
+    assert "QuantityDispensed" not in queries[0]
+    assert "DaysSupply" not in queries[0]
+    call_openai.assert_not_called()
 
 
 def test_generation_converges_effective_ingredient_desi_tasks_on_one_row():

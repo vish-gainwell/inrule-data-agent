@@ -297,7 +297,11 @@ Rules:
     GCN_SeqNo, and TC; use inclusive DOS filtering and, when one row is requested, rank
     exact NDC before GCN sequence before therapeutic class, then latest EffDate and
     ChangedDate. Use semantic {{PlanId}} and {{TherapeuticClass}} inputs when concrete DTO
-    paths are not supplied; never map either input to the NDC code.
+    paths are not supplied; never map either input to the NDC code. For a compound-ingredient
+    MaxDayDose lookup, query NDCMaintDetails with {{IngredientNdc}}, {{PlanId}}, and
+    {{DateOfService}} and return the raw MaxDayDose. Do not substitute NDC_Mstr, use the
+    transaction-level NDC, or calculate ingredient quantity divided by days supply in SQL;
+    those runtime comparisons remain downstream rule behavior.
       ICD diagnosis-reference shape: when validating a submitted ICD-10 diagnosis against
     IPA.dbo.DiagCode, compare the first four characters on both sides, for example
     SUBSTRING(codeid, 1, 4) = SUBSTRING({{DiagnosisCode}}, 1, 4). Do not replace this with
@@ -850,6 +854,20 @@ WHERE d.Type = 'PkgBilling_Bypass'
         return """SELECT COUNT(*) AS ContractTermCount
 FROM InMemory.dbo.CONTRACT_TERM ct
 WHERE RTRIM(ct.ContractId) <> ''"""
+
+    if (
+        "hrx.dbo.ndcmaintdetails" in tables
+        and "compound ingredient" in meaning
+        and "maxdaydose" in meaning
+    ):
+        return """SELECT TOP (1)
+    nmd.MaxDayDose AS MaxDayDose
+FROM HRX.dbo.NDCMaintDetails nmd WITH (NOLOCK)
+WHERE nmd.NDCKey = {{IngredientNdc}}
+  AND RTRIM(nmd.Planid) = RTRIM({{PlanId}})
+  AND {{DateOfService}} BETWEEN nmd.EffDate AND nmd.TermDate
+ORDER BY nmd.EffDate DESC, nmd.ChangedDate DESC,
+         nmd.GCN_SeqNo ASC, nmd.TC ASC"""
 
     if (
         "hrx.dbo.ndc_desi_mstr" in tables
@@ -1622,7 +1640,7 @@ def _find_required_business_concept_artifacts(
             r"\b(?:same|selected)\b[^.\n]{0,80}\b(?:event|history)?\s*occurrence\b",
             "selected occurrence",
             r"\b(?:ndcindex|previcn|icn|authorizationid)\b|"
-            r"\{\{[^}]*(?:index|occurrence|event|icn|(?:original|selected|prior)[^}]*claimid)[^}]*\}\}|"
+            r"\{\{[^}]*(?:index|occurrence|event|icn|ingredientndc|(?:original|selected|prior)[^}]*claimid)[^}]*\}\}|"
             r"\bclaimid\b\s+as\s+(?:selected[a-z0-9_]*claimid|"
             r"[a-z_][a-z0-9_]+selected[a-z0-9_]*claimid)\b|"
             r"\[\[[^]]+\]\]",
@@ -1644,6 +1662,11 @@ def _find_required_business_concept_artifacts(
         normalized_sql,
         re.IGNORECASE,
     ))
+    compound_max_day_dose_source = bool(
+        re.search(r"\bndcmaintdetails\b", normalized_sql)
+        and re.search(r"\bmaxdaydose\b", normalized_sql)
+        and re.search(r"\{\{[^}]*ingredientndc[^}]*\}\}", normalized_sql)
+    )
     artifacts = []
     for requirement_pattern, label, sql_pattern in requirements:
         if not re.search(requirement_pattern, business_meaning, re.IGNORECASE):
@@ -1651,6 +1674,8 @@ def _find_required_business_concept_artifacts(
         if prefiltered_historical_tcns and label in {"form type", "reversal status"}:
             continue
         if prefiltered_contract_terms and label == "GCN":
+            continue
+        if compound_max_day_dose_source and label == "quantity":
             continue
         search_sql = where_sql if label == "provider scope" else normalized_sql
         if not re.search(sql_pattern, search_sql, re.IGNORECASE):
@@ -1712,6 +1737,59 @@ def _find_required_business_concept_artifacts(
         ):
             artifacts.append(
                 "secondary-ID member resolution does not filter member.secondaryid by CardholderId"
+            )
+
+    compound_ingredient_max_day_dose = bool(
+        re.search(r"\bcompound ingredient\b", business_meaning, re.IGNORECASE)
+        and re.search(r"\bmaxdaydose\b|\bmaximum daily dose\b", business_meaning, re.IGNORECASE)
+    )
+    if compound_ingredient_max_day_dose:
+        if not re.search(r"\bndcmaintdetails\b", normalized_sql):
+            artifacts.append(
+                "compound-ingredient MaxDayDose lookup is missing NDCMaintDetails"
+            )
+        if re.search(r"\bndc_mstr\b", normalized_sql):
+            artifacts.append(
+                "compound-ingredient MaxDayDose lookup incorrectly uses NDC_Mstr"
+            )
+        if not re.search(
+            r"\b(?:[a-z_][a-z0-9_]*\.)?ndckey\b[^=\n]{0,20}=\s*"
+            r"\{\{[^}]*ingredientndc[^}]*\}\}",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "compound-ingredient MaxDayDose lookup is not scoped by IngredientNdc"
+            )
+        if not re.search(
+            r"\b(?:rtrim\s*\(\s*)?(?:[a-z_][a-z0-9_]*\.)?planid\s*\)?\s*=\s*"
+            r"(?:rtrim\s*\(\s*)?\{\{[^}]*planid[^}]*\}\}\s*\)?",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "compound-ingredient MaxDayDose lookup is not scoped by PlanId"
+            )
+        if not re.search(
+            r"\{\{[^}]*dateofservice[^}]*\}\}\s+between\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s+and\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?termdate",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "compound-ingredient MaxDayDose lookup is missing its DOS effective window"
+            )
+        if not re.search(r"\bselect\s+top\s*\(\s*1\s*\)", normalized_sql):
+            artifacts.append(
+                "compound-ingredient MaxDayDose lookup does not select one applicable row"
+            )
+        if not re.search(
+            r"\border\s+by\s+(?:[a-z_][a-z0-9_]*\.)?effdate\s+desc\s*,\s*"
+            r"(?:[a-z_][a-z0-9_]*\.)?changeddate\s+desc\s*,\s*"
+            r"(?:[a-z_][a-z0-9_]*\.)?gcn_seqno\s+asc\s*,\s*"
+            r"(?:[a-z_][a-z0-9_]*\.)?tc\s+asc",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "compound-ingredient MaxDayDose lookup lacks deterministic maintenance-row ordering"
             )
 
     same_effective_ingredient_desi_row = bool(
