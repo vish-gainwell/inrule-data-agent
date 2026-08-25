@@ -704,6 +704,52 @@ def test_member_exclusion_gcn_uses_reviewed_type_literal():
     assert _find_required_business_concept_artifacts(corrected, meaning) == []
 
 
+def test_prefiltered_contract_term_drug_lookup_uses_loaded_match_result():
+    meaning = (
+        "Determine whether no valid direct NDC or GCN contract-term match exists for "
+        "the submitted drug."
+    )
+    incomplete = (
+        "SELECT ct.ContractId, {{Ndc}} AS SubmittedNdc "
+        "FROM InMemory.dbo.CONTRACT_TERM ct "
+        "WHERE ct.ContractId = {{ContractId}} "
+        "AND {{DateOfService}} BETWEEN ct.EffDate AND ct.TermDate"
+    )
+    corrected = (
+        "SELECT COUNT(*) AS ContractTermCount "
+        "FROM InMemory.dbo.CONTRACT_TERM ct "
+        "WHERE RTRIM(ct.ContractId) <> ''"
+    )
+
+    assert _find_required_business_concept_artifacts(incomplete, meaning) == [
+        "prefiltered contract-term drug lookup must evaluate loaded rows using nonblank ContractId"
+    ]
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+
+
+def test_grounded_contract_term_drug_match_uses_prefiltered_collection():
+    ddl = (
+        "CREATE TABLE [InMemory].[dbo].[CONTRACT_TERM] ("
+        "[ContractId] nvarchar(max) NOT NULL, [TermId] nvarchar(max) NOT NULL, "
+        "[Status] nvarchar(max) NOT NULL, [ProvType] nvarchar(max) NOT NULL, "
+        "[EffDate] datetime2 NOT NULL, [TermDate] datetime2 NOT NULL);"
+    )
+
+    candidate = _grounded_business_pattern_candidate(
+        "Determine whether no valid direct NDC or GCN contract-term match exists for "
+        "the submitted drug.",
+        ddl,
+    )
+
+    assert candidate == (
+        "SELECT COUNT(*) AS ContractTermCount\n"
+        "FROM InMemory.dbo.CONTRACT_TERM ct\n"
+        "WHERE RTRIM(ct.ContractId) <> ''"
+    )
+    assert "termndc" not in candidate.lower()
+    assert "ndccode" not in candidate.lower()
+
+
 def test_grounded_package_billing_pattern_uses_reviewed_type_literal():
     ddl = (
         "CREATE TABLE [HRX].[dbo].[DrugOverrides] ("
@@ -1439,6 +1485,46 @@ def test_generation_repairs_member_exclusion_gcn_type_literal():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "GCNSEQNO" in call_openai.call_args_list[1].args[2]
+
+
+def test_generation_repairs_incomplete_contract_term_drug_lookup():
+    ddl = (
+        "CREATE TABLE [InMemory].[dbo].[CONTRACT_TERM] ("
+        "[ContractId] nvarchar(max) NOT NULL, [TermId] nvarchar(max) NOT NULL, "
+        "[Status] nvarchar(max) NOT NULL, [ProvType] nvarchar(max) NOT NULL, "
+        "[EffDate] datetime2 NOT NULL, [TermDate] datetime2 NOT NULL);"
+    )
+    wrong = (
+        "SELECT ct.ContractId, ct.TermId, {{Ndc}} AS SubmittedNdc "
+        "FROM InMemory.dbo.CONTRACT_TERM ct "
+        "WHERE ct.ContractId = {{ContractId}} "
+        "AND {{DateOfService}} BETWEEN ct.EffDate AND ct.TermDate"
+    )
+    corrected = (
+        "SELECT COUNT(*) AS ContractTermCount "
+        "FROM InMemory.dbo.CONTRACT_TERM ct "
+        "WHERE RTRIM(ct.ContractId) <> ''"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._grounded_business_pattern_candidate",
+            return_value=None,
+        ),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[wrong, corrected],
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            "Determine whether no valid direct NDC or GCN contract-term match exists "
+            "for the submitted drug."
+        )
+
+    assert result["queries"] == [corrected]
+    assert result["validation_status"] == "VALIDATED"
+    assert call_openai.call_count == 2
+    assert "nonblank ContractId" in call_openai.call_args_list[1].args[2]
 
 
 def test_deterministic_column_repair_uses_unique_schema_owner():

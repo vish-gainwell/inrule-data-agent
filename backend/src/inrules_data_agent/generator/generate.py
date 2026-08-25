@@ -223,6 +223,14 @@ Rules:
     Type = 'GCNSEQNO' (no underscore), with Value matched to the current GCN sequence number;
     do not derive the stored literal from a display label or physical column spelling. Apply
     member scope and the inclusive DateOfService EffDate/TermDate window to the same row.
+      Reusable contract-term drug-match shape: InMemory.dbo.CONTRACT_TERM is the prefiltered
+    ClaimRequest.ContractTerms result loaded by hrxHPA_GetContractTermValuesNDC2 for the
+    resolved contract, submitted NDC range, and DOS. That loader encapsulates both direct
+    termndc matching and product-name-group matching through termndcgroup/ndccode, excluding
+    group terms already satisfied directly. Query CONTRACT_TERM directly; do not claim that
+    a simple ContractId/date filter reconstructs those physical branches, and do not invent
+    physical term-table SQL when their DDL is absent. For a no-match/count fact, count loaded
+    rows whose ContractId is nonblank.
       Reusable SCC history shape: select edi_pharm_universal.metricqty and dayssupply;
     join claim on claimid for status/formtype/resubclaimid/date/member/provider filters;
     join claimpharm on claimid and claimline, then NDC_Mstr on claimpharm.ndckey for GCN;
@@ -795,6 +803,16 @@ FROM HRX.dbo.DrugOverrides d WITH (NOLOCK)
 WHERE d.Type = 'PkgBilling_Bypass'
   AND {{DateOfService}} BETWEEN d.EffDate AND d.TermDate
   AND (d.NDCKey = {{Ndc}} OR d.GCN_SeqNo = {{GCNSeqNo}} OR d.HIC3 = {{Hic3}})"""
+
+    if (
+        "inmemory.dbo.contract_term" in tables
+        and re.search(r"\bcontract[- ]?term\b", meaning)
+        and re.search(r"\b(?:ndc|gcn|drug)\b", meaning)
+        and re.search(r"\b(?:no|not|count|exist|match)\b", meaning)
+    ):
+        return """SELECT COUNT(*) AS ContractTermCount
+FROM InMemory.dbo.CONTRACT_TERM ct
+WHERE RTRIM(ct.ContractId) <> ''"""
 
     partial_tables = {
         "plandata_rx_production.dbo.claimpartial",
@@ -1485,11 +1503,19 @@ def _find_required_business_concept_artifacts(
     prefiltered_historical_tcns = bool(
         re.search(r"\[?\[?\{?\{?\s*historicaltcns\b", normalized_sql)
     )
+    prefiltered_contract_terms = bool(re.search(
+        r"\b(?:from|join)\s+\[?inmemory\]?\s*\.\s*\[?dbo\]?\s*\.\s*"
+        r"\[?contract_term\]?\b",
+        normalized_sql,
+        re.IGNORECASE,
+    ))
     artifacts = []
     for requirement_pattern, label, sql_pattern in requirements:
         if not re.search(requirement_pattern, business_meaning, re.IGNORECASE):
             continue
         if prefiltered_historical_tcns and label in {"form type", "reversal status"}:
+            continue
+        if prefiltered_contract_terms and label == "GCN":
             continue
         search_sql = where_sql if label == "provider scope" else normalized_sql
         if not re.search(sql_pattern, search_sql, re.IGNORECASE):
@@ -1671,6 +1697,25 @@ def _find_required_business_concept_artifacts(
                 artifacts.append(
                     f"reviewed DrugOverrides Type literal '{required_type}' is required; found {found}"
                 )
+
+    contract_term_drug_lookup = bool(
+        re.search(
+            r"\b(?:from|join)\s+\[?inmemory\]?\s*\.\s*\[?dbo\]?\s*\.\s*"
+            r"\[?contract_term\]?\b",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+        and re.search(r"\bcontract[- ]?term\b", business_meaning, re.IGNORECASE)
+        and re.search(r"\b(?:ndc|gcn|drug)\b", business_meaning, re.IGNORECASE)
+    )
+    if contract_term_drug_lookup and not re.search(
+        r"(?:rtrim\s*\(\s*)?(?:[a-z_][a-z0-9_]*\.)?contractid\s*\)?\s*<>\s*''",
+        normalized_sql,
+        re.IGNORECASE,
+    ):
+        artifacts.append(
+            "prefiltered contract-term drug lookup must evaluate loaded rows using nonblank ContractId"
+        )
 
     member_exclusion_gcn = bool(
         re.search(r"\bmemberexclusion\b", normalized_sql, re.IGNORECASE)
