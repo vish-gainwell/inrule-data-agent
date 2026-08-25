@@ -482,6 +482,56 @@ def test_grounded_selected_partial_pattern_returns_one_reusable_latest_row():
     assert "{{ClaimId}}" not in sql
 
 
+def test_grounded_effective_ingredient_desi_pattern_returns_one_attribute_bundle():
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[NDC_DESI_Mstr] ("
+        "[NDCKey] char(11), [DESI] char(1), [DESIDate] datetime, "
+        "[EffDate] datetime, [EndDate] datetime, "
+        "CONSTRAINT [PK_NDC_DESI_Mstr] PRIMARY KEY ([NDCKey], [EffDate], [EndDate]));"
+    )
+
+    sql = _grounded_business_pattern_candidate(
+        "For the current compound ingredient, look up the date-effective "
+        "NDC_DESI_Mstr row and return its DESI and DESI date values.",
+        ddl,
+    )
+
+    assert sql is not None
+    assert "SELECT TOP (1)" in sql
+    assert "1 AS RecordFound" in sql
+    assert "d.DESI AS Desi" in sql
+    assert "d.DESIDate AS DesiDate" in sql
+    assert "d.NDCKey = {{IngredientNdc}}" in sql
+    assert "{{DateOfService}} BETWEEN d.EffDate AND d.EndDate" in sql
+    assert "ORDER BY d.EffDate DESC, d.EndDate DESC" in sql
+    assert "{{ClaimTransaction.Ndc}}" not in sql
+
+
+def test_effective_ingredient_desi_validation_rejects_independent_attribute_lookup():
+    meaning = (
+        "For the same effective NDC_DESI_Mstr row found for the current compound "
+        "ingredient, the DESI value is one of the configured denial values."
+    )
+    independent = (
+        "SELECT d.DESI AS Desi FROM HRX.dbo.NDC_DESI_Mstr d WITH (NOLOCK) "
+        "WHERE d.NDCKey = {{ClaimTransaction.Ndc}} "
+        "AND {{DateOfService}} BETWEEN d.EffDate AND d.EndDate"
+    )
+    bundled = (
+        "SELECT TOP (1) 1 AS RecordFound, d.DESI AS Desi, d.DESIDate AS DesiDate "
+        "FROM HRX.dbo.NDC_DESI_Mstr d WITH (NOLOCK) "
+        "WHERE d.NDCKey = {{IngredientNdc}} "
+        "AND {{DateOfService}} BETWEEN d.EffDate AND d.EndDate "
+        "ORDER BY d.EffDate DESC, d.EndDate DESC"
+    )
+
+    artifacts = _find_required_business_concept_artifacts(independent, meaning)
+    assert "same effective ingredient DESI row is missing bundled outputs: RecordFound, DESIDate" in artifacts
+    assert "same effective ingredient DESI lookup is not scoped by IngredientNdc" in artifacts
+    assert "same effective ingredient DESI lookup does not select one row" in artifacts
+    assert _find_required_business_concept_artifacts(bundled, meaning) == []
+
+
 def test_grounded_carrier_member_history_resolution_preserves_source_path():
     ddl = "\n".join([
         "CREATE TABLE [plandata_rx_production].[dbo].[carriermemidhistory] "
@@ -1820,6 +1870,38 @@ def test_generation_repairs_incomplete_contract_term_drug_lookup():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "nonblank ContractId" in call_openai.call_args_list[1].args[2]
+
+
+def test_generation_converges_effective_ingredient_desi_tasks_on_one_row():
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[NDC_DESI_Mstr] ("
+        "[NDCKey] char(11), [DESI] char(1), [DESIDate] datetime, "
+        "[EffDate] datetime, [EndDate] datetime, "
+        "CONSTRAINT [PK_NDC_DESI_Mstr] PRIMARY KEY ([NDCKey], [EffDate], [EndDate]));"
+    )
+    meanings = [
+        "For the current compound ingredient, look up the date-effective "
+        "NDC_DESI_Mstr row. The lookup should also return the row's DESI and DESI date.",
+        "For the same effective NDC_DESI_Mstr row found for the current compound "
+        "ingredient, return the DESI value for a downstream denial-value comparison.",
+        "For the same effective NDC_DESI_Mstr row found for the current compound "
+        "ingredient, return the DESI date for a downstream Date of Service comparison.",
+    ]
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch("inrules_data_agent.generator.generate._call_openai") as call_openai,
+    ):
+        results = [generate_query_result_for_step(meaning) for meaning in meanings]
+
+    queries = [result["queries"][0] for result in results]
+    assert len(set(queries)) == 1
+    assert all(result["validation_status"] == "VALIDATED" for result in results)
+    assert "1 AS RecordFound" in queries[0]
+    assert "d.DESI AS Desi" in queries[0]
+    assert "d.DESIDate AS DesiDate" in queries[0]
+    assert "ORDER BY d.EffDate DESC, d.EndDate DESC" in queries[0]
+    call_openai.assert_not_called()
 
 
 def test_generation_converges_same_candidate_eo_tasks_on_one_count_query():

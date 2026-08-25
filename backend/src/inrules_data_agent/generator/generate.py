@@ -94,6 +94,7 @@ Rules:
    Incoming NDC:      {{ClaimTransaction.Ndc}}
    Incoming GCN:      {{ClaimRequest.DrugRequested.GCNSeqNo.Code}}
    Incoming HIC3:     {{ClaimRequest.DrugRequested.HIC3.Code}}
+   Current compound ingredient NDC: {{IngredientNdc}}
    Date of Service:   {{DateOfService}}
    Member ID:         {{MemberId}}
    Provider ID:       {{ProviderId}}
@@ -109,6 +110,9 @@ Rules:
    - {incoming_gcnseqno}, {incoming_gcn_seqno}, and incoming GCN all mean
      {{ClaimRequest.DrugRequested.GCNSeqNo.Code}}.
    - {incoming_hic3} means {{ClaimRequest.DrugRequested.HIC3.Code}}.
+   - Current/selected compound ingredient NDC and Compound Product ID used as an NDC
+     key mean {{IngredientNdc}}. Do not replace them with the transaction-level
+     {{ClaimTransaction.Ndc}}.
    - {member_id}, {participant_id}, and resolved member id mean {{MemberId}}.
    - A submitted cardholder ID used to resolve a physical memid through enrollkeys,
      carriermemidhistory, or member.secondaryid means {{CardholderId}}. Do not label
@@ -264,6 +268,12 @@ Rules:
     such as {{OriginalClaimId}} or {{SelectedPartialClaimId}}; an ambiguous {{ClaimId}} must
     never be assumed to identify a historical row. If the original query already returned the
     needed fact, downstream logic should reuse that DataQuery result directly.
+      Same-row attribute-bundle shape: when several routed tasks explicitly consume attributes
+    from the same selected lookup row, converge on one reusable query that selects the row once
+    and returns every required source attribute together. Do not push downstream comparisons
+    into separate queries or independently re-run the lookup for each attribute. If overlapping
+    rows can qualify, use TOP (1) with business-defined precedence and the complete documented
+    stable key as the final tie-breaker.
       Same-row existence shape: when several routed tasks describe predicates on the same
     candidate occurrence, converge on one reusable count/existence query with every predicate
     applied to one table alias. Do not emit separate queries that can be satisfied by different
@@ -840,6 +850,21 @@ WHERE d.Type = 'PkgBilling_Bypass'
         return """SELECT COUNT(*) AS ContractTermCount
 FROM InMemory.dbo.CONTRACT_TERM ct
 WHERE RTRIM(ct.ContractId) <> ''"""
+
+    if (
+        "hrx.dbo.ndc_desi_mstr" in tables
+        and "compound ingredient" in meaning
+        and re.search(r"\bndc[_ ]?desi[_ ]?mstr\b", meaning)
+        and re.search(r"\b(?:effective|desi|lookup|row)\b", meaning)
+    ):
+        return """SELECT TOP (1)
+    1 AS RecordFound,
+    d.DESI AS Desi,
+    d.DESIDate AS DesiDate
+FROM HRX.dbo.NDC_DESI_Mstr d WITH (NOLOCK)
+WHERE d.NDCKey = {{IngredientNdc}}
+  AND {{DateOfService}} BETWEEN d.EffDate AND d.EndDate
+ORDER BY d.EffDate DESC, d.EndDate DESC"""
 
     if (
         "inmemory.dbo.eo_history" in tables
@@ -1687,6 +1712,71 @@ def _find_required_business_concept_artifacts(
         ):
             artifacts.append(
                 "secondary-ID member resolution does not filter member.secondaryid by CardholderId"
+            )
+
+    same_effective_ingredient_desi_row = bool(
+        re.search(r"\bndc[_ ]?desi[_ ]?mstr\b", business_meaning, re.IGNORECASE)
+        and re.search(r"\bcompound ingredient\b", business_meaning, re.IGNORECASE)
+        and re.search(
+            r"\bsame effective\b|\blookup\b[^.\n]{0,120}\b(?:desi\s+date|desidate)\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+    )
+    if same_effective_ingredient_desi_row:
+        projection_match = re.search(
+            r"\bselect\b(?P<projection>.*?)\bfrom\b",
+            normalized_sql,
+            re.IGNORECASE | re.DOTALL,
+        )
+        projection_sql = projection_match.group("projection") if projection_match else ""
+        required_outputs = (
+            ("RecordFound", r"\b1\s+as\s+recordfound\b"),
+            ("DESI", r"\b(?:[a-z_][a-z0-9_]*\.)?desi\s+as\s+desi\b"),
+            ("DESIDate", r"\b(?:[a-z_][a-z0-9_]*\.)?desidate\s+as\s+desidate\b"),
+        )
+        missing_outputs = [
+            label
+            for label, pattern in required_outputs
+            if not re.search(pattern, projection_sql, re.IGNORECASE)
+        ]
+        if missing_outputs:
+            artifacts.append(
+                "same effective ingredient DESI row is missing bundled outputs: "
+                + ", ".join(missing_outputs)
+            )
+        if not re.search(r"\bndc_desi_mstr\b", normalized_sql):
+            artifacts.append(
+                "same effective ingredient DESI lookup is missing NDC_DESI_Mstr"
+            )
+        if not re.search(
+            r"\b(?:[a-z_][a-z0-9_]*\.)?ndckey\b[^=\n]{0,20}=\s*"
+            r"\{\{[^}]*ingredientndc[^}]*\}\}",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "same effective ingredient DESI lookup is not scoped by IngredientNdc"
+            )
+        if not re.search(
+            r"\{\{[^}]*dateofservice[^}]*\}\}\s+between\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s+and\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?enddate",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "same effective ingredient DESI lookup is missing its DOS effective window"
+            )
+        if not re.search(r"\bselect\s+top\s*\(\s*1\s*\)", normalized_sql):
+            artifacts.append(
+                "same effective ingredient DESI lookup does not select one row"
+            )
+        if not re.search(
+            r"\border\s+by\s+(?:[a-z_][a-z0-9_]*\.)?effdate\s+desc\s*,\s*"
+            r"(?:[a-z_][a-z0-9_]*\.)?enddate\s+desc",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "same effective ingredient DESI lookup lacks deterministic effective-row ordering"
             )
 
     physical_claim_history = bool(re.search(

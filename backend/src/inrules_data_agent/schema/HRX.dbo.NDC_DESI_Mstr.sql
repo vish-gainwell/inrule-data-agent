@@ -16,5 +16,6 @@ CREATE TABLE [HRX].[dbo].[NDC_DESI_Mstr]
     [CreatedBY] char(15) NOT NULL, -- Identifier of user who created the record
     [ChangedDate] datetime NOT NULL, -- Date and time the record was changed
     [ChangedBy] char(15) NOT NULL, -- Identifier of user who changed the record
-    [Flag] char(1) NULL
+    [Flag] char(1) NULL,
+    CONSTRAINT [PK_NDC_DESI_Mstr] PRIMARY KEY ([NDCKey], [EffDate], [EndDate])
 );
