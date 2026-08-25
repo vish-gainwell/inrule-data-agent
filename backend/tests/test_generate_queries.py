@@ -426,6 +426,32 @@ def test_grounded_compound_pattern_uses_prefiltered_tcns():
     assert "SUM(TRY_CONVERT(decimal(29,9), c.drug_qty))" in sql
 
 
+def test_grounded_same_candidate_eo_pattern_keeps_all_predicates_on_one_row():
+    ddl = (
+        "CREATE TABLE [InMemory].[dbo].[EO_HISTORY] ("
+        "[AuthorizationId] nvarchar(max), [CardHolderId] nvarchar(max), "
+        "[StartDate] datetime2, [EndDate] datetime2, [Status] nvarchar(max), "
+        "[GCNSeqNo] nvarchar(max), [IT_CNT] int, "
+        "[RejectEdits_EditId] nvarchar(max));"
+    )
+
+    sql = _grounded_business_pattern_candidate(
+        "For the same candidate EO_history occurrence, the claim Date of Service is "
+        "within the EO effective window.",
+        ddl,
+    )
+
+    assert sql is not None
+    assert "COUNT(DISTINCT eh.AuthorizationId) AS MatchingEoCount" in sql
+    assert "eh.CardHolderId = {{MemberId}}" in sql
+    assert "eh.GCNSeqNo = {{ClaimRequest.DrugRequested.GCNSeqNo.Code}}" in sql
+    assert "{{DateOfService}} BETWEEN eh.StartDate AND eh.EndDate" in sql
+    assert "eh.Status = '1'" in sql
+    assert "eh.RejectEdits_EditId LIKE CONCAT('%', {{RejectEditId}}, '%')" in sql
+    assert "eh.IT_CNT > 0" in sql
+    assert "7073" not in sql
+
+
 def test_grounded_selected_partial_pattern_returns_one_reusable_latest_row():
     ddl = "\n".join([
         "CREATE TABLE [plandata_rx_production].[dbo].[claim] "
@@ -712,6 +738,35 @@ def test_selected_history_row_requires_stable_identifier_correlation():
         initial_selection,
         "Select an original paid CII claim and return its ClaimId and Quantity Prescribed.",
     ) == []
+
+
+def test_same_candidate_eo_occurrence_requires_complete_correlated_scope():
+    meaning = (
+        "For the same candidate EO_history occurrence, the EO reject-edit list contains "
+        "the requested edit."
+    )
+    unscoped = (
+        "SELECT eh.RejectEdits_EditId FROM InMemory.dbo.EO_HISTORY eh "
+        "WHERE eh.RejectEdits_EditId LIKE '%1234%'"
+    )
+    corrected = (
+        "SELECT COUNT(DISTINCT eh.AuthorizationId) AS MatchingEoCount "
+        "FROM InMemory.dbo.EO_HISTORY eh "
+        "WHERE eh.CardHolderId = {{MemberId}} "
+        "AND eh.GCNSeqNo = {{GcnSeqNo}} "
+        "AND {{DateOfService}} BETWEEN eh.StartDate AND eh.EndDate "
+        "AND eh.Status = '1' "
+        "AND eh.RejectEdits_EditId LIKE CONCAT('%', {{RejectEditId}}, '%') "
+        "AND eh.IT_CNT > 0"
+    )
+
+    artifacts = _find_required_business_concept_artifacts(unscoped, meaning)
+    assert artifacts == [
+        "required business concept 'selected occurrence' is absent from the SQL",
+        "same-candidate EO lookup is missing correlated row predicates: CardHolderId, "
+        "GCNSeqNo, StartDate/EndDate DOS window, approved Status, IT_CNT",
+    ]
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
 
 
 def test_same_selected_history_occurrence_rejects_ambiguous_claim_id():
@@ -1657,6 +1712,40 @@ def test_generation_repairs_incomplete_contract_term_drug_lookup():
     assert result["validation_status"] == "VALIDATED"
     assert call_openai.call_count == 2
     assert "nonblank ContractId" in call_openai.call_args_list[1].args[2]
+
+
+def test_generation_converges_same_candidate_eo_tasks_on_one_count_query():
+    ddl = (
+        "CREATE TABLE [InMemory].[dbo].[EO_HISTORY] ("
+        "[AuthorizationId] nvarchar(max), [CardHolderId] nvarchar(max), "
+        "[StartDate] datetime2, [EndDate] datetime2, [Status] nvarchar(max), "
+        "[GCNSeqNo] nvarchar(max), [IT_CNT] int, "
+        "[RejectEdits_EditId] nvarchar(max));"
+    )
+    meanings = [
+        "For the same candidate EO_history occurrence, the claim Date of Service is on "
+        "or after the EO effective date.",
+        "For the same candidate EO_history occurrence, the claim Date of Service is on "
+        "or before the EO term date.",
+        "For the same candidate EO_history occurrence, the EO_history GCN_SEQNO matches "
+        "the current claim GCN.",
+        "For the same candidate EO_history occurrence, the EO reject-edit list contains "
+        "the requested edit.",
+    ]
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch("inrules_data_agent.generator.generate._call_openai") as call_openai,
+    ):
+        results = [generate_query_result_for_step(meaning) for meaning in meanings]
+
+    queries = [result["queries"][0] for result in results]
+    assert len(set(queries)) == 1
+    assert all(result["validation_status"] == "VALIDATED" for result in results)
+    assert "COUNT(DISTINCT eh.AuthorizationId)" in queries[0]
+    assert "eh.Status = '1'" in queries[0]
+    assert "eh.IT_CNT > 0" in queries[0]
+    call_openai.assert_not_called()
 
 
 def test_generation_converges_selected_partial_tasks_on_reusable_latest_row():

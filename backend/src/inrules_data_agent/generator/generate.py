@@ -259,6 +259,12 @@ Rules:
     such as {{OriginalClaimId}} or {{SelectedPartialClaimId}}; an ambiguous {{ClaimId}} must
     never be assumed to identify a historical row. If the original query already returned the
     needed fact, downstream logic should reuse that DataQuery result directly.
+      Same-row existence shape: when several routed tasks describe predicates on the same
+    candidate occurrence, converge on one reusable count/existence query with every predicate
+    applied to one table alias. Do not emit separate queries that can be satisfied by different
+    rows. For EO_HISTORY override-use checks, correlate CardHolderId, GCNSeqNo, the inclusive
+    StartDate/EndDate DOS window, approved Status, RejectEdits_EditId, and IT_CNT on one EO row;
+    use a semantic {{RejectEditId}} input rather than hard-coding one edit.
       Primary/fallback lookup shape: when the task names an authoritative primary table
     and a fallback source, a fallback-only query is incomplete. Retrieve the primary fact
     first using its exact live DDL. If the requested value is absent from that table's DDL,
@@ -819,6 +825,22 @@ WHERE d.Type = 'PkgBilling_Bypass'
         return """SELECT COUNT(*) AS ContractTermCount
 FROM InMemory.dbo.CONTRACT_TERM ct
 WHERE RTRIM(ct.ContractId) <> ''"""
+
+    if (
+        "inmemory.dbo.eo_history" in tables
+        and re.search(
+            r"\bsame\s+candidate\s+eo(?:_history|-history|\s+history)?\s+occurrence\b",
+            meaning,
+        )
+    ):
+        return """SELECT COUNT(DISTINCT eh.AuthorizationId) AS MatchingEoCount
+FROM InMemory.dbo.EO_HISTORY eh
+WHERE eh.CardHolderId = {{MemberId}}
+  AND eh.GCNSeqNo = {{ClaimRequest.DrugRequested.GCNSeqNo.Code}}
+  AND {{DateOfService}} BETWEEN eh.StartDate AND eh.EndDate
+  AND eh.Status = '1'
+  AND eh.RejectEdits_EditId LIKE CONCAT('%', {{RejectEditId}}, '%')
+  AND eh.IT_CNT > 0"""
 
     partial_tables = {
         "plandata_rx_production.dbo.claimpartial",
@@ -1529,7 +1551,7 @@ def _find_required_business_concept_artifacts(
         (
             r"\b(?:same|selected)\b[^.\n]{0,80}\b(?:event|history)?\s*occurrence\b",
             "selected occurrence",
-            r"\b(?:ndcindex|previcn|icn)\b|"
+            r"\b(?:ndcindex|previcn|icn|authorizationid)\b|"
             r"\{\{[^}]*(?:index|occurrence|event|icn|(?:original|selected|prior)[^}]*claimid)[^}]*\}\}|"
             r"\bclaimid\b\s+as\s+(?:selected[a-z0-9_]*claimid|"
             r"[a-z_][a-z0-9_]+selected[a-z0-9_]*claimid)\b|"
@@ -1806,6 +1828,62 @@ def _find_required_business_concept_artifacts(
                 artifacts.append(
                     f"reviewed DrugOverrides Type literal '{required_type}' is required; found {found}"
                 )
+
+    same_candidate_eo = bool(
+        re.search(r"\beo_history\b", normalized_sql, re.IGNORECASE)
+        and re.search(
+            r"\bsame\s+candidate\s+eo(?:_history|-history|\s+history)?\s+occurrence\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+    )
+    if same_candidate_eo:
+        eo_sources = [
+            match for match in _SQL_TABLE_RE.finditer(sql)
+            if _canonical_table_ref(match.group(1)) == "inmemory.dbo.eo_history"
+        ]
+        missing_eo_scope = []
+        eo_scope_patterns = (
+            (
+                "CardHolderId",
+                r"\bcardholderid\b\s*=\s*\{\{[^}]*member[^}]*\}\}",
+            ),
+            (
+                "GCNSeqNo",
+                r"\bgcnseqno\b\s*=\s*\{\{[^}]*gcn[^}]*\}\}",
+            ),
+            (
+                "StartDate/EndDate DOS window",
+                r"\{\{[^}]*dateofservice[^}]*\}\}\s+between\s+"
+                r"(?:[a-z_][a-z0-9_]*\.)?startdate\s+and\s+"
+                r"(?:[a-z_][a-z0-9_]*\.)?enddate",
+            ),
+            (
+                "approved Status",
+                r"\bstatus\b\s*=\s*N?'1'",
+            ),
+            (
+                "RejectEdits_EditId",
+                r"\brejectedits_editid\b\s+like\s+[^\n]*(?:\{\{[^}]*reject[^}]*edit[^}]*\}\}|'[^']+')",
+            ),
+            (
+                "IT_CNT",
+                r"\bit_cnt\b\s*>\s*0\b",
+            ),
+        )
+        eo_sql = re.sub(r"[\[\]]", "", sql)
+        for label, pattern in eo_scope_patterns:
+            if not re.search(pattern, eo_sql, re.IGNORECASE):
+                missing_eo_scope.append(label)
+        if len(eo_sources) != 1:
+            artifacts.append(
+                "same-candidate EO lookup is split across multiple EO_HISTORY sources"
+            )
+        if missing_eo_scope:
+            artifacts.append(
+                "same-candidate EO lookup is missing correlated row predicates: "
+                + ", ".join(missing_eo_scope)
+            )
 
     contract_term_drug_lookup = bool(
         re.search(
