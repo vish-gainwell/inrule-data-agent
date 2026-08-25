@@ -75,6 +75,26 @@ def test_rtrim_normalization_does_not_hide_additional_predicates():
     assert find_reuse_match(generated, {101: (query, ())}) is None
 
 
+def test_carrier_member_history_path_does_not_reuse_direct_enrollkeys_lookup():
+    direct = StoredQueryText(
+        7178,
+        "EnrollKeys_ByCarrierMemId",
+        2,
+        "select {{:output}} from enrollkeys (nolock) "
+        "where carriermemid = '{{:CardholderId}}'",
+    )
+    history_sql = (
+        "SELECT TOP (1) RTRIM(ek.memid) AS MemberId "
+        "FROM plandata_rx_production.dbo.carriermemidhistory cmh WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.enrollkeys ek WITH (NOLOCK) "
+        "ON ek.enrollid = cmh.enrollid "
+        "WHERE RTRIM(cmh.carriermemid) = {{CardholderId}} "
+        "ORDER BY ek.segtype DESC, ek.termdate DESC, ek.effdate ASC"
+    )
+
+    assert find_reuse_match(history_sql, {7178: (direct, ())}) is None
+
+
 def test_business_literal_difference_is_not_a_match(monkeypatch):
     monkeypatch.setenv("DATAQUERY_SHADOW_ENABLED", "true")
     generated = (

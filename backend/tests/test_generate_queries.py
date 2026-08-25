@@ -482,6 +482,114 @@ def test_grounded_selected_partial_pattern_returns_one_reusable_latest_row():
     assert "{{ClaimId}}" not in sql
 
 
+def test_grounded_carrier_member_history_resolution_preserves_source_path():
+    ddl = "\n".join([
+        "CREATE TABLE [plandata_rx_production].[dbo].[carriermemidhistory] "
+        "([enrollid] char(15), [carriermemid] char(25));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[enrollkeys] "
+        "([enrollid] char(15), [memid] char(15), [segtype] char(3), "
+        "[termdate] smalldatetime, [effdate] smalldatetime);",
+    ])
+
+    sql = _grounded_business_pattern_candidate(
+        "Submitted Cardholder ID does not resolve to a memid through "
+        "carriermemidhistory enrollid and enrollkeys.",
+        ddl,
+    )
+
+    assert sql is not None
+    assert "JOIN plandata_rx_production.dbo.enrollkeys" in sql
+    assert "ON ek.enrollid = cmh.enrollid" in sql
+    assert "RTRIM(cmh.carriermemid) = {{CardholderId}}" in sql
+    assert "RTRIM(ek.memid) AS MemberId" in sql
+    assert "ORDER BY ek.segtype DESC, ek.termdate DESC, ek.effdate ASC" in sql
+    assert "ek.carriermemid" not in sql
+    assert "{{MemberId}}" not in sql
+
+
+def test_grounded_member_secondary_id_resolution_uses_physical_member():
+    ddl = (
+        "CREATE TABLE [plandata_rx_production].[dbo].[member] "
+        "([memid] char(15), [secondaryid] char(15));"
+    )
+
+    sql = _grounded_business_pattern_candidate(
+        "Submitted Cardholder ID is not found as a member secondary ID "
+        "with an associated memid.",
+        ddl,
+    )
+
+    assert sql is not None
+    assert "FROM plandata_rx_production.dbo.member" in sql
+    assert "RTRIM(m.secondaryid) = {{CardholderId}}" in sql
+    assert "RTRIM(m.memid) AS MemberId" in sql
+    assert "InMemory" not in sql
+    assert "CardholderID" not in sql
+
+
+def test_member_resolution_generation_repairs_both_physical_fallback_paths_end_to_end():
+    history_ddl = "\n".join([
+        "CREATE TABLE [plandata_rx_production].[dbo].[carriermemidhistory] "
+        "([enrollid] char(15), [carriermemid] char(25));",
+        "CREATE TABLE [plandata_rx_production].[dbo].[enrollkeys] "
+        "([enrollid] char(15), [memid] char(15), [segtype] char(3), "
+        "[termdate] smalldatetime, [effdate] smalldatetime);",
+    ])
+    member_ddl = (
+        "CREATE TABLE [plandata_rx_production].[dbo].[member] "
+        "([memid] char(15), [secondaryid] char(15));"
+    )
+
+    with patch(
+        "inrules_data_agent.generator.generate.select_ddls",
+        side_effect=[[history_ddl], [member_ddl]],
+    ):
+        history_result = generate_query_result_for_step(
+            "Submitted Cardholder ID does not resolve to a memid through "
+            "carriermemidhistory enrollid and enrollkeys."
+        )
+        secondary_result = generate_query_result_for_step(
+            "Submitted Cardholder ID is not found as a member secondary ID "
+            "with an associated memid."
+        )
+
+    assert history_result["failure_category"] is None
+    assert "cmh.carriermemid) = {{CardholderId}}" in history_result["queries"][0]
+    assert history_result["generation_attempts"][0]["source"] == "deterministic_pattern"
+    assert secondary_result["failure_category"] is None
+    assert "m.secondaryid) = {{CardholderId}}" in secondary_result["queries"][0]
+    assert secondary_result["generation_attempts"][0]["source"] == "deterministic_pattern"
+
+
+def test_member_resolution_validation_rejects_collapsed_fallback_sources():
+    history_meaning = (
+        "Resolve the submitted Cardholder ID through carriermemidhistory enrollid "
+        "and enrollkeys memid."
+    )
+    direct_only = (
+        "SELECT RTRIM(e.memid) AS MemberId "
+        "FROM plandata_rx_production.dbo.enrollkeys e WITH (NOLOCK) "
+        "WHERE RTRIM(e.carriermemid) = {{CardholderId}}"
+    )
+    secondary_meaning = (
+        "Resolve the submitted Cardholder ID using member secondary ID and return memid."
+    )
+    dto_substitute = (
+        "SELECT m.MemberID FROM InMemory.dbo.MEMBER m "
+        "WHERE m.CardholderID = {{CardholderId}}"
+    )
+
+    history_artifacts = _find_required_business_concept_artifacts(
+        direct_only, history_meaning
+    )
+    assert "historical carrier-member resolution is missing carriermemidhistory" in history_artifacts
+    assert "historical carrier-member resolution does not correlate enrollid" in history_artifacts
+    assert _find_required_business_concept_artifacts(dto_substitute, secondary_meaning) == [
+        "secondary-ID member resolution must use physical plandata member",
+        "secondary-ID member resolution does not filter member.secondaryid by CardholderId",
+    ]
+
+
 def test_required_business_concepts_accept_approved_runtime_placeholders():
     sql = (
         "SELECT {{QuantityDispensed}} AS QuantityDispensed, n.PS AS PackageSize "

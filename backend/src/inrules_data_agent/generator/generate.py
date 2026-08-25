@@ -48,6 +48,10 @@ _LIVE_TABLE_KEYWORDS: list[tuple[str, tuple[str, str, str]]] = [
     ("scc=", ("plandata_rx_production", "dbo", "edi_pharm_universal")),
     ("scc =", ("plandata_rx_production", "dbo", "edi_pharm_universal")),
     ("enrollkeys", ("plandata_rx_production", "dbo", "enrollkeys")),
+    ("carriermemidhistory", ("plandata_rx_production", "dbo", "carriermemidhistory")),
+    ("carrier member history", ("plandata_rx_production", "dbo", "carriermemidhistory")),
+    ("secondaryid", ("plandata_rx_production", "dbo", "member")),
+    ("secondary id", ("plandata_rx_production", "dbo", "member")),
     ("headofhouse", ("plandata_rx_production", "dbo", "member")),
     ("member table", ("plandata_rx_production", "dbo", "member")),
     (" left join member", ("plandata_rx_production", "dbo", "member")),
@@ -105,9 +109,10 @@ Rules:
    - {incoming_gcnseqno}, {incoming_gcn_seqno}, and incoming GCN all mean
      {{ClaimRequest.DrugRequested.GCNSeqNo.Code}}.
    - {incoming_hic3} means {{ClaimRequest.DrugRequested.HIC3.Code}}.
-   - {member_id}, {participant_id}, {cardholder_id}, resolved member id, and
-     carriermemid from the incoming claim all mean {{MemberId}} unless a query
-     explicitly resolves a different member id set.
+   - {member_id}, {participant_id}, and resolved member id mean {{MemberId}}.
+   - A submitted cardholder ID used to resolve a physical memid through enrollkeys,
+     carriermemidhistory, or member.secondaryid means {{CardholderId}}. Do not label
+     that lookup input {{MemberId}}; MemberId is the resolved output.
    - {provider_npi} and incoming provider id mean {{ProviderId}}.
    - {rx_number}, {rxnumber}, prescription number, service reference number,
      and incoming claim Rx Number mean {{RxNumber}}.
@@ -269,6 +274,15 @@ Rules:
     and a fallback source, a fallback-only query is incomplete. Retrieve the primary fact
     first using its exact live DDL. If the requested value is absent from that table's DDL,
     return null rather than inventing the column or silently substituting the fallback.
+      Reusable member-resolution shape: preserve each explicitly requested source path as
+    a distinct lookup using {{CardholderId}} as the submitted value and physical memid as
+    the result. A current carrier-member lookup filters enrollkeys.carriermemid. A historical
+    carrier-member lookup joins carriermemidhistory.enrollid to enrollkeys.enrollid and filters
+    carriermemidhistory.carriermemid; order matching enrollkeys rows by segtype DESC, termdate
+    DESC, then effdate ASC. A secondary-ID fallback filters physical member.secondaryid.
+    Never replace either fallback with InMemory.MEMBER.CardholderID, and never reuse the
+    direct enrollkeys.carriermemid query for the historical path. Keep downstream fallback
+    sequencing outside these atomic source queries.
     NDC maintenance matching uses exact DDL names Planid, EffDate, TermDate, NDCKey,
     GCN_SeqNo, and TC; use inclusive DOS filtering and, when one row is requested, rank
     exact NDC before GCN sequence before therapeutic class, then latest EffDate and
@@ -387,6 +401,7 @@ _PHYSICAL_TABLE_WITH_ALIAS_RE = re.compile(
 
 _REVIEWED_JOIN_KEYS = {
     frozenset({("enrollkeys", "memid"), ("member", "memid")}),
+    frozenset({("carriermemidhistory", "enrollid"), ("enrollkeys", "enrollid")}),
     frozenset({("enrollkeys", "enrollid"), ("enrollcoverage", "enrollid")}),
     frozenset({("entity", "entid"), ("provider", "entityid")}),
     frozenset({("entity", "entid"), ("member", "entityid")}),
@@ -841,6 +856,36 @@ WHERE eh.CardHolderId = {{MemberId}}
   AND eh.Status = '1'
   AND eh.RejectEdits_EditId LIKE CONCAT('%', {{RejectEditId}}, '%')
   AND eh.IT_CNT > 0"""
+
+    member_history_tables = {
+        "plandata_rx_production.dbo.carriermemidhistory",
+        "plandata_rx_production.dbo.enrollkeys",
+    }
+    if (
+        member_history_tables <= tables
+        and re.search(r"\b(?:carrier\s*member\s*id|carriermemid)\s*history|\bcarriermemidhistory\b", meaning)
+        and re.search(r"\b(?:resolve|resolution|memid|member\s*id)\b", meaning)
+    ):
+        return """SELECT TOP (1)
+    RTRIM(ek.memid) AS MemberId
+FROM plandata_rx_production.dbo.carriermemidhistory cmh WITH (NOLOCK)
+JOIN plandata_rx_production.dbo.enrollkeys ek WITH (NOLOCK)
+    ON ek.enrollid = cmh.enrollid
+WHERE RTRIM(cmh.carriermemid) = {{CardholderId}}
+  AND RTRIM(ek.memid) <> ''
+ORDER BY ek.segtype DESC, ek.termdate DESC, ek.effdate ASC, ek.enrollid ASC"""
+
+    if (
+        "plandata_rx_production.dbo.member" in tables
+        and re.search(r"\b(?:member\.)?secondary\s*_?id\b|\bsecondaryid\b", meaning)
+        and re.search(r"\b(?:resolve|resolution|memid|member\s*id|associated)\b", meaning)
+    ):
+        return """SELECT TOP (1)
+    RTRIM(m.memid) AS MemberId
+FROM plandata_rx_production.dbo.member m WITH (NOLOCK)
+WHERE RTRIM(m.secondaryid) = {{CardholderId}}
+  AND RTRIM(m.memid) <> ''
+ORDER BY m.memid ASC"""
 
     partial_tables = {
         "plandata_rx_production.dbo.claimpartial",
@@ -1589,6 +1634,60 @@ def _find_required_business_concept_artifacts(
         r"\bndcmaintdetails\b", normalized_sql, re.IGNORECASE
     ):
         artifacts.append("required primary source 'NDCMaintDetails' is absent from the SQL")
+
+    member_history_resolution = bool(re.search(
+        r"\b(?:carrier\s*member\s*id|carriermemid)\s*history|\bcarriermemidhistory\b",
+        business_meaning,
+        re.IGNORECASE,
+    ))
+    if member_history_resolution:
+        if not re.search(r"\bcarriermemidhistory\b", normalized_sql):
+            artifacts.append(
+                "historical carrier-member resolution is missing carriermemidhistory"
+            )
+        if not re.search(r"\benrollkeys\b", normalized_sql):
+            artifacts.append(
+                "historical carrier-member resolution is missing enrollkeys"
+            )
+        if not re.search(
+            r"\b(?:[a-z_][a-z0-9_]*\.)?enrollid\s*=\s*"
+            r"(?:[a-z_][a-z0-9_]*\.)?enrollid\b",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "historical carrier-member resolution does not correlate enrollid"
+            )
+        if not re.search(
+            r"\b(?:[a-z_][a-z0-9_]*\.)?carriermemid\b[^=\n]{0,20}=\s*"
+            r"\{\{[^}]*cardholderid[^}]*\}\}",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "historical carrier-member resolution does not filter the submitted CardholderId"
+            )
+
+    secondary_id_resolution = bool(re.search(
+        r"\b(?:member\.)?secondary\s*_?id\b|\bsecondaryid\b",
+        business_meaning,
+        re.IGNORECASE,
+    ))
+    if secondary_id_resolution:
+        if not re.search(
+            r"\b(?:from|join)\s+(?:\[?plandata_rx_production\]?\s*\.\s*)"
+            r"\[?dbo\]?\s*\.\s*\[?member\]?\b",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "secondary-ID member resolution must use physical plandata member"
+            )
+        if not re.search(
+            r"\b(?:[a-z_][a-z0-9_]*\.)?secondaryid\b[^=\n]{0,20}=\s*"
+            r"\{\{[^}]*cardholderid[^}]*\}\}",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "secondary-ID member resolution does not filter member.secondaryid by CardholderId"
+            )
 
     physical_claim_history = bool(re.search(
         r"\b(?:from|join)\s+(?:\[[^]]+\]|[a-z0-9_]+)\s*\.\s*(?:\[[^]]+\]|[a-z0-9_]+)\s*\.\s*\[?claim\]?\b",
