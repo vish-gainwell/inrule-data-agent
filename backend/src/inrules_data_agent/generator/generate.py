@@ -62,6 +62,9 @@ _LIVE_TABLE_KEYWORDS: list[tuple[str, tuple[str, str, str]]] = [
     ("part b drug coverage", ("HRX", "dbo", "NDCMedicareCov")),
     ("ndcmaintdetails", ("HRX", "dbo", "NDCMaintDetails")),
     ("ndc maint details", ("HRX", "dbo", "NDCMaintDetails")),
+    ("ncpdp_reject_codes", ("HRX", "dbo", "NCPDP_Reject_Codes")),
+    ("ncpdp reject codes", ("HRX", "dbo", "NCPDP_Reject_Codes")),
+    ("ncpdp reject-code", ("HRX", "dbo", "NCPDP_Reject_Codes")),
     ("maxscriptdays", ("HRX", "dbo", "NDC_Mstr")),
 ]
 
@@ -328,6 +331,14 @@ Rules:
     PARAMETER_NAME = 'REJECT_CODE' AND {{DateOfService}} BETWEEN EFFDATE AND ENDDATE.
     The DataQuery returns the active list; downstream occurrence-aware logic compares only
     the submitted reject-code positions allowed by the request's reject count.
+      Effective master validation shape: when current submitted occurrences must be validated
+    against an effective master table, pass the considered submitted values as a collection
+    parameter and return only matching active master values. Never query transaction/history
+    tables to recover those submitted values. For NCPDP reject-code validation, query
+    HRX.dbo.NCPDP_Reject_Codes, filter reject_code with [[SubmittedOtherPayerRejectCodes]],
+    and apply the inclusive DateOfService effdate/termdate window. Payer iteration, submitted
+    reject count, the first-five boundary, blank handling, and invalid-code detection remain
+    downstream rule behavior.
     Reusable compound quantity shape: select SUM(TRY_CONVERT(decimal(29,9),
     COMPOUND.drug_qty)); join NDC_Mstr on COMPOUND.ndc = NDC_Mstr.NDCKey; filter
     COMPOUND.tcn with [[HistoricalTcns]] and NDC_Mstr.GCN_SeqNo with the incoming GCN
@@ -854,6 +865,18 @@ WHERE d.Type = 'PkgBilling_Bypass'
         return """SELECT COUNT(*) AS ContractTermCount
 FROM InMemory.dbo.CONTRACT_TERM ct
 WHERE RTRIM(ct.ContractId) <> ''"""
+
+    if (
+        "hrx.dbo.ncpdp_reject_codes" in tables
+        and re.search(r"\bncpdp\b[^.\n]{0,80}\breject[-_ ]?code", meaning)
+        and re.search(r"\b(?:submitted|current)\b", meaning)
+        and re.search(r"\b(?:valid|master|effective|occurrence)\b", meaning)
+    ):
+        return """SELECT
+    RTRIM(rc.reject_code) AS NcpdpRejectCode
+FROM HRX.dbo.NCPDP_Reject_Codes rc WITH (NOLOCK)
+WHERE rc.reject_code IN ([[SubmittedOtherPayerRejectCodes]])
+  AND {{DateOfService}} BETWEEN rc.effdate AND rc.termdate"""
 
     if (
         "hrx.dbo.ndcmaintdetails" in tables
@@ -2007,9 +2030,64 @@ def _find_required_business_concept_artifacts(
                 "date-sensitive NDCParameters lookup is missing its EFFDATE/ENDDATE evaluation window"
             )
 
+    ncpdp_reject_master_validation = bool(
+        re.search(r"\bncpdp\b[^.\n]{0,100}\breject[-_ ]?code", business_meaning, re.IGNORECASE)
+        and re.search(r"\b(?:submitted|occurrence|master|valid)\b", business_meaning, re.IGNORECASE)
+    )
+    if ncpdp_reject_master_validation:
+        table_names = {
+            canonical
+            for match in _SQL_TABLE_RE.finditer(sql)
+            if (canonical := _canonical_table_ref(match.group(1)))
+        }
+        if "hrx.dbo.ncpdp_reject_codes" not in table_names:
+            artifacts.append(
+                "submitted NCPDP reject validation is missing NCPDP_Reject_Codes"
+            )
+        extra_tables = sorted(
+            table for table in table_names
+            if table != "hrx.dbo.ncpdp_reject_codes"
+        )
+        if extra_tables:
+            artifacts.append(
+                "submitted NCPDP reject validation re-queries transaction/history data: "
+                + ", ".join(extra_tables)
+            )
+        projection_match = re.search(
+            r"\bselect\b(?P<projection>.*?)\bfrom\b",
+            normalized_sql,
+            re.IGNORECASE | re.DOTALL,
+        )
+        projection_sql = projection_match.group("projection") if projection_match else ""
+        if not re.search(r"\breject_code\b", projection_sql):
+            artifacts.append(
+                "NCPDP reject master lookup does not return reject_code values"
+            )
+        if not re.search(
+            r"\b(?:[a-z_][a-z0-9_]*\.)?reject_code\s+in\s*"
+            r"\(\s*\[\[[^]]*submitted[^]]*reject[^]]*codes?[^]]*\]\]\s*\)",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "NCPDP reject master lookup is not scoped to submitted reject codes"
+            )
+        if not re.search(
+            r"\{\{[^}]*dateofservice[^}]*\}\}\s+between\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s+and\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?termdate",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "NCPDP reject master lookup is missing its DOS effective window"
+            )
+        if re.search(r"\b(?:COUNT|SUM|MIN|MAX|AVG)\s*\(", normalized_sql):
+            artifacts.append(
+                "NCPDP reject master lookup returns an aggregate instead of valid codes"
+            )
+
     reject_code_list = bool(re.search(
-        r"\bndcparameters\b[^.\n]{0,100}\breject[_ ]?code\b|"
-        r"\breject[_ ]?code\b[^.\n]{0,100}\bndcparameters\b",
+        r"\bndcparameters\b[^\n]{0,100}\breject[_ ]?code\b|"
+        r"\breject[_ ]?code\b[^\n]{0,100}\bndcparameters\b",
         business_meaning,
         re.IGNORECASE,
     ))

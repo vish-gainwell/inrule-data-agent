@@ -920,6 +920,60 @@ def test_reject_code_configuration_list_stays_effective_and_occurrence_independe
     assert _find_required_business_concept_artifacts(corrected, meaning) == []
 
 
+def test_ncpdp_reject_master_validation_uses_submitted_effective_codes():
+    meaning = (
+        "Validate each submitted Other Payer Reject Code occurrence against the effective "
+        "NCPDP reject-code master list."
+    )
+    wrong = (
+        "SELECT RTRIM(e.OtherPayerRejects) AS OtherPayerRejectCode "
+        "FROM plandata_rx_production.dbo.edi_pharm_universal e WITH (NOLOCK) "
+        "WHERE RTRIM(e.rxnumber) = {{RxNumber}}"
+    )
+    corrected = (
+        "SELECT RTRIM(rc.reject_code) AS NcpdpRejectCode "
+        "FROM HRX.dbo.NCPDP_Reject_Codes rc WITH (NOLOCK) "
+        "WHERE rc.reject_code IN ([[SubmittedOtherPayerRejectCodes]]) "
+        "AND {{DateOfService}} BETWEEN rc.effdate AND rc.termdate"
+    )
+
+    artifacts = _find_required_business_concept_artifacts(wrong, meaning)
+    assert "submitted NCPDP reject validation is missing NCPDP_Reject_Codes" in artifacts
+    assert any("re-queries transaction/history data" in item for item in artifacts)
+    assert "NCPDP reject master lookup does not return reject_code values" in artifacts
+    assert "NCPDP reject master lookup is not scoped to submitted reject codes" in artifacts
+    assert "NCPDP reject master lookup is missing its DOS effective window" in artifacts
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+
+
+def test_generation_uses_effective_ncpdp_master_for_submitted_reject_occurrences():
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[NCPDP_Reject_Codes] ("
+        "[PK_INT] int, [reject_code] varchar(3), [reject_desc] varchar(100), "
+        "[effdate] smalldatetime, [termdate] smalldatetime);"
+    )
+    meaning = (
+        "For the current prescription, inspect each submitted Other Payer Reject Code "
+        "occurrence up to the submitted count and first five per payer; determine whether "
+        "any code is not valid in the effective NCPDP reject-code master list."
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch("inrules_data_agent.generator.generate._call_openai") as call_openai,
+    ):
+        result = generate_query_result_for_step(meaning)
+
+    assert result["validation_status"] == "VALIDATED"
+    query = result["queries"][0]
+    assert "FROM HRX.dbo.NCPDP_Reject_Codes" in query
+    assert "rc.reject_code IN ([[SubmittedOtherPayerRejectCodes]])" in query
+    assert "{{DateOfService}} BETWEEN rc.effdate AND rc.termdate" in query
+    assert "edi_pharm_universal" not in query
+    assert "COUNT(" not in query
+    call_openai.assert_not_called()
+
+
 def test_selected_history_row_requires_stable_identifier_correlation():
     meaning = "Return Quantity Prescribed from the selected original paid claim."
     repeated_search = (
@@ -2565,8 +2619,9 @@ def test_select_ddls_includes_dto_derived_in_memory_tables():
 def test_select_ddls_without_table_keywords_returns_all_packaged_schemas():
     ddls = select_ddls("Completely unknown data requirement")
 
-    assert len(ddls) == 62
+    assert len(ddls) == 63
     joined = "\n".join(ddls)
+    assert "[HRX].[dbo].[NCPDP_Reject_Codes]" in joined
     assert "[HRX].[dbo].[step_therapy_drug]" in joined
     assert "[HRX].[dbo].[step_therapy_level]" in joined
     assert "[plandata_rx_production].[dbo].[authservice]" in joined
