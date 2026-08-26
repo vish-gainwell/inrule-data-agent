@@ -585,6 +585,32 @@ def test_effective_ingredient_desi_validation_rejects_independent_attribute_look
     assert _find_required_business_concept_artifacts(bundled, meaning) == []
 
 
+def test_effective_current_ndc_desi_validation_rejects_independent_attribute_lookup():
+    meaning = (
+        "The DESI value on the same date-effective NDC_DESI_Mstr record for the "
+        "current NDC and DOS is an invalid value."
+    )
+    independent = (
+        "SELECT RTRIM(d.DESI) AS DesiValue "
+        "FROM HRX.dbo.NDC_DESI_Mstr d WITH (NOLOCK) "
+        "WHERE d.NDCKey = {{ClaimTransaction.Ndc}} "
+        "AND {{DateOfService}} BETWEEN d.EffDate AND d.EndDate "
+        "AND RTRIM(d.DESI) IN ('5', '6')"
+    )
+    bundled = (
+        "SELECT TOP (1) 1 AS RecordFound, d.DESI AS Desi, d.DESIDate AS DesiDate "
+        "FROM HRX.dbo.NDC_DESI_Mstr d WITH (NOLOCK) "
+        "WHERE d.NDCKey = {{ClaimTransaction.Ndc}} "
+        "AND {{DateOfService}} BETWEEN d.EffDate AND d.EndDate "
+        "ORDER BY d.EffDate DESC, d.EndDate DESC"
+    )
+
+    artifacts = _find_required_business_concept_artifacts(independent, meaning)
+    assert "same effective current-NDC DESI row is missing bundled outputs: RecordFound, DESI, DESIDate" in artifacts
+    assert "same effective current-NDC DESI lookup does not select one row" in artifacts
+    assert _find_required_business_concept_artifacts(bundled, meaning) == []
+
+
 def test_grounded_carrier_member_history_resolution_preserves_source_path():
     ddl = "\n".join([
         "CREATE TABLE [plandata_rx_production].[dbo].[carriermemidhistory] "
@@ -2039,6 +2065,41 @@ def test_generation_converges_effective_ingredient_desi_tasks_on_one_row():
     assert "d.DESI AS Desi" in queries[0]
     assert "d.DESIDate AS DesiDate" in queries[0]
     assert "ORDER BY d.EffDate DESC, d.EndDate DESC" in queries[0]
+    call_openai.assert_not_called()
+
+
+def test_generation_converges_current_ndc_desi_tasks_on_one_effective_row():
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[NDC_DESI_Mstr] ("
+        "[NDCKey] char(11), [DESI] char(1), [DESIDate] datetime, "
+        "[EffDate] datetime, [EndDate] datetime, "
+        "CONSTRAINT [PK_NDC_DESI_Mstr] PRIMARY KEY ([NDCKey], [EffDate], [EndDate]));"
+    )
+    meanings = [
+        "No date-effective NDC_DESI_Mstr record exists for the current prescription NDC "
+        "on the claim Date of Service.",
+        "The DESI value on the same date-effective NDC_DESI_Mstr record for the current "
+        "NDC and DOS is invalid value 5.",
+        "The DESI value on the same active NDC_DESI_Mstr lookup row is invalid value 6.",
+        "The DESI date on the same date-effective NDC_DESI_Mstr record is on or before "
+        "the claim Date of Service.",
+    ]
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch("inrules_data_agent.generator.generate._call_openai") as call_openai,
+    ):
+        results = [generate_query_result_for_step(meaning) for meaning in meanings]
+
+    queries = [result["queries"][0] for result in results]
+    assert len(set(queries)) == 1
+    assert all(result["validation_status"] == "VALIDATED" for result in results)
+    assert "d.NDCKey = {{ClaimTransaction.Ndc}}" in queries[0]
+    assert "1 AS RecordFound" in queries[0]
+    assert "d.DESI AS Desi" in queries[0]
+    assert "d.DESIDate AS DesiDate" in queries[0]
+    assert "ORDER BY d.EffDate DESC, d.EndDate DESC" in queries[0]
+    assert "{{IngredientNdc}}" not in queries[0]
     call_openai.assert_not_called()
 
 

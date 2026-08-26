@@ -894,17 +894,21 @@ ORDER BY nmd.EffDate DESC, nmd.ChangedDate DESC,
 
     if (
         "hrx.dbo.ndc_desi_mstr" in tables
-        and "compound ingredient" in meaning
         and re.search(r"\bndc[_ ]?desi[_ ]?mstr\b", meaning)
-        and re.search(r"\b(?:effective|desi|lookup|row)\b", meaning)
+        and re.search(r"\b(?:effective|active|desi|lookup|row|record)\b", meaning)
     ):
-        return """SELECT TOP (1)
+        ndc_input = (
+            "{{IngredientNdc}}"
+            if "compound ingredient" in meaning
+            else "{{ClaimTransaction.Ndc}}"
+        )
+        return f"""SELECT TOP (1)
     1 AS RecordFound,
     d.DESI AS Desi,
     d.DESIDate AS DesiDate
 FROM HRX.dbo.NDC_DESI_Mstr d WITH (NOLOCK)
-WHERE d.NDCKey = {{IngredientNdc}}
-  AND {{DateOfService}} BETWEEN d.EffDate AND d.EndDate
+WHERE d.NDCKey = {ndc_input}
+  AND {{{{DateOfService}}}} BETWEEN d.EffDate AND d.EndDate
 ORDER BY d.EffDate DESC, d.EndDate DESC"""
 
     if (
@@ -1878,6 +1882,72 @@ def _find_required_business_concept_artifacts(
         ):
             artifacts.append(
                 "same effective ingredient DESI lookup lacks deterministic effective-row ordering"
+            )
+
+    same_effective_current_ndc_desi_row = bool(
+        re.search(r"\bndc[_ ]?desi[_ ]?mstr\b", business_meaning, re.IGNORECASE)
+        and not re.search(r"\bcompound ingredient\b", business_meaning, re.IGNORECASE)
+        and re.search(
+            r"\bsame\b[^.\n]{0,80}\b(?:effective|active|record|row)\b|"
+            r"\b(?:no\s+)?date-effective\b|\bactive\s+desi\s+lookup\s+row\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+    )
+    if same_effective_current_ndc_desi_row:
+        projection_match = re.search(
+            r"\bselect\b(?P<projection>.*?)\bfrom\b",
+            normalized_sql,
+            re.IGNORECASE | re.DOTALL,
+        )
+        projection_sql = projection_match.group("projection") if projection_match else ""
+        required_outputs = (
+            ("RecordFound", r"\b1\s+as\s+recordfound\b"),
+            ("DESI", r"\b(?:[a-z_][a-z0-9_]*\.)?desi\s+as\s+desi\b"),
+            ("DESIDate", r"\b(?:[a-z_][a-z0-9_]*\.)?desidate\s+as\s+desidate\b"),
+        )
+        missing_outputs = [
+            label
+            for label, pattern in required_outputs
+            if not re.search(pattern, projection_sql, re.IGNORECASE)
+        ]
+        if missing_outputs:
+            artifacts.append(
+                "same effective current-NDC DESI row is missing bundled outputs: "
+                + ", ".join(missing_outputs)
+            )
+        if not re.search(r"\bndc_desi_mstr\b", normalized_sql):
+            artifacts.append(
+                "same effective current-NDC DESI lookup is missing NDC_DESI_Mstr"
+            )
+        if not re.search(
+            r"\b(?:[a-z_][a-z0-9_]*\.)?ndckey\b[^=\n]{0,20}=\s*"
+            r"\{\{[^}]*claimtransaction[^}]*ndc[^}]*\}\}",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "same effective current-NDC DESI lookup is not scoped by ClaimTransaction.Ndc"
+            )
+        if not re.search(
+            r"\{\{[^}]*dateofservice[^}]*\}\}\s+between\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s+and\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?enddate",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "same effective current-NDC DESI lookup is missing its DOS effective window"
+            )
+        if not re.search(r"\bselect\s+top\s*\(\s*1\s*\)", normalized_sql):
+            artifacts.append(
+                "same effective current-NDC DESI lookup does not select one row"
+            )
+        if not re.search(
+            r"\border\s+by\s+(?:[a-z_][a-z0-9_]*\.)?effdate\s+desc\s*,\s*"
+            r"(?:[a-z_][a-z0-9_]*\.)?enddate\s+desc",
+            normalized_sql,
+        ):
+            artifacts.append(
+                "same effective current-NDC DESI lookup lacks deterministic effective-row ordering"
             )
 
     physical_claim_history = bool(re.search(
