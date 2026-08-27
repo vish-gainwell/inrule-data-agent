@@ -446,7 +446,10 @@ def test_grounded_compound_pattern_uses_prefiltered_tcns():
         "CREATE TABLE [HRX].[dbo].[NDC_Mstr] ([NDCKey] char(11), [GCN_SeqNo] char(6));",
     ])
     sql = _grounded_business_pattern_candidate(
-        "Calculate historical compound quantity for the same GCN_SeqNo", ddl
+        "Calculate historical compound quantity for the same GCN_SeqNo. The reviewed "
+        "HistoricalTcns contract is prefiltered to paid PAY/WAITPAY claims, UNIVERSALC, "
+        "non-reversed rows, the current member, and the DaysTillRefill date window.",
+        ddl,
     )
 
     assert sql is not None
@@ -1483,10 +1486,52 @@ def test_prompt_preserves_history_scope_and_primary_lookup():
     assert "exact NDC before GCN sequence before therapeutic class" in SYSTEM_PROMPT
 
 
-def test_prefiltered_historical_tcns_represent_upstream_claim_scope():
+def test_historical_tcns_requires_an_explicit_reviewed_collection_contract():
     meaning = (
         "Sum historical compound quantity for paid UNIVERSALC claims with blank "
-        "resubclaimid and the same GCN"
+        "resubclaimid, the current member, a DaysTillRefill date window, and the same GCN."
+    )
+    sql = (
+        "SELECT SUM(TRY_CONVERT(decimal(29,9), c.drug_qty)) AS HistoricalQuantity "
+        "FROM HRX.dbo.COMPOUND c WITH (NOLOCK) "
+        "JOIN HRX.dbo.NDC_Mstr n WITH (NOLOCK) ON n.NDCKey = c.ndc "
+        "WHERE c.tcn IN ([[HistoricalTcns]]) AND n.GCN_SeqNo = {{GCNSeqNo}}"
+    )
+
+    assert _find_required_business_concept_artifacts(sql, meaning) == [
+        "HistoricalTcns collection has no explicit reviewed prefilter contract"
+    ]
+
+
+def test_unproven_historical_tcns_candidate_remains_review_only():
+    meaning = (
+        "Calculate historical compound quantity for paid UNIVERSALC, non-reversed claims "
+        "for the current member and DaysTillRefill window with the same GCN_SeqNo."
+    )
+    candidate = (
+        "SELECT SUM(TRY_CONVERT(decimal(29,9), c.drug_qty)) AS HistoricalQuantity "
+        "FROM HRX.dbo.COMPOUND c WITH (NOLOCK) "
+        "JOIN HRX.dbo.NDC_Mstr n WITH (NOLOCK) ON n.NDCKey = c.ndc "
+        "WHERE c.tcn IN ([[HistoricalTcns]]) AND n.GCN_SeqNo = {{GCNSeqNo}}"
+    )
+
+    with patch(
+        "inrules_data_agent.generator.generate._call_openai", return_value=candidate
+    ):
+        result = generate_query_result_for_step(meaning, draft_mode=True)
+
+    assert result["queries"] == [candidate]
+    assert result["validation_status"] == "DRAFT_REQUIRES_REVIEW"
+    assert result["review_warnings"] == [
+        "HistoricalTcns collection has no explicit reviewed prefilter contract"
+    ]
+
+
+def test_historical_tcns_accepts_a_complete_explicit_collection_contract():
+    meaning = (
+        "Sum historical compound quantity for the same GCN. The reviewed HistoricalTcns "
+        "contract is prefiltered to PAID, PAY, or WAITPAY UNIVERSALC claims, non-reversed "
+        "rows for the current member, and the inclusive DaysTillRefill date window."
     )
     sql = (
         "SELECT SUM(TRY_CONVERT(decimal(29,9), c.drug_qty)) AS HistoricalQuantity "
@@ -1496,6 +1541,40 @@ def test_prefiltered_historical_tcns_represent_upstream_claim_scope():
     )
 
     assert _find_required_business_concept_artifacts(sql, meaning) == []
+
+
+def test_historical_tcns_contract_includes_required_certification_exclusions():
+    sql = (
+        "SELECT SUM(TRY_CONVERT(decimal(29,9), c.drug_qty)) "
+        "FROM HRX.dbo.COMPOUND c WITH (NOLOCK) "
+        "WHERE c.tcn IN ([[HistoricalTcns]])"
+    )
+    incomplete = (
+        "Exclude certification numbers 04 and 99. The reviewed HistoricalTcns contract "
+        "is prefiltered to paid UNIVERSALC, non-reversed current-member rows in the "
+        "DaysTillRefill date window."
+    )
+    complete = (
+        incomplete + " The HistoricalTcns contract excludes certification numbers 04 and 99."
+    )
+
+    assert _find_required_business_concept_artifacts(sql, incomplete) == [
+        "HistoricalTcns reviewed contract does not explicitly guarantee: required certification exclusions"
+    ]
+    assert _find_required_business_concept_artifacts(sql, complete) == []
+
+
+def test_historical_tcns_does_not_silently_choose_a_conflicting_date_boundary():
+    meaning = (
+        "The history date boundary is unresolved between a strict lower bound and an "
+        "inclusive lower bound. The reviewed HistoricalTcns contract is prefiltered to "
+        "paid UNIVERSALC, non-reversed current-member rows in the DaysTillRefill window."
+    )
+    sql = "SELECT 1 FROM HRX.dbo.COMPOUND c WHERE c.tcn IN ([[HistoricalTcns]])"
+
+    assert _find_required_business_concept_artifacts(sql, meaning) == [
+        "HistoricalTcns history date boundary is explicitly unresolved"
+    ]
 
 
 def test_output_alias_repair_requests_raw_source_fact():

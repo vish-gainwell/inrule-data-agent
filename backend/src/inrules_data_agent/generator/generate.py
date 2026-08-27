@@ -223,9 +223,12 @@ Rules:
       SCHEDULEII DTO); never relabel MetricQty, DaysSupply, or intended-dispense quantity.
     - NDC_Mstr maps NDCKey to GCN_SeqNo. Never put GCN_SeqNo on enrollkeys or COMPOUND.
     - COMPOUND owns drug_qty, ndc, tcn, and CompoundType. Follow its DDL relationship
-      comments: use a prefiltered runtime TCN collection and join ndc to NDC_Mstr.NDCKey
-      when GCN filtering is required. DaysTillRefill and incoming GCN are runtime inputs,
-      never enrollkeys columns.
+      comments: use a runtime TCN collection and join ndc to NDC_Mstr.NDCKey when GCN
+      filtering is required. Treat that collection as prefiltered only when the authoritative
+      task explicitly defines its reviewed paid-status, form-type, reversal, member, and date-
+      window guarantees, plus any required certification exclusions. Otherwise return a review-
+      only candidate or no query; never invent a COMPOUND-to-claim relationship. DaysTillRefill
+      and incoming GCN are runtime inputs, never enrollkeys columns.
       Reusable DrugOverrides shape: query HRX.dbo.DrugOverrides directly; use the exact
       reviewed Type literal without deriving it from the edit ID, plus {{ClaimTransaction.Ndc}},
       {{ClaimRequest.DrugRequested.GCNSeqNo.Code}}, {{ClaimRequest.DrugRequested.HIC3.Code}},
@@ -363,8 +366,12 @@ Rules:
     Reusable compound quantity shape: select SUM(TRY_CONVERT(decimal(29,9),
     COMPOUND.drug_qty)); join NDC_Mstr on COMPOUND.ndc = NDC_Mstr.NDCKey; filter
     COMPOUND.tcn with [[HistoricalTcns]] and NDC_Mstr.GCN_SeqNo with the incoming GCN
-    runtime placeholder. HistoricalTcns represents the upstream paid, UNIVERSALC,
-    non-reversed, member/date-window claim set; do not join enrollkeys in this query.
+    runtime placeholder. Use this shape as validated only when the authoritative business
+    meaning explicitly identifies a reviewed HistoricalTcns contract and enumerates its paid,
+    UNIVERSALC, non-reversed, member, and date-window guarantees, plus certification exclusions
+    when required. A collection placeholder name alone proves none of those filters. If the
+    contract or date-boundary semantics are unresolved, keep the candidate review-only; do not
+    invent physical claim joins or silently choose a state-specific boundary.
 19. Honor the routed query task. When part of the requested contract is an approved
     runtime input, project or filter with its descriptive placeholder and retrieve the
     remaining grounded source facts from the provided DDL. Do not return null merely
@@ -1056,6 +1063,9 @@ WHERE RTRIM(p.npi) = {{PrescriberNpi}}
         "historical compound quantity" in meaning
         and "gcn_seqno" in meaning
         and compound_tables <= tables
+        and not _find_historical_tcns_contract_artifacts(
+            "c.tcn IN ([[HistoricalTcns]])", business_meaning
+        )
     ):
         return """SELECT
     n.GCN_SeqNo AS HistoryGcnSeqNo,
@@ -1659,6 +1669,72 @@ def _build_column_repair_feedback(
     )
 
 
+def _find_historical_tcns_contract_artifacts(
+    sql: str, business_meaning: str
+) -> list[str]:
+    """Require an explicit, complete contract before trusting a TCN collection."""
+    if not re.search(r"\[\[\s*historicaltcns\s*\]\]", sql, re.IGNORECASE):
+        return []
+
+    normalized_meaning = re.sub(r"\s+", " ", business_meaning).strip().lower()
+    if re.search(
+        r"(?:history|lookback|date)[- ]*(?:range|window|boundary)[^.]{0,100}"
+        r"(?:unresolved|conflict|differs|disagree)",
+        normalized_meaning,
+    ) or (
+        "strict lower bound" in normalized_meaning
+        and "inclusive lower bound" in normalized_meaning
+    ):
+        return ["HistoricalTcns history date boundary is explicitly unresolved"]
+
+    contract_match = re.search(
+        r"\bhistoricaltcns\b(?P<contract>.{0,700})",
+        normalized_meaning,
+        re.DOTALL,
+    )
+    if not contract_match or not re.search(
+        r"\b(?:reviewed|approved|contract|pre[- ]?filtered|guarantees?)\b",
+        contract_match.group(0),
+    ):
+        return [
+            "HistoricalTcns collection has no explicit reviewed prefilter contract"
+        ]
+
+    contract_text = contract_match.group("contract")
+    guarantees = (
+        ("paid status", r"\b(?:paid|pay|waitpay)\b"),
+        ("UNIVERSALC form type", r"\buniversalc\b"),
+        ("non-reversed status", r"\b(?:non[- ]?reversed|resubclaimid)\b"),
+        ("member scope", r"\bmember\b"),
+        (
+            "history date window",
+            r"\b(?:date[- ]?(?:range|window)|lookback|dateofservice|dos|daystillrefill)\b",
+        ),
+    )
+    missing = [
+        label
+        for label, pattern in guarantees
+        if not re.search(pattern, contract_text, re.IGNORECASE)
+    ]
+    certification_required = bool(re.search(
+        r"\bcertification(?:nmbr|number)?\b", normalized_meaning, re.IGNORECASE
+    ))
+    if certification_required and not re.search(
+        r"\bcertification(?:nmbr|number)?\b[^.]{0,100}\b(?:exclude|excluding|not|04|99)\b|"
+        r"\b(?:exclude|excluding|not)\b[^.]{0,100}\bcertification(?:nmbr|number)?\b",
+        contract_text,
+        re.IGNORECASE,
+    ):
+        missing.append("required certification exclusions")
+
+    if missing:
+        return [
+            "HistoricalTcns reviewed contract does not explicitly guarantee: "
+            + ", ".join(missing)
+        ]
+    return []
+
+
 def _find_required_business_concept_artifacts(
     sql: str, business_meaning: str
 ) -> list[str]:
@@ -1701,9 +1777,7 @@ def _find_required_business_concept_artifacts(
         re.IGNORECASE | re.DOTALL,
     )
     where_sql = where_match.group("where") if where_match else ""
-    prefiltered_historical_tcns = bool(
-        re.search(r"\[?\[?\{?\{?\s*historicaltcns\b", normalized_sql)
-    )
+
     prefiltered_contract_terms = bool(re.search(
         r"\b(?:from|join)\s+\[?inmemory\]?\s*\.\s*\[?dbo\]?\s*\.\s*"
         r"\[?contract_term\]?\b",
@@ -1715,7 +1789,13 @@ def _find_required_business_concept_artifacts(
         and re.search(r"\bmaxdaydose\b", normalized_sql)
         and re.search(r"\{\{[^}]*ingredientndc[^}]*\}\}", normalized_sql)
     )
-    artifacts = []
+    historical_tcns_contract_artifacts = _find_historical_tcns_contract_artifacts(
+        sql, business_meaning
+    )
+    uses_historical_tcns = bool(
+        re.search(r"\[\[\s*historicaltcns\s*\]\]", sql, re.IGNORECASE)
+    )
+    artifacts = list(historical_tcns_contract_artifacts)
 
     quantity_prescribed_fact = bool(re.search(
         r"\bquantity\s+prescribed\b|\b460[-_ ]?et\b",
@@ -1766,7 +1846,10 @@ def _find_required_business_concept_artifacts(
     for requirement_pattern, label, sql_pattern in requirements:
         if not re.search(requirement_pattern, business_meaning, re.IGNORECASE):
             continue
-        if prefiltered_historical_tcns and label in {"form type", "reversal status"}:
+
+        if uses_historical_tcns and label in {"form type", "reversal status"}:
+            # The collection-contract validator reports these together with the
+            # other required history guarantees, avoiding partial or duplicate errors.
             continue
         if prefiltered_contract_terms and label == "GCN":
             continue
