@@ -1702,6 +1702,31 @@ def _find_required_business_concept_artifacts(
         and re.search(r"\{\{[^}]*ingredientndc[^}]*\}\}", normalized_sql)
     )
     artifacts = []
+
+    in_memory_member = re.search(
+        r"\b(?:from|join)\s+\[?inmemory\]?\s*\.\s*\[?dbo\]?\s*\.\s*"
+        r"\[?member\]?(?:\s+(?:as\s+)?(?P<alias>"
+        r"(?!(?:where|join|inner|left|right|full|cross|on|with)\b)"
+        r"[a-z_][a-z0-9_]*))?",
+        normalized_sql,
+        re.IGNORECASE,
+    )
+    if in_memory_member:
+        member_alias = in_memory_member.group("alias")
+        column_prefix = (
+            rf"(?:{re.escape(member_alias)}\.)?" if member_alias else r"(?:member\.)?"
+        )
+        member_id_bound_to_cardholder = re.search(
+            rf"(?:{column_prefix}cardholderid\s*=\s*\{{\{{memberid\}}\}}|"
+            rf"\{{\{{memberid\}}\}}\s*=\s*{column_prefix}cardholderid)",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+        if member_id_bound_to_cardholder:
+            artifacts.append(
+                "resolved MemberId cannot filter InMemory MEMBER.CardholderID; use MEMBER.MemberID"
+            )
+
     for requirement_pattern, label, sql_pattern in requirements:
         if not re.search(requirement_pattern, business_meaning, re.IGNORECASE):
             continue

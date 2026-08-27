@@ -611,6 +611,25 @@ def test_effective_current_ndc_desi_validation_rejects_independent_attribute_loo
     assert _find_required_business_concept_artifacts(bundled, meaning) == []
 
 
+def test_resolved_member_id_cannot_filter_inmemory_member_cardholder_id():
+    meaning = "Return the already-resolved current member's Date of Birth."
+    wrong = (
+        "SELECT m.BirthDate FROM InMemory.dbo.MEMBER m "
+        "WHERE m.CardholderID = {{MemberId}}"
+    )
+    corrected = wrong.replace("m.CardholderID", "m.MemberID")
+    explicit_cardholder_lookup = wrong.replace("{{MemberId}}", "{{CardholderId}}")
+
+    assert _find_required_business_concept_artifacts(wrong, meaning) == [
+        "resolved MemberId cannot filter InMemory MEMBER.CardholderID; use MEMBER.MemberID"
+    ]
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+    assert _find_required_business_concept_artifacts(
+        explicit_cardholder_lookup,
+        "Return a member by the explicitly submitted CardholderId.",
+    ) == []
+
+
 def test_grounded_carrier_member_history_resolution_preserves_source_path():
     ddl = "\n".join([
         "CREATE TABLE [plandata_rx_production].[dbo].[carriermemidhistory] "
