@@ -143,6 +143,48 @@ def test_uses_atomic_data_query_reason_when_no_resolved_instruction_exists():
     )
 
 
+def test_appends_and_echoes_deterministic_query_result_shape():
+    step = Step(
+        step_number=2,
+        business_meaning="Compare the submitted code with active configured values.",
+        requires_data_query=True,
+        query_result_shape="value_set",
+        entity_resolution={
+            "entities": [
+                {
+                    "data_query_instruction": (
+                        "Return active configured DelayReason codes. "
+                        "Required result shape: value_set."
+                    )
+                }
+            ]
+        },
+    )
+
+    assert _query_task_for_step(step) == (
+        "ATOMIC DATA RETRIEVAL OBJECTIVE:\n"
+        "Return active configured DelayReason codes. Required result shape: value_set.\n\n"
+        "CURRENT BUSINESS FACT CONSTRAINTS AND REQUESTED OUTPUT:\n"
+        "Compare the submitted code with active configured values."
+    )
+
+    with patch(
+        "inrules_data_agent.app.generate_query_result_for_step",
+        return_value={
+            "queries": ["SELECT PARAMETER_VALUE FROM HRX.dbo.NDCParameters"],
+            "failure_category": None,
+            "failure_reason": None,
+        },
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={"edit_id": "7200", "steps": [step.model_dump()]},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["step_queries"][0]["query_result_shape"] == "value_set"
+
+
 def test_uses_resolved_query_instruction_and_reports_unmatched_step():
     with patch(
         "inrules_data_agent.app.generate_query_result_for_step",
