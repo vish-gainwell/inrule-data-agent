@@ -217,7 +217,10 @@ Rules:
     - claim owns paid-like status, formtype, resubclaimid, member, provider, and claim dates.
     - claimpharm owns NDCKey and pharmacy claim detail, but not claim.status/formtype.
     - edi_pharm_universal owns SubmissionClarification, metricqty, dayssupply, rxnumber,
-      claimid, and claimline for SCC pharmacy history.
+      claimid, and claimline for SCC pharmacy history. MetricQty and DaysSupply are dispensing
+      facts, not NCPDP 460-ET Quantity Prescribed. When the task requires Quantity Prescribed,
+      select the documented QuantityPrescribed source field (for example from the reviewed
+      SCHEDULEII DTO); never relabel MetricQty, DaysSupply, or intended-dispense quantity.
     - NDC_Mstr maps NDCKey to GCN_SeqNo. Never put GCN_SeqNo on enrollkeys or COMPOUND.
     - COMPOUND owns drug_qty, ndc, tcn, and CompoundType. Follow its DDL relationship
       comments: use a prefiltered runtime TCN collection and join ndc to NDC_Mstr.NDCKey
@@ -1713,6 +1716,28 @@ def _find_required_business_concept_artifacts(
         and re.search(r"\{\{[^}]*ingredientndc[^}]*\}\}", normalized_sql)
     )
     artifacts = []
+
+    quantity_prescribed_fact = bool(re.search(
+        r"\bquantity\s+prescribed\b|\b460[-_ ]?et\b",
+        business_meaning,
+        re.IGNORECASE,
+    ))
+    if quantity_prescribed_fact:
+        quantity_source_sql = re.sub(r"\{\{[^}]+\}\}", "", normalized_sql)
+        quantity_source_sql = re.sub(
+            r"\bas\s+\[?[a-z_][a-z0-9_]*\]?",
+            "",
+            quantity_source_sql,
+            flags=re.IGNORECASE,
+        )
+        if not re.search(
+            r"\bquantity_?prescribed(?:_?460_?et)?\b",
+            quantity_source_sql,
+            re.IGNORECASE,
+        ):
+            artifacts.append(
+                "Quantity Prescribed task is missing an authoritative QuantityPrescribed source field"
+            )
 
     in_memory_member = re.search(
         r"\b(?:from|join)\s+\[?inmemory\]?\s*\.\s*\[?dbo\]?\s*\.\s*"

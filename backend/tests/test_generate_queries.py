@@ -1170,6 +1170,37 @@ def test_generation_uses_effective_ncpdp_master_for_submitted_reject_occurrences
     call_openai.assert_not_called()
 
 
+def test_quantity_prescribed_requires_distinct_source_fact():
+    meaning = "Return Quantity Prescribed 460-ET from the original claim."
+    dispensed_metrics = (
+        "SELECT cp.metricqty AS OriginalMetricQuantity, "
+        "cp.dayssupply AS OriginalDaysSupply "
+        "FROM plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK)"
+    )
+    intended_quantity = (
+        "SELECT {{QuantityPrescribed}} AS IncomingQuantityPrescribed, "
+        "cp.IntendedQuantityToBeDispensed AS OriginalQuantityPrescribed "
+        "FROM plandata_rx_production.dbo.ClaimPartial cp WITH (NOLOCK)"
+    )
+    prescribed_quantity = (
+        "SELECT s.QuantityPrescribed AS OriginalQuantityPrescribed "
+        "FROM InMemory.dbo.SCHEDULEII s"
+    )
+
+    expected = [
+        "Quantity Prescribed task is missing an authoritative QuantityPrescribed source field"
+    ]
+    assert _find_required_business_concept_artifacts(
+        dispensed_metrics, meaning
+    ) == expected
+    assert _find_required_business_concept_artifacts(
+        intended_quantity, meaning
+    ) == expected
+    assert _find_required_business_concept_artifacts(
+        prescribed_quantity, meaning
+    ) == []
+
+
 def test_selected_history_row_requires_stable_identifier_correlation():
     meaning = "Return Quantity Prescribed from the selected original paid claim."
     repeated_search = (
