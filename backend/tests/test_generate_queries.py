@@ -673,12 +673,33 @@ def test_resolved_member_id_filters_enrollment_member_id_not_cardholder_id():
         "AND {{DateOfService}} BETWEEN e.EffectiveDate AND e.TermDate"
     )
     corrected = wrong.replace("e.CardholderId", "e.MemberId")
-    explicit_cardholder_lookup = wrong.replace("{{MemberId}}", "{{CardholderId}}")
+    wrong_cardholder_placeholder = wrong.replace("{{MemberId}}", "{{CardholderId}}")
+    explicit_cardholder_lookup = wrong_cardholder_placeholder
 
     assert _find_required_business_concept_artifacts(wrong, meaning) == [
-        "resolved MemberId cannot filter InMemory ENROLLMENT.CardholderId; use ENROLLMENT.MemberId"
+        "resolved MemberId cannot filter InMemory ENROLLMENT.CardholderId; use ENROLLMENT.MemberId",
+        "current-member enrollment lookup must filter ENROLLMENT.MemberId by resolved MemberId",
     ]
+    assert _find_required_business_concept_artifacts(
+        wrong_cardholder_placeholder, meaning
+    ) == [
+        "current-member enrollment lookup must filter ENROLLMENT.MemberId by resolved MemberId"
+    ]
+    physical_wrong = (
+        "SELECT COUNT(*) FROM plandata_rx_production.dbo.enrollkeys e WITH (NOLOCK) "
+        "WHERE RTRIM(e.carriermemid) = {{CardholderId}} "
+        "AND {{DateOfService}} BETWEEN e.effdate AND e.termdate"
+    )
+    physical_corrected = physical_wrong.replace(
+        "RTRIM(e.carriermemid) = {{CardholderId}}",
+        "RTRIM(e.memid) = {{MemberId}}",
+    )
+
     assert _find_required_business_concept_artifacts(corrected, meaning) == []
+    assert _find_required_business_concept_artifacts(physical_wrong, meaning) == [
+        "current-member physical enrollment lookup must filter enrollkeys.memid by resolved MemberId"
+    ]
+    assert _find_required_business_concept_artifacts(physical_corrected, meaning) == []
     assert _find_required_business_concept_artifacts(
         explicit_cardholder_lookup,
         "Count enrollment segments for an explicitly submitted CardholderId.",

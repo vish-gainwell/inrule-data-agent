@@ -121,7 +121,9 @@ Rules:
      carriermemidhistory, or member.secondaryid means {{CardholderId}}. Do not label
      that lookup input {{MemberId}}; MemberId is the resolved output. After resolution,
      when an in-memory source exposes both MemberId and CardholderId, bind {{MemberId}}
-     to its MemberId column. Never use CardholderId merely because it is another member-
+     to its MemberId column. A physical current-member enrollment filter similarly uses
+     enrollkeys.memid = {{MemberId}}, not enrollkeys.carriermemid = {{CardholderId}}.
+     Never use a submitted cardholder identifier merely because it is another member-
      related identifier.
    - {provider_npi} and incoming provider id mean {{ProviderId}}.
    - {rx_number}, {rxnumber}, prescription number, service reference number,
@@ -1858,6 +1860,61 @@ def _find_required_business_concept_artifacts(
             artifacts.append(
                 f"resolved MemberId cannot filter InMemory {display_table}.{cardholder_column}; "
                 f"use {display_table}.{member_column}"
+            )
+        current_member_enrollment = bool(
+            table_name == "enrollment"
+            and re.search(
+                r"\b(?:current[- ]member|resolved\s+(?:current\s+)?member(?:id)?)\b",
+                business_meaning,
+                re.IGNORECASE,
+            )
+        )
+        if current_member_enrollment:
+            resolved_member_predicate = re.search(
+                rf"(?:{column_prefix}memberid\s*=\s*\{{\{{memberid\}}\}}|"
+                rf"\{{\{{memberid\}}\}}\s*=\s*{column_prefix}memberid)",
+                normalized_sql,
+                re.IGNORECASE,
+            )
+            if not resolved_member_predicate:
+                artifacts.append(
+                    "current-member enrollment lookup must filter ENROLLMENT.MemberId "
+                    "by resolved MemberId"
+                )
+
+    physical_enrollkeys = re.search(
+        r"\b(?:from|join)\s+\[?plandata_rx_production\]?\s*\.\s*\[?dbo\]?\s*\.\s*"
+        r"\[?enrollkeys\]?(?:\s+(?:as\s+)?(?P<alias>"
+        r"(?!(?:where|join|inner|left|right|full|cross|on|with)\b)"
+        r"[a-z_][a-z0-9_]*))?",
+        normalized_sql,
+        re.IGNORECASE,
+    )
+    current_member_enrollment_meaning = bool(re.search(
+        r"\b(?:current[- ]member|resolved\s+(?:current\s+)?member(?:id)?)\b",
+        business_meaning,
+        re.IGNORECASE,
+    ))
+    if physical_enrollkeys and current_member_enrollment_meaning:
+        enrollkeys_alias = physical_enrollkeys.group("alias")
+        enrollkeys_prefix = (
+            rf"(?:{re.escape(enrollkeys_alias)}\.)?"
+            if enrollkeys_alias
+            else r"(?:enrollkeys\.)?"
+        )
+        enrollkeys_memid = (
+            rf"(?:rtrim\s*\(\s*)?{enrollkeys_prefix}memid\s*\)?"
+        )
+        resolved_memid_predicate = re.search(
+            rf"(?:{enrollkeys_memid}\s*=\s*\{{\{{memberid\}}\}}|"
+            rf"\{{\{{memberid\}}\}}\s*=\s*{enrollkeys_memid})",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+        if not resolved_memid_predicate:
+            artifacts.append(
+                "current-member physical enrollment lookup must filter enrollkeys.memid "
+                "by resolved MemberId"
             )
 
     for requirement_pattern, label, sql_pattern in requirements:
