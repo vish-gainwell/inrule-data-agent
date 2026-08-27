@@ -411,6 +411,35 @@ def test_grounded_scc_history_pattern_uses_clean_column_ownership():
     assert "n.GCN_SeqNo = {{GCNSeqNo}}" in sql
 
 
+def test_submitted_scc_uses_runtime_request_value_not_epu_history():
+    meaning = "The submitted claim Submission Clarification Code equals 20."
+    unscoped_epu = (
+        "SELECT e.SubmissionClarification "
+        "FROM plandata_rx_production.dbo.edi_pharm_universal e WITH (NOLOCK) "
+        "WHERE RTRIM(e.SubmissionClarification) = '20'"
+    )
+    claim_scoped_epu = unscoped_epu.replace(
+        "WHERE ", "WHERE e.claimid = {{ClaimId}} AND "
+    )
+    runtime_value = (
+        "SELECT {{SubmissionClarificationCode}} AS SubmissionClarificationCode"
+    )
+    historical_epu = unscoped_epu.replace(
+        "submitted claim", "historical claim"
+    )
+
+    expected = [
+        "submitted Submission Clarification Code must use a runtime request value, not EPU history"
+    ]
+    assert _find_required_business_concept_artifacts(unscoped_epu, meaning) == expected
+    assert _find_required_business_concept_artifacts(claim_scoped_epu, meaning) == expected
+    assert _find_required_business_concept_artifacts(runtime_value, meaning) == []
+    assert _find_required_business_concept_artifacts(
+        historical_epu,
+        "Return the historical claim Submission Clarification Code.",
+    ) == []
+
+
 def test_grounded_compound_pattern_uses_prefiltered_tcns():
     ddl = "\n".join([
         "CREATE TABLE [HRX].[dbo].[COMPOUND] ([tcn] nvarchar(17), [ndc] nvarchar(50), [drug_qty] nvarchar(50));",

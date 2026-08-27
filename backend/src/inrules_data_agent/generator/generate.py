@@ -246,6 +246,11 @@ Rules:
     a simple ContractId/date filter reconstructs those physical branches, and do not invent
     physical term-table SQL when their DDL is absent. For a no-match/count fact, count loaded
     rows whose ContractId is nonblank.
+      Current submitted SCC shape: a submitted/current claim Submission Clarification Code
+    is a runtime request value. Use {{SubmissionClarificationCode}} (or a routed submitted SCC
+    collection placeholder when the task names multiple occurrences); never query
+    edi_pharm_universal to recover it. Use EPU only when the business meaning explicitly asks
+    for historical SCC claim data.
       Reusable SCC history shape: select edi_pharm_universal.metricqty and dayssupply;
     join claim on claimid for status/formtype/resubclaimid/date/member/provider filters;
     join claimpharm on claimid and claimline, then NDC_Mstr on claimpharm.ndckey for GCN;
@@ -1987,6 +1992,23 @@ def _find_required_business_concept_artifacts(
         normalized_sql,
         re.IGNORECASE,
     ))
+    submitted_scc_lookup = bool(
+        re.search(
+            r"\b(?:submitted|current\s+claim|claim)\b[^.\n]{0,100}"
+            r"\bsubmission\s+clarification(?:\s+code)?\b|"
+            r"\bsubmission\s+clarification(?:\s+code)?\b[^.\n]{0,100}"
+            r"\b(?:submitted|current\s+claim)\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+        and re.search(r"\bedi_pharm_universal\b", normalized_sql, re.IGNORECASE)
+        and not re.search(r"\b(?:historical|history|prior|previous)\b", business_meaning, re.IGNORECASE)
+    )
+    if submitted_scc_lookup:
+        artifacts.append(
+            "submitted Submission Clarification Code must use a runtime request value, not EPU history"
+        )
+
     current_claim_configuration_lookup = bool(
         physical_claim_history
         and re.search(r"\bndcparameters\b", normalized_sql, re.IGNORECASE)
