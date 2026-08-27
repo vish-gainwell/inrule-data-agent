@@ -832,6 +832,75 @@ def test_date_sensitive_parameter_requires_effective_evaluation_window():
     assert _find_required_business_concept_artifacts(current_date_window, meaning) == []
 
 
+def test_active_parameter_window_preserves_nullable_date_defaults():
+    meaning = (
+        "Return the active default threshold parameter for the claim date of service."
+    )
+    bare_window = (
+        "SELECT p.DEC_PARAM_VAL FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'DefaultThreshold' "
+        "AND {{DateOfService}} BETWEEN p.EFFDATE AND p.ENDDATE"
+    )
+    open_ended_window = (
+        "SELECT p.DEC_PARAM_VAL FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'DefaultThreshold' "
+        "AND {{DateOfService}} BETWEEN "
+        "ISNULL(p.EFFDATE, {{MinDate}}) AND ISNULL(p.ENDDATE, {{MaxDate}})"
+    )
+
+    assert _find_required_business_concept_artifacts(bare_window, meaning) == [
+        "active NDCParameters lookup is missing nullable EFFDATE/ENDDATE open-ended defaults"
+    ]
+    assert _find_required_business_concept_artifacts(open_ended_window, meaning) == []
+
+
+def test_active_drug_override_requires_date_of_service_window():
+    meaning = (
+        "Resolve the active threshold override for the current drug on the date of service."
+    )
+    unscoped = (
+        "SELECT d.Type FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE d.NDCKey = {{ClaimTransaction.Ndc}}"
+    )
+    scoped = unscoped + (
+        " AND {{DateOfService}} BETWEEN d.EffDate AND d.TermDate"
+    )
+
+    assert _find_required_business_concept_artifacts(unscoped, meaning) == [
+        "active DrugOverrides lookup is missing its DateOfService EffDate/TermDate window"
+    ]
+    assert _find_required_business_concept_artifacts(scoped, meaning) == []
+
+
+def test_active_configuration_lookup_does_not_requery_current_claim_amount():
+    meaning = (
+        "Compare the current claim amount paid to the active configured threshold."
+    )
+    mixed = (
+        "SELECT c.totalpaid, p.DEC_PARAM_VAL "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN HRX.dbo.NDCParameters p WITH (NOLOCK) ON 1 = 1 "
+        "WHERE c.memid = {{MemberId}} AND c.startdate = {{DateOfService}} "
+        "AND p.PARAMETER_NAME = 'DefaultThreshold' "
+        "AND {{DateOfService}} BETWEEN "
+        "ISNULL(p.EFFDATE, {{MinDate}}) AND ISNULL(p.ENDDATE, {{MaxDate}})"
+    )
+    configuration_only = (
+        "SELECT p.DEC_PARAM_VAL AS ThresholdAmount "
+        "FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'DefaultThreshold' "
+        "AND {{DateOfService}} BETWEEN "
+        "ISNULL(p.EFFDATE, {{MinDate}}) AND ISNULL(p.ENDDATE, {{MaxDate}})"
+    )
+
+    mixed_artifacts = _find_required_business_concept_artifacts(mixed, meaning)
+    assert (
+        "active configuration lookup re-reads a current-claim runtime value from physical claim history"
+        in mixed_artifacts
+    )
+    assert _find_required_business_concept_artifacts(configuration_only, meaning) == []
+
+
 def test_non_date_sensitive_parameter_does_not_require_effective_window():
     sql = (
         "SELECT p.PARAMETER_VALUE FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "

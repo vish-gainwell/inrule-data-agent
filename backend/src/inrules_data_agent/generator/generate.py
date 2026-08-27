@@ -320,9 +320,14 @@ Rules:
     date/timestamp evaluation, query NDCParameters directly and constrain the applicable
     runtime evaluation date to EFFDATE/ENDDATE. Preserve the business-specified runtime date
     source (for example DOS, adjudication date, or current date); do not silently substitute
-    another date. A default/fallback date used when the configured value is missing or invalid
+    another date. When nullable EFFDATE/ENDDATE bounds represent an active configuration
+    period, preserve open-ended records with ISNULL(EFFDATE, {{MinDate}}) and
+    ISNULL(ENDDATE, {{MaxDate}}), unless the supplied business meaning defines different null
+    semantics. A default/fallback value used when the configured parameter is absent or invalid
     remains downstream rule behavior and must not be encoded by broadening the SQL to an
-    ineffective parameter row or by joining unrelated transaction history.
+    ineffective parameter row or by joining unrelated transaction history. When the compared
+    current-claim value is already a runtime fact, return only the configured source value;
+    never re-query the physical claim table by member/date to recover that current value.
       Reusable effective configuration-list shape: query the configuration table directly
     and return its configured values. Do not join physical transaction/history tables merely
     to re-read submitted request occurrences; the downstream rule retains the current
@@ -1955,6 +1960,17 @@ def _find_required_business_concept_artifacts(
         normalized_sql,
         re.IGNORECASE,
     ))
+    current_claim_configuration_lookup = bool(
+        physical_claim_history
+        and re.search(r"\bndcparameters\b", normalized_sql, re.IGNORECASE)
+        and re.search(r"\bcurrent\s+claim|\bclaim\s+amount\b", business_meaning, re.IGNORECASE)
+        and re.search(r"\b(?:active|configured|threshold|parameter)\b", business_meaning, re.IGNORECASE)
+    )
+    if current_claim_configuration_lookup:
+        artifacts.append(
+            "active configuration lookup re-reads a current-claim runtime value from physical claim history"
+        )
+
     if physical_claim_history and re.search(r"\bpaid\b", business_meaning, re.IGNORECASE):
         status_match = re.search(
             r"\bstatus\s*\)?\s+in\s*\((?P<values>[^)]*)\)",
@@ -2068,6 +2084,25 @@ def _find_required_business_concept_artifacts(
                 "DrugOverrides exclusion lookup is missing its DateOfService EffDate/TermDate window"
             )
 
+    active_drug_override_lookup = bool(
+        re.search(r"\bdrugoverrides\b", normalized_sql, re.IGNORECASE)
+        and re.search(r"\b(?:active|date\s+of\s+service|threshold\s+override)\b", business_meaning, re.IGNORECASE)
+        and re.search(r"\boverride\b", business_meaning, re.IGNORECASE)
+    )
+    if active_drug_override_lookup:
+        override_sql = re.sub(r"[\[\]]", "", sql)
+        dos = r"\{\{[^}]*dateofservice[^}]*\}\}"
+        override_window = (
+            rf"(?:{dos}\s+BETWEEN\s+(?:[a-z_][a-z0-9_]*\.)?effdate\s+AND\s+"
+            r"(?:[a-z_][a-z0-9_]*\.)?termdate|"
+            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s*<=\s*"
+            rf"{dos}\s+AND\s+(?:[a-z_][a-z0-9_]*\.)?termdate\s*>=\s*{dos})"
+        )
+        if not re.search(override_window, override_sql, re.IGNORECASE):
+            artifacts.append(
+                "active DrugOverrides lookup is missing its DateOfService EffDate/TermDate window"
+            )
+
     date_sensitive_parameter = bool(
         re.search(r"\bndcparameters\b", normalized_sql, re.IGNORECASE)
         and re.search(
@@ -2086,19 +2121,49 @@ def _find_required_business_concept_artifacts(
             r"CONVERT\s*\(\s*date\s*,\s*GETDATE\s*\(\s*\)\s*\)|"
             r"CAST\s*\(\s*GETDATE\s*\(\s*\)\s+AS\s+date\s*\))"
         )
+        start_bound = (
+            r"(?:(?:isnull|coalesce)\s*\(\s*)?"
+            r"(?:[a-z_][a-z0-9_]*\.)?effdate"
+            r"(?:\s*,\s*\{\{[^}]*mindate[^}]*\}\}\s*\))?"
+        )
+        end_bound = (
+            r"(?:(?:isnull|coalesce)\s*\(\s*)?"
+            r"(?:[a-z_][a-z0-9_]*\.)?enddate"
+            r"(?:\s*,\s*\{\{[^}]*maxdate[^}]*\}\}\s*\))?"
+        )
         effective_window = (
-            rf"(?:{runtime_date}\s+BETWEEN\s+"
-            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s+AND\s+"
-            r"(?:[a-z_][a-z0-9_]*\.)?enddate|"
-            r"(?:[a-z_][a-z0-9_]*\.)?effdate\s*<=\s*"
-            rf"{runtime_date}\s+AND\s+"
-            r"(?:[a-z_][a-z0-9_]*\.)?enddate\s*>=\s*"
-            rf"{runtime_date})"
+            rf"(?:{runtime_date}\s+BETWEEN\s+{start_bound}\s+AND\s+{end_bound}|"
+            rf"{start_bound}\s*<=\s*{runtime_date}\s+AND\s+"
+            rf"{end_bound}\s*>=\s*{runtime_date})"
         )
         if not re.search(effective_window, effective_sql, re.IGNORECASE):
             artifacts.append(
                 "date-sensitive NDCParameters lookup is missing its EFFDATE/ENDDATE evaluation window"
             )
+
+        open_ended_active_parameter = bool(re.search(
+            r"\bactive\b[^.\n]{0,100}\b(?:default|threshold|configuration|parameter)\b|"
+            r"\b(?:default|threshold|configuration|parameter)\b[^.\n]{0,100}\bactive\b",
+            business_meaning,
+            re.IGNORECASE,
+        ))
+        if open_ended_active_parameter:
+            nullable_start = re.search(
+                r"(?:isnull|coalesce)\s*\(\s*(?:[a-z_][a-z0-9_]*\.)?effdate\s*,\s*"
+                r"\{\{[^}]*mindate[^}]*\}\}\s*\)",
+                effective_sql,
+                re.IGNORECASE,
+            )
+            nullable_end = re.search(
+                r"(?:isnull|coalesce)\s*\(\s*(?:[a-z_][a-z0-9_]*\.)?enddate\s*,\s*"
+                r"\{\{[^}]*maxdate[^}]*\}\}\s*\)",
+                effective_sql,
+                re.IGNORECASE,
+            )
+            if nullable_start is None or nullable_end is None:
+                artifacts.append(
+                    "active NDCParameters lookup is missing nullable EFFDATE/ENDDATE open-ended defaults"
+                )
 
     ncpdp_reject_master_validation = bool(
         re.search(r"\bncpdp\b[^.\n]{0,100}\breject[-_ ]?code", business_meaning, re.IGNORECASE)
