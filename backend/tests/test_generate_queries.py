@@ -948,6 +948,32 @@ def test_required_like_and_same_period_semantics_are_preserved():
     )
 
 
+def test_wildcard_configuration_discriminator_requires_like_and_effective_window():
+    meaning = (
+        "Determine whether the current drug has an active threshold override for the "
+        "claim date of service."
+    )
+    literal_equality = (
+        "SELECT COUNT(*) AS OverrideCount "
+        "FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE RTRIM(d.Type) = 'Claim_Threshold_Amount_%' "
+        "AND d.NDCKey = {{ClaimTransaction.Ndc}}"
+    )
+    corrected = (
+        "SELECT COUNT(*) AS OverrideCount "
+        "FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE RTRIM(d.Type) LIKE 'Claim_Threshold_Amount_%' "
+        "AND d.NDCKey = {{ClaimTransaction.Ndc}} "
+        "AND {{DateOfService}} BETWEEN d.EffDate AND d.TermDate"
+    )
+
+    assert _find_required_business_concept_artifacts(literal_equality, meaning) == [
+        "configuration discriminator containing SQL wildcards must use LIKE rather than equality",
+        "active DrugOverrides lookup is missing its DateOfService EffDate/TermDate window",
+    ]
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+
+
 def test_current_drug_override_exclusion_requires_all_identifiers_and_active_window():
     meaning = "Check that the current prescription is not on the configured exclusion list."
     ndc_only = (

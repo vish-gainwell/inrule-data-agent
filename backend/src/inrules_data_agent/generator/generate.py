@@ -311,8 +311,10 @@ Rules:
     exact full-code equality. Apply the prefix function directly to both operands so SQL null
     behavior is preserved; retain IcdVersion = '0' and the inclusive DOS effective window.
       Pattern and effective-period shape: preserve an explicitly supplied LIKE/contains/
-    wildcard comparison; never collapse it to equality. When history must belong to the
-    same season, configuration period, or effective override set as the incoming claim,
+    wildcard comparison; never collapse it to equality. A quoted configuration discriminator
+    containing SQL wildcard characters such as % must use LIKE unless the supplied business
+    meaning explicitly says those characters are literal stored data. When history must belong
+    to the same season, configuration period, or effective override set as the incoming claim,
     constrain both the incoming date and the historical row date to the same effective/
     termination columns from the same configuration alias. A lookback window alone does
     not prove same-period membership.
@@ -1995,6 +1997,23 @@ def _find_required_business_concept_artifacts(
         r"\bLIKE\b", normalized_sql, re.IGNORECASE
     ):
         artifacts.append("required comparison operator 'LIKE' is absent from the SQL")
+
+    wildcard_discriminator_equality = re.search(
+        r"(?:(?:rtrim|ltrim|trim)\s*\(\s*)?"
+        r"(?:[a-z_][a-z0-9_]*\.)?(?:type|parameter_name|name|code)\b"
+        r"(?:\s*\))?\s*=\s*'[^']*%[^']*'",
+        normalized_sql,
+        re.IGNORECASE,
+    )
+    literal_wildcard_intent = re.search(
+        r"\b(?:literal|exact)\b[^.\n]{0,80}\b(?:percent|wildcard|%)\b",
+        business_meaning,
+        re.IGNORECASE,
+    )
+    if wildcard_discriminator_equality and literal_wildcard_intent is None:
+        artifacts.append(
+            "configuration discriminator containing SQL wildcards must use LIKE rather than equality"
+        )
 
     if re.search(r"\bsame\b[^.\n]{0,80}\b(?:season|period|effective\s+(?:window|override\s+set))\b", business_meaning, re.IGNORECASE):
         current_window = re.search(
