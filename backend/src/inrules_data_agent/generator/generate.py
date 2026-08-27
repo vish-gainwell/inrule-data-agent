@@ -267,6 +267,12 @@ Rules:
     a tie-breaker; add further grain keys when joins can duplicate the selected row. Never
     hard-code domain-specific date or ID columns, and never use DISTINCT as a substitute for
     selecting the business-defined row. Aggregate count/existence queries remain set-based.
+      Current-plus-prior aggregate shape: when a current runtime quantity/value is added to
+    a physical prior-history aggregate, exclude the in-flight row with the stable semantic
+    {{CurrentClaimId}}. Member/date/Rx filters and paid status alone do not prove that the
+    current row is absent, and an ambiguous {{ClaimId}} is not an acceptable substitute.
+    Prefer returning only the prior aggregate when downstream rule logic already adds the
+    current runtime value.
       Selected-row correlation shape: the query that selects an original/history row must
     return its stable identifier together with every fact needed by later steps. When several
     routed tasks describe the same selected occurrence but no semantic selected-row identifier
@@ -2008,6 +2014,39 @@ def _find_required_business_concept_artifacts(
         artifacts.append(
             "submitted Submission Clarification Code must use a runtime request value, not EPU history"
         )
+
+    current_plus_prior_aggregate = bool(
+        physical_claim_history
+        and re.search(r"\bsum\s*\(", normalized_sql, re.IGNORECASE)
+        and re.search(
+            r"\bcurrent\b[^.\n]{0,100}\b(?:plus|add(?:ed|ing)?|combined?)\b|"
+            r"\b(?:plus|add(?:ed|ing)?|combined?)\b[^.\n]{0,100}\bcurrent\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+        and not re.search(
+            r"\bwithout\b[^.\n]{0,80}\b(?:add(?:ed|ing)?|plus|current)\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+        and re.search(r"\b(?:prior|previous|historical|history)\b", business_meaning, re.IGNORECASE)
+        and re.search(r"\b(?:quantity|amount|total|days\s+supply)\b", business_meaning, re.IGNORECASE)
+    )
+    if current_plus_prior_aggregate:
+        current_claim_exclusion = re.search(
+            r"\b(?:[a-z_][a-z0-9_]*\.)?claimid\b\s*(?:<>|!=)\s*"
+            r"\{\{currentclaimid\}\}|"
+            r"\{\{currentclaimid\}\}\s*(?:<>|!=)\s*"
+            r"\b(?:[a-z_][a-z0-9_]*\.)?claimid\b|"
+            r"\b(?:[a-z_][a-z0-9_]*\.)?claimid\b\s+not\s+in\s*"
+            r"\(\s*\{\{currentclaimid\}\}\s*\)",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+        if current_claim_exclusion is None:
+            artifacts.append(
+                "current-plus-prior aggregate does not exclude the semantic CurrentClaimId"
+            )
 
     current_claim_configuration_lookup = bool(
         physical_claim_history

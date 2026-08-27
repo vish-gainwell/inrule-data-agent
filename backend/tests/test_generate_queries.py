@@ -880,6 +880,33 @@ def test_date_sensitive_parameter_requires_effective_evaluation_window():
     assert _find_required_business_concept_artifacts(current_date_window, meaning) == []
 
 
+def test_current_plus_prior_aggregate_excludes_current_claim_id():
+    meaning = (
+        "Calculate total quantity as the current quantity plus the summed prior paid "
+        "partial-fill history quantity."
+    )
+    aggregate = (
+        "SELECT {{QuantityDispensed}} + COALESCE(SUM(e.metricqty), 0) AS TotalQuantity "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.edi_pharm_universal e WITH (NOLOCK) "
+        "ON e.claimid = c.claimid "
+        "WHERE RTRIM(c.status) IN ('PAID', 'WAITPAY', 'PAY')"
+    )
+    ambiguous = aggregate + " AND c.claimid <> {{ClaimId}}"
+    corrected = aggregate + " AND c.claimid <> {{CurrentClaimId}}"
+
+    expected = [
+        "current-plus-prior aggregate does not exclude the semantic CurrentClaimId"
+    ]
+    assert _find_required_business_concept_artifacts(aggregate, meaning) == expected
+    assert _find_required_business_concept_artifacts(ambiguous, meaning) == expected
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+    assert _find_required_business_concept_artifacts(
+        aggregate,
+        "Sum prior paid partial-fill history quantity without adding a current value.",
+    ) == []
+
+
 def test_active_parameter_window_preserves_nullable_date_defaults():
     meaning = (
         "Return the active default threshold parameter for the claim date of service."
