@@ -662,6 +662,29 @@ def test_resolved_member_id_cannot_filter_inmemory_member_cardholder_id():
     ) == []
 
 
+def test_resolved_member_id_filters_enrollment_member_id_not_cardholder_id():
+    meaning = (
+        "Count qualifying current-member enrollment segments for the resolved current "
+        "MemberId on the claim Date of Service."
+    )
+    wrong = (
+        "SELECT COUNT(*) FROM InMemory.dbo.ENROLLMENT e "
+        "WHERE e.CardholderId = {{MemberId}} "
+        "AND {{DateOfService}} BETWEEN e.EffectiveDate AND e.TermDate"
+    )
+    corrected = wrong.replace("e.CardholderId", "e.MemberId")
+    explicit_cardholder_lookup = wrong.replace("{{MemberId}}", "{{CardholderId}}")
+
+    assert _find_required_business_concept_artifacts(wrong, meaning) == [
+        "resolved MemberId cannot filter InMemory ENROLLMENT.CardholderId; use ENROLLMENT.MemberId"
+    ]
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+    assert _find_required_business_concept_artifacts(
+        explicit_cardholder_lookup,
+        "Count enrollment segments for an explicitly submitted CardholderId.",
+    ) == []
+
+
 def test_grounded_carrier_member_history_resolution_preserves_source_path():
     ddl = "\n".join([
         "CREATE TABLE [plandata_rx_production].[dbo].[carriermemidhistory] "

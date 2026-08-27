@@ -119,7 +119,10 @@ Rules:
    - {member_id}, {participant_id}, and resolved member id mean {{MemberId}}.
    - A submitted cardholder ID used to resolve a physical memid through enrollkeys,
      carriermemidhistory, or member.secondaryid means {{CardholderId}}. Do not label
-     that lookup input {{MemberId}}; MemberId is the resolved output.
+     that lookup input {{MemberId}}; MemberId is the resolved output. After resolution,
+     when an in-memory source exposes both MemberId and CardholderId, bind {{MemberId}}
+     to its MemberId column. Never use CardholderId merely because it is another member-
+     related identifier.
    - {provider_npi} and incoming provider id mean {{ProviderId}}.
    - {rx_number}, {rxnumber}, prescription number, service reference number,
      and incoming claim Rx Number mean {{RxNumber}}.
@@ -1819,18 +1822,31 @@ def _find_required_business_concept_artifacts(
                 "Quantity Prescribed task is missing an authoritative QuantityPrescribed source field"
             )
 
-    in_memory_member = re.search(
-        r"\b(?:from|join)\s+\[?inmemory\]?\s*\.\s*\[?dbo\]?\s*\.\s*"
-        r"\[?member\]?(?:\s+(?:as\s+)?(?P<alias>"
-        r"(?!(?:where|join|inner|left|right|full|cross|on|with)\b)"
-        r"[a-z_][a-z0-9_]*))?",
-        normalized_sql,
-        re.IGNORECASE,
+    member_identity_columns = (
+        ("member", "MEMBER", "CardholderID", "MemberID"),
+        ("enrollment", "ENROLLMENT", "CardholderId", "MemberId"),
     )
-    if in_memory_member:
-        member_alias = in_memory_member.group("alias")
+    for (
+        table_name,
+        display_table,
+        cardholder_column,
+        member_column,
+    ) in member_identity_columns:
+        in_memory_source = re.search(
+            r"\b(?:from|join)\s+\[?inmemory\]?\s*\.\s*\[?dbo\]?\s*\.\s*"
+            rf"\[?{table_name}\]?(?:\s+(?:as\s+)?(?P<alias>"
+            r"(?!(?:where|join|inner|left|right|full|cross|on|with)\b)"
+            r"[a-z_][a-z0-9_]*))?",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+        if not in_memory_source:
+            continue
+        source_alias = in_memory_source.group("alias")
         column_prefix = (
-            rf"(?:{re.escape(member_alias)}\.)?" if member_alias else r"(?:member\.)?"
+            rf"(?:{re.escape(source_alias)}\.)?"
+            if source_alias
+            else rf"(?:{table_name}\.)?"
         )
         member_id_bound_to_cardholder = re.search(
             rf"(?:{column_prefix}cardholderid\s*=\s*\{{\{{memberid\}}\}}|"
@@ -1840,7 +1856,8 @@ def _find_required_business_concept_artifacts(
         )
         if member_id_bound_to_cardholder:
             artifacts.append(
-                "resolved MemberId cannot filter InMemory MEMBER.CardholderID; use MEMBER.MemberID"
+                f"resolved MemberId cannot filter InMemory {display_table}.{cardholder_column}; "
+                f"use {display_table}.{member_column}"
             )
 
     for requirement_pattern, label, sql_pattern in requirements:
