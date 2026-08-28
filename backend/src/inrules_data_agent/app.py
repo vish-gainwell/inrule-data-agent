@@ -9,7 +9,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
-import pyodbc
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +24,12 @@ from .retrieval.querytext_shadow import (
 )
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
+
+def _load_pyodbc():
+    import pyodbc
+
+    return pyodbc
 
 
 class Step(BaseModel):
@@ -396,6 +401,7 @@ def create_app() -> FastAPI:
 
         start = time.perf_counter()
         try:
+            pyodbc = _load_pyodbc()
             with pyodbc.connect(_db_connection_string(), timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute(sql)

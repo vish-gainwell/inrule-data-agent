@@ -37,6 +37,16 @@ def test_create_app_smoke():
     assert app is not None
 
 
+def test_create_app_does_not_load_odbc_driver():
+    with patch(
+        "inrules_data_agent.app._load_pyodbc",
+        side_effect=AssertionError("ODBC should be loaded only by database execution"),
+    ):
+        app = create_app()
+
+    assert app is not None
+
+
 def test_health_identifies_the_loaded_data_agent_implementation():
     client = TestClient(create_app())
 
@@ -3749,7 +3759,11 @@ def test_execute_query_returns_results():
     conn.__enter__.return_value = conn
     conn.cursor.return_value = cursor
 
-    with patch("inrules_data_agent.app.pyodbc.connect", return_value=conn):
+    with (
+        patch("inrules_data_agent.app._load_pyodbc") as load_pyodbc,
+        patch("inrules_data_agent.app._db_connection_string", return_value="test"),
+    ):
+        load_pyodbc.return_value.connect.return_value = conn
         client = TestClient(create_app())
         response = client.post(
             "/execute_query",
@@ -3775,7 +3789,11 @@ def test_execute_query_substitutes_placeholders():
     conn.__enter__.return_value = conn
     conn.cursor.return_value = cursor
 
-    with patch("inrules_data_agent.app.pyodbc.connect", return_value=conn):
+    with (
+        patch("inrules_data_agent.app._load_pyodbc") as load_pyodbc,
+        patch("inrules_data_agent.app._db_connection_string", return_value="test"),
+    ):
+        load_pyodbc.return_value.connect.return_value = conn
         client = TestClient(create_app())
         response = client.post(
             "/execute_query",
@@ -3797,7 +3815,11 @@ def test_execute_query_quotes_unquoted_placeholders():
     conn.__enter__.return_value = conn
     conn.cursor.return_value = cursor
 
-    with patch("inrules_data_agent.app.pyodbc.connect", return_value=conn):
+    with (
+        patch("inrules_data_agent.app._load_pyodbc") as load_pyodbc,
+        patch("inrules_data_agent.app._db_connection_string", return_value="test"),
+    ):
+        load_pyodbc.return_value.connect.return_value = conn
         client = TestClient(create_app())
         response = client.post(
             "/execute_query",
@@ -3834,7 +3856,11 @@ def test_execute_query_rejects_non_select():
 
 
 def test_execute_query_db_error_returns_500():
-    with patch("inrules_data_agent.app.pyodbc.connect", side_effect=Exception("db down")):
+    with (
+        patch("inrules_data_agent.app._load_pyodbc") as load_pyodbc,
+        patch("inrules_data_agent.app._db_connection_string", return_value="test"),
+    ):
+        load_pyodbc.return_value.connect.side_effect = Exception("db down")
         client = TestClient(create_app())
         response = client.post(
             "/execute_query",
