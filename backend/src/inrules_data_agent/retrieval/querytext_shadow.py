@@ -6,7 +6,6 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Iterable
 
-import pyodbc
 import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError, TokenError
@@ -18,6 +17,12 @@ _DB_ID_DATABASE = {
     2: "plandata_rx_production",
     4: "ipa",
 }
+
+
+def _load_pyodbc():
+    import pyodbc
+
+    return pyodbc
 
 
 @dataclass(frozen=True)
@@ -297,6 +302,7 @@ def _connection_string() -> str:
 
 def load_querytext_rows() -> tuple[StoredQueryText, ...]:
     """Read the current QueryText pool directly; intentionally no cache for MVP1."""
+    pyodbc = _load_pyodbc()
     with pyodbc.connect(_connection_string(), timeout=15) as connection:
         rows = connection.cursor().execute(
             """
@@ -313,6 +319,7 @@ def load_querytext_rows() -> tuple[StoredQueryText, ...]:
 
 def load_reuse_corpus() -> dict[int, tuple[StoredQueryText, tuple[DataQueryAssignmentExample, ...]]]:
     """Load generic DataQueries, using assignment evidence when permissions allow it."""
+    pyodbc = _load_pyodbc()
     with pyodbc.connect(_connection_string(), timeout=15) as connection:
         cursor = connection.cursor()
         try:
