@@ -16,6 +16,6 @@ CREATE TABLE [HRX].[dbo].[eg_parameter_enrollstatus_hierarchy]
     [sequence] smallint NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
     [effdate] smalldatetime NULL, -- Date and time the record becomes effective
     [termdate] smalldatetime NULL, -- Date and time the record becomes inactive
-    [recordid] int NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
-    [status_group] nchar(15) NULL -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
+    [recordid] int NOT NULL, -- Unique identifier for record line
+    [status_group] nchar(15) NULL -- Indicator for enrollment status grouping
 );

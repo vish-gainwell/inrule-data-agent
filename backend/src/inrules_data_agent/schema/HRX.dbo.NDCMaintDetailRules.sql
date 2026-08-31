@@ -11,7 +11,7 @@ Description: Stores National Drug Code reference, pricing, limits, or classifica
 
 CREATE TABLE [HRX].[dbo].[NDCMaintDetailRules]
 (
-    [Action_Code] varchar(10) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing | PK marker: X
-    [ActionRule] varchar(200) NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
+    [Action_Code] varchar(10) NOT NULL, -- Short description of action category | PK marker: X
+    [ActionRule] varchar(200) NULL, -- Long description of action code definition, describing conditional rule(s) for action category
     CONSTRAINT [PK_NDCMaintDetailRules] PRIMARY KEY ([Action_Code])
 );

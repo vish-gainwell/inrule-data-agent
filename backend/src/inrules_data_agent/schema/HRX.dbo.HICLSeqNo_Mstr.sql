@@ -11,8 +11,8 @@ Description: Stores domain-specific configuration, reference, or transaction dat
 
 CREATE TABLE [HRX].[dbo].[HICLSeqNo_Mstr]
 (
-    [HICL_SeqNo] varchar(6) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing | PK marker: X
-    [GNN] varchar(30) NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
-    [GNN60] varchar(60) NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
+    [HICL_SeqNo] varchar(6) NOT NULL, -- Hierarchical Ingredient Code List | PK marker: X
+    [GNN] varchar(30) NULL, -- Generic Name, short form
+    [GNN60] varchar(60) NULL, -- Generic Name, long form
     CONSTRAINT [PK_HICLSeqNo_Mstr] PRIMARY KEY ([HICL_SeqNo])
 );
