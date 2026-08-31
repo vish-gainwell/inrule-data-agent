@@ -11,16 +11,75 @@ test("returns the default SQL Data Agent schema config", () => {
   assert.ok(config.databases.length > 0);
 });
 
+test("represents EVENT with the DUREventDTO properties", () => {
+  const config = getSchemaConfig();
+  const inMemory = config.databases.find(({ name }) => name === "InMemory");
+  const dbo = inMemory.schemas.find(({ name }) => name === "dbo");
+  const event = dbo.tables.find(({ name }) => name === "EVENT");
+
+  assert.equal(event.coverage, "in_memory");
+  assert.deepEqual(
+    event.columns.map(({ name }) => name),
+    [
+      "SeverityRankingCode",
+      "SeverityLevel",
+      "ConflictCode",
+      "ICN",
+      "PrevICN",
+      "NdcIndex",
+    ],
+  );
+});
+
+test("represents plandata tables with enriched column descriptions", () => {
+  const config = getSchemaConfig();
+  const plandata = config.databases.find(
+    ({ name }) => name === "plandata_rx_production",
+  );
+  const dbo = plandata.schemas.find(({ name }) => name === "dbo");
+  const claim = dbo.tables.find(({ name }) => name === "claim");
+  const coverage = dbo.tables.find(({ name }) => name === "enrollcoverage");
+
+  assert.match(
+    claim.columns.find(({ name }) => name === "claimid").description,
+    /Primary key of the claim table/,
+  );
+  assert.equal(
+    coverage.columns.find(({ name }) => name === "ratecode").description,
+    "Ratecode (group num) assigned for the coverage",
+  );
+});
+
 test("lists the full derived MVP SQL tables shown in the schema sidebar", () => {
   const tables = listSchemaTables("MDWise");
 
-  assert.equal(tables.length, 25);
+  assert.equal(tables.length, 45);
   assert.ok(tables.includes("HRX.dbo.DrugOverrides"));
   assert.ok(tables.includes("HRX.dbo.GCNSeqNo_Mstr"));
   assert.ok(tables.includes("HRX.dbo.HICLSeqNo_Mstr"));
   assert.ok(tables.includes("HRX.dbo.StateDiagCodes_old"));
+  assert.ok(tables.includes("HRX.dbo.step_therapy_drug"));
+  assert.ok(tables.includes("HRX.dbo.step_therapy_level"));
   assert.ok(tables.includes("plandata_rx_production.dbo.claim"));
   assert.ok(tables.includes("plandata_rx_production.dbo.claimdetail"));
   assert.ok(tables.includes("plandata_rx_production.dbo.ClaimForm"));
+  assert.ok(tables.includes("plandata_rx_production.dbo.authservice"));
+  assert.ok(tables.includes("plandata_rx_production.dbo.enrollcoverage"));
+  assert.ok(tables.includes("plandata_rx_production.dbo.referral"));
+  assert.ok(tables.includes("InMemory.dbo.MEMBER_HISTORY"));
+  assert.ok(tables.includes("InMemory.dbo.MEMBER"));
+  assert.ok(tables.includes("InMemory.dbo.ENROLLMENT"));
+  assert.ok(tables.includes("InMemory.dbo.MEMBER_ATTRIBUTE"));
+  assert.ok(tables.includes("InMemory.dbo.DRUG"));
+  assert.ok(tables.includes("InMemory.dbo.DRUG_ATTR"));
+  assert.ok(tables.includes("InMemory.dbo.PRIOR_AUTH"));
+  assert.ok(tables.includes("InMemory.dbo.EO_HISTORY"));
+  assert.ok(tables.includes("InMemory.dbo.EVENT"));
+  assert.ok(tables.includes("InMemory.dbo.SCHEDULEII"));
+  assert.ok(tables.includes("InMemory.dbo.PROVIDER"));
+  assert.ok(tables.includes("InMemory.dbo.CONTRACT_TERM"));
+  assert.ok(tables.includes("InMemory.dbo.PLAN_AFFILIATIONS"));
+  assert.ok(tables.includes("InMemory.dbo.BENEFITS"));
+  assert.ok(tables.includes("InMemory.dbo.PARTIAL"));
   assert.ok(tables.includes("IPA.dbo.DiagCode"));
 });

@@ -1,9 +1,11 @@
 # ── Internal / private directories ──────────────────────────────────────────
 cc-bridge/
 ado-toolkit/
+github-toolkit/
 /DB_Tables/
 /Schema/
 backend/docs/
+/docs/
 
 # ── Codex planning docs (internal) ───────────────────────────────────────────
 CODEX_*.md
@@ -30,6 +32,12 @@ Core Edits Query.sql
 *.zip
 *.xlsx
 ~$*
+/test_payloads/
+/report_artifacts/
+/dto_tree.txt
+/total_tree.txt
+/ClaimEngine_Query_Reuse_Architecture_*.html
+/ClaimEngine_Query_Reuse_Architecture_*.pdf
 
 # ── Secrets / environment ─────────────────────────────────────────────────────
 .env

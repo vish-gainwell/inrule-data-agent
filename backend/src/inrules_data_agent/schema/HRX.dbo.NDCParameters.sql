@@ -11,15 +11,15 @@ Description: Stores prior authorization configuration, history, or workflow deta
 
 CREATE TABLE [HRX].[dbo].[NDCParameters]
 (
-    [PARAM_ID] numeric(16,0) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing | PK marker: X
+    [PARAM_ID] numeric(16,0) NOT NULL, -- Unique identifier for parameter line | PK marker: X
     [PARAMETER_NAME] nvarchar(50) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
-    [PARAMETER_TITLE] nvarchar(100) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
+    [PARAMETER_TITLE] nvarchar(100) NOT NULL, -- Short description of parameter name representation
     [PARAMETER_VALUE] nvarchar(100) NOT NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
-    [DESCRIPTION] nvarchar(1000) NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
+    [DESCRIPTION] nvarchar(1000) NULL, -- Long description comment
     [EFFDATE] datetime NULL, -- Date and time the record becomes effective
     [ENDDATE] datetime NULL, -- Date and time the record becomes inactive
     [DEC_PARAM_VAL] decimal(18,5) NULL, -- Pharmacy attribute used in claims, PA, pricing, or drug reference processing
     [ChangedDate] datetime NULL, -- Date and time the record was changed
-    [ChangedBy] varchar(15) NULL, -- Identifier of the user who changed the record
+    [ChangedBy] varchar(15) NULL, -- User who changed the record
     CONSTRAINT [PK_NDCParameters] PRIMARY KEY ([PARAM_ID])
 );
