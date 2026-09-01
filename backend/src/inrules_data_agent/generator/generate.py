@@ -125,7 +125,12 @@ Rules:
    - {member_id}, {participant_id}, and resolved member id mean {{MemberId}}.
    - A submitted cardholder ID used to resolve a physical memid through enrollkeys,
      carriermemidhistory, or member.secondaryid means {{CardholderId}}. Do not label
-     that lookup input {{MemberId}}; MemberId is the resolved output.
+     that lookup input {{MemberId}}; MemberId is the resolved output. After resolution,
+     when an in-memory source exposes both MemberId and CardholderId, bind {{MemberId}}
+     to its MemberId column. A physical current-member enrollment filter similarly uses
+     enrollkeys.memid = {{MemberId}}, not enrollkeys.carriermemid = {{CardholderId}}.
+     Never use a submitted cardholder identifier merely because it is another member-
+     related identifier.
    - {provider_npi} and incoming provider id mean {{ProviderId}}.
    - {rx_number}, {rxnumber}, prescription number, service reference number,
      and incoming claim Rx Number mean {{RxNumber}}.
@@ -223,12 +228,18 @@ Rules:
     - claim owns paid-like status, formtype, resubclaimid, member, provider, and claim dates.
     - claimpharm owns NDCKey and pharmacy claim detail, but not claim.status/formtype.
     - edi_pharm_universal owns SubmissionClarification, metricqty, dayssupply, rxnumber,
-      claimid, and claimline for SCC pharmacy history.
+      claimid, and claimline for SCC pharmacy history. MetricQty and DaysSupply are dispensing
+      facts, not NCPDP 460-ET Quantity Prescribed. When the task requires Quantity Prescribed,
+      select the documented QuantityPrescribed source field (for example from the reviewed
+      SCHEDULEII DTO); never relabel MetricQty, DaysSupply, or intended-dispense quantity.
     - NDC_Mstr maps NDCKey to GCN_SeqNo. Never put GCN_SeqNo on enrollkeys or COMPOUND.
     - COMPOUND owns drug_qty, ndc, tcn, and CompoundType. Follow its DDL relationship
-      comments: use a prefiltered runtime TCN collection and join ndc to NDC_Mstr.NDCKey
-      when GCN filtering is required. DaysTillRefill and incoming GCN are runtime inputs,
-      never enrollkeys columns.
+      comments: use a runtime TCN collection and join ndc to NDC_Mstr.NDCKey when GCN
+      filtering is required. Treat that collection as prefiltered only when the authoritative
+      task explicitly defines its reviewed paid-status, form-type, reversal, member, and date-
+      window guarantees, plus any required certification exclusions. Otherwise return a review-
+      only candidate or no query; never invent a COMPOUND-to-claim relationship. DaysTillRefill
+      and incoming GCN are runtime inputs, never enrollkeys columns.
       Reusable DrugOverrides shape: query HRX.dbo.DrugOverrides directly; use the exact
       reviewed Type literal without deriving it from the edit ID, plus {{ClaimTransaction.Ndc}},
       {{ClaimRequest.DrugRequested.GCNSeqNo.Code}}, {{ClaimRequest.DrugRequested.HIC3.Code}},
@@ -252,6 +263,11 @@ Rules:
     a simple ContractId/date filter reconstructs those physical branches, and do not invent
     physical term-table SQL when their DDL is absent. For a no-match/count fact, count loaded
     rows whose ContractId is nonblank.
+      Current submitted SCC shape: a submitted/current claim Submission Clarification Code
+    is a runtime request value. Use {{SubmissionClarificationCode}} (or a routed submitted SCC
+    collection placeholder when the task names multiple occurrences); never query
+    edi_pharm_universal to recover it. Use EPU only when the business meaning explicitly asks
+    for historical SCC claim data.
       Reusable SCC history shape: select edi_pharm_universal.metricqty and dayssupply;
     join claim on claimid for status/formtype/resubclaimid/date/member/provider filters;
     join claimpharm on claimid and claimline, then NDC_Mstr on claimpharm.ndckey for GCN;
@@ -268,6 +284,12 @@ Rules:
     a tie-breaker; add further grain keys when joins can duplicate the selected row. Never
     hard-code domain-specific date or ID columns, and never use DISTINCT as a substitute for
     selecting the business-defined row. Aggregate count/existence queries remain set-based.
+      Current-plus-prior aggregate shape: when a current runtime quantity/value is added to
+    a physical prior-history aggregate, exclude the in-flight row with the stable semantic
+    {{CurrentClaimId}}. Member/date/Rx filters and paid status alone do not prove that the
+    current row is absent, and an ambiguous {{ClaimId}} is not an acceptable substitute.
+    Prefer returning only the prior aggregate when downstream rule logic already adds the
+    current runtime value.
       Selected-row correlation shape: the query that selects an original/history row must
     return its stable identifier together with every fact needed by later steps. When several
     routed tasks describe the same selected occurrence but no semantic selected-row identifier
@@ -317,8 +339,10 @@ Rules:
     exact full-code equality. Apply the prefix function directly to both operands so SQL null
     behavior is preserved; retain IcdVersion = '0' and the inclusive DOS effective window.
       Pattern and effective-period shape: preserve an explicitly supplied LIKE/contains/
-    wildcard comparison; never collapse it to equality. When history must belong to the
-    same season, configuration period, or effective override set as the incoming claim,
+    wildcard comparison; never collapse it to equality. A quoted configuration discriminator
+    containing SQL wildcard characters such as % must use LIKE unless the supplied business
+    meaning explicitly says those characters are literal stored data. When history must belong
+    to the same season, configuration period, or effective override set as the incoming claim,
     constrain both the incoming date and the historical row date to the same effective/
     termination columns from the same configuration alias. A lookback window alone does
     not prove same-period membership.
@@ -353,8 +377,12 @@ Rules:
     Reusable compound quantity shape: select SUM(TRY_CONVERT(decimal(29,9),
     COMPOUND.drug_qty)); join NDC_Mstr on COMPOUND.ndc = NDC_Mstr.NDCKey; filter
     COMPOUND.tcn with [[HistoricalTcns]] and NDC_Mstr.GCN_SeqNo with the incoming GCN
-    runtime placeholder. HistoricalTcns represents the upstream paid, UNIVERSALC,
-    non-reversed, member/date-window claim set; do not join enrollkeys in this query.
+    runtime placeholder. Use this shape as validated only when the authoritative business
+    meaning explicitly identifies a reviewed HistoricalTcns contract and enumerates its paid,
+    UNIVERSALC, non-reversed, member, and date-window guarantees, plus certification exclusions
+    when required. A collection placeholder name alone proves none of those filters. If the
+    contract or date-boundary semantics are unresolved, keep the candidate review-only; do not
+    invent physical claim joins or silently choose a state-specific boundary.
 19. Honor the routed query task. When part of the requested contract is an approved
     runtime input, project or filter with its descriptive placeholder and retrieve the
     remaining grounded source facts from the provided DDL. Do not return null merely
@@ -1046,6 +1074,9 @@ WHERE RTRIM(p.npi) = {{PrescriberNpi}}
         "historical compound quantity" in meaning
         and "gcn_seqno" in meaning
         and compound_tables <= tables
+        and not _find_historical_tcns_contract_artifacts(
+            "c.tcn IN ([[HistoricalTcns]])", business_meaning
+        )
     ):
         return """SELECT
     n.GCN_SeqNo AS HistoryGcnSeqNo,
@@ -1650,6 +1681,72 @@ def _build_column_repair_feedback(
     )
 
 
+def _find_historical_tcns_contract_artifacts(
+    sql: str, business_meaning: str
+) -> list[str]:
+    """Require an explicit, complete contract before trusting a TCN collection."""
+    if not re.search(r"\[\[\s*historicaltcns\s*\]\]", sql, re.IGNORECASE):
+        return []
+
+    normalized_meaning = re.sub(r"\s+", " ", business_meaning).strip().lower()
+    if re.search(
+        r"(?:history|lookback|date)[- ]*(?:range|window|boundary)[^.]{0,100}"
+        r"(?:unresolved|conflict|differs|disagree)",
+        normalized_meaning,
+    ) or (
+        "strict lower bound" in normalized_meaning
+        and "inclusive lower bound" in normalized_meaning
+    ):
+        return ["HistoricalTcns history date boundary is explicitly unresolved"]
+
+    contract_match = re.search(
+        r"\bhistoricaltcns\b(?P<contract>.{0,700})",
+        normalized_meaning,
+        re.DOTALL,
+    )
+    if not contract_match or not re.search(
+        r"\b(?:reviewed|approved|contract|pre[- ]?filtered|guarantees?)\b",
+        contract_match.group(0),
+    ):
+        return [
+            "HistoricalTcns collection has no explicit reviewed prefilter contract"
+        ]
+
+    contract_text = contract_match.group("contract")
+    guarantees = (
+        ("paid status", r"\b(?:paid|pay|waitpay)\b"),
+        ("UNIVERSALC form type", r"\buniversalc\b"),
+        ("non-reversed status", r"\b(?:non[- ]?reversed|resubclaimid)\b"),
+        ("member scope", r"\bmember\b"),
+        (
+            "history date window",
+            r"\b(?:date[- ]?(?:range|window)|lookback|dateofservice|dos|daystillrefill)\b",
+        ),
+    )
+    missing = [
+        label
+        for label, pattern in guarantees
+        if not re.search(pattern, contract_text, re.IGNORECASE)
+    ]
+    certification_required = bool(re.search(
+        r"\bcertification(?:nmbr|number)?\b", normalized_meaning, re.IGNORECASE
+    ))
+    if certification_required and not re.search(
+        r"\bcertification(?:nmbr|number)?\b[^.]{0,100}\b(?:exclude|excluding|not|04|99)\b|"
+        r"\b(?:exclude|excluding|not)\b[^.]{0,100}\bcertification(?:nmbr|number)?\b",
+        contract_text,
+        re.IGNORECASE,
+    ):
+        missing.append("required certification exclusions")
+
+    if missing:
+        return [
+            "HistoricalTcns reviewed contract does not explicitly guarantee: "
+            + ", ".join(missing)
+        ]
+    return []
+
+
 def _find_required_business_concept_artifacts(
     sql: str, business_meaning: str
 ) -> list[str]:
@@ -1692,9 +1789,7 @@ def _find_required_business_concept_artifacts(
         re.IGNORECASE | re.DOTALL,
     )
     where_sql = where_match.group("where") if where_match else ""
-    prefiltered_historical_tcns = bool(
-        re.search(r"\[?\[?\{?\{?\s*historicaltcns\b", normalized_sql)
-    )
+
     prefiltered_contract_terms = bool(re.search(
         r"\b(?:from|join)\s+\[?inmemory\]?\s*\.\s*\[?dbo\]?\s*\.\s*"
         r"\[?contract_term\]?\b",
@@ -1706,11 +1801,136 @@ def _find_required_business_concept_artifacts(
         and re.search(r"\bmaxdaydose\b", normalized_sql)
         and re.search(r"\{\{[^}]*ingredientndc[^}]*\}\}", normalized_sql)
     )
-    artifacts = []
+    historical_tcns_contract_artifacts = _find_historical_tcns_contract_artifacts(
+        sql, business_meaning
+    )
+    uses_historical_tcns = bool(
+        re.search(r"\[\[\s*historicaltcns\s*\]\]", sql, re.IGNORECASE)
+    )
+    artifacts = list(historical_tcns_contract_artifacts)
+
+    quantity_prescribed_fact = bool(re.search(
+        r"\bquantity\s+prescribed\b|\b460[-_ ]?et\b",
+        business_meaning,
+        re.IGNORECASE,
+    ))
+    if quantity_prescribed_fact:
+        quantity_source_sql = re.sub(r"\{\{[^}]+\}\}", "", normalized_sql)
+        quantity_source_sql = re.sub(
+            r"\bas\s+\[?[a-z_][a-z0-9_]*\]?",
+            "",
+            quantity_source_sql,
+            flags=re.IGNORECASE,
+        )
+        if not re.search(
+            r"\bquantity_?prescribed(?:_?460_?et)?\b",
+            quantity_source_sql,
+            re.IGNORECASE,
+        ):
+            artifacts.append(
+                "Quantity Prescribed task is missing an authoritative QuantityPrescribed source field"
+            )
+
+    member_identity_columns = (
+        ("member", "MEMBER", "CardholderID", "MemberID"),
+        ("enrollment", "ENROLLMENT", "CardholderId", "MemberId"),
+    )
+    for (
+        table_name,
+        display_table,
+        cardholder_column,
+        member_column,
+    ) in member_identity_columns:
+        in_memory_source = re.search(
+            r"\b(?:from|join)\s+\[?inmemory\]?\s*\.\s*\[?dbo\]?\s*\.\s*"
+            rf"\[?{table_name}\]?(?:\s+(?:as\s+)?(?P<alias>"
+            r"(?!(?:where|join|inner|left|right|full|cross|on|with)\b)"
+            r"[a-z_][a-z0-9_]*))?",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+        if not in_memory_source:
+            continue
+        source_alias = in_memory_source.group("alias")
+        column_prefix = (
+            rf"(?:{re.escape(source_alias)}\.)?"
+            if source_alias
+            else rf"(?:{table_name}\.)?"
+        )
+        member_id_bound_to_cardholder = re.search(
+            rf"(?:{column_prefix}cardholderid\s*=\s*\{{\{{memberid\}}\}}|"
+            rf"\{{\{{memberid\}}\}}\s*=\s*{column_prefix}cardholderid)",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+        if member_id_bound_to_cardholder:
+            artifacts.append(
+                f"resolved MemberId cannot filter InMemory {display_table}.{cardholder_column}; "
+                f"use {display_table}.{member_column}"
+            )
+        current_member_enrollment = bool(
+            table_name == "enrollment"
+            and re.search(
+                r"\b(?:current[- ]member|resolved\s+(?:current\s+)?member(?:id)?)\b",
+                business_meaning,
+                re.IGNORECASE,
+            )
+        )
+        if current_member_enrollment:
+            resolved_member_predicate = re.search(
+                rf"(?:{column_prefix}memberid\s*=\s*\{{\{{memberid\}}\}}|"
+                rf"\{{\{{memberid\}}\}}\s*=\s*{column_prefix}memberid)",
+                normalized_sql,
+                re.IGNORECASE,
+            )
+            if not resolved_member_predicate:
+                artifacts.append(
+                    "current-member enrollment lookup must filter ENROLLMENT.MemberId "
+                    "by resolved MemberId"
+                )
+
+    physical_enrollkeys = re.search(
+        r"\b(?:from|join)\s+\[?plandata_rx_production\]?\s*\.\s*\[?dbo\]?\s*\.\s*"
+        r"\[?enrollkeys\]?(?:\s+(?:as\s+)?(?P<alias>"
+        r"(?!(?:where|join|inner|left|right|full|cross|on|with)\b)"
+        r"[a-z_][a-z0-9_]*))?",
+        normalized_sql,
+        re.IGNORECASE,
+    )
+    current_member_enrollment_meaning = bool(re.search(
+        r"\b(?:current[- ]member|resolved\s+(?:current\s+)?member(?:id)?)\b",
+        business_meaning,
+        re.IGNORECASE,
+    ))
+    if physical_enrollkeys and current_member_enrollment_meaning:
+        enrollkeys_alias = physical_enrollkeys.group("alias")
+        enrollkeys_prefix = (
+            rf"(?:{re.escape(enrollkeys_alias)}\.)?"
+            if enrollkeys_alias
+            else r"(?:enrollkeys\.)?"
+        )
+        enrollkeys_memid = (
+            rf"(?:rtrim\s*\(\s*)?{enrollkeys_prefix}memid\s*\)?"
+        )
+        resolved_memid_predicate = re.search(
+            rf"(?:{enrollkeys_memid}\s*=\s*\{{\{{memberid\}}\}}|"
+            rf"\{{\{{memberid\}}\}}\s*=\s*{enrollkeys_memid})",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+        if not resolved_memid_predicate:
+            artifacts.append(
+                "current-member physical enrollment lookup must filter enrollkeys.memid "
+                "by resolved MemberId"
+            )
+
     for requirement_pattern, label, sql_pattern in requirements:
         if not re.search(requirement_pattern, business_meaning, re.IGNORECASE):
             continue
-        if prefiltered_historical_tcns and label in {"form type", "reversal status"}:
+
+        if uses_historical_tcns and label in {"form type", "reversal status"}:
+            # The collection-contract validator reports these together with the
+            # other required history guarantees, avoiding partial or duplicate errors.
             continue
         if prefiltered_contract_terms and label == "GCN":
             continue
@@ -1967,6 +2187,56 @@ def _find_required_business_concept_artifacts(
         normalized_sql,
         re.IGNORECASE,
     ))
+    submitted_scc_lookup = bool(
+        re.search(
+            r"\b(?:submitted|current\s+claim|claim)\b[^.\n]{0,100}"
+            r"\bsubmission\s+clarification(?:\s+code)?\b|"
+            r"\bsubmission\s+clarification(?:\s+code)?\b[^.\n]{0,100}"
+            r"\b(?:submitted|current\s+claim)\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+        and re.search(r"\bedi_pharm_universal\b", normalized_sql, re.IGNORECASE)
+        and not re.search(r"\b(?:historical|history|prior|previous)\b", business_meaning, re.IGNORECASE)
+    )
+    if submitted_scc_lookup:
+        artifacts.append(
+            "submitted Submission Clarification Code must use a runtime request value, not EPU history"
+        )
+
+    current_plus_prior_aggregate = bool(
+        physical_claim_history
+        and re.search(r"\bsum\s*\(", normalized_sql, re.IGNORECASE)
+        and re.search(
+            r"\bcurrent\b[^.\n]{0,100}\b(?:plus|add(?:ed|ing)?|combined?)\b|"
+            r"\b(?:plus|add(?:ed|ing)?|combined?)\b[^.\n]{0,100}\bcurrent\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+        and not re.search(
+            r"\bwithout\b[^.\n]{0,80}\b(?:add(?:ed|ing)?|plus|current)\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+        and re.search(r"\b(?:prior|previous|historical|history)\b", business_meaning, re.IGNORECASE)
+        and re.search(r"\b(?:quantity|amount|total|days\s+supply)\b", business_meaning, re.IGNORECASE)
+    )
+    if current_plus_prior_aggregate:
+        current_claim_exclusion = re.search(
+            r"\b(?:[a-z_][a-z0-9_]*\.)?claimid\b\s*(?:<>|!=)\s*"
+            r"\{\{currentclaimid\}\}|"
+            r"\{\{currentclaimid\}\}\s*(?:<>|!=)\s*"
+            r"\b(?:[a-z_][a-z0-9_]*\.)?claimid\b|"
+            r"\b(?:[a-z_][a-z0-9_]*\.)?claimid\b\s+not\s+in\s*"
+            r"\(\s*\{\{currentclaimid\}\}\s*\)",
+            normalized_sql,
+            re.IGNORECASE,
+        )
+        if current_claim_exclusion is None:
+            artifacts.append(
+                "current-plus-prior aggregate does not exclude the semantic CurrentClaimId"
+            )
+
     current_claim_configuration_lookup = bool(
         physical_claim_history
         and re.search(r"\bndcparameters\b", normalized_sql, re.IGNORECASE)
@@ -2002,6 +2272,23 @@ def _find_required_business_concept_artifacts(
         r"\bLIKE\b", normalized_sql, re.IGNORECASE
     ):
         artifacts.append("required comparison operator 'LIKE' is absent from the SQL")
+
+    wildcard_discriminator_equality = re.search(
+        r"(?:(?:rtrim|ltrim|trim)\s*\(\s*)?"
+        r"(?:[a-z_][a-z0-9_]*\.)?(?:type|parameter_name|name|code)\b"
+        r"(?:\s*\))?\s*=\s*'[^']*%[^']*'",
+        normalized_sql,
+        re.IGNORECASE,
+    )
+    literal_wildcard_intent = re.search(
+        r"\b(?:literal|exact)\b[^.\n]{0,80}\b(?:percent|wildcard|%)\b",
+        business_meaning,
+        re.IGNORECASE,
+    )
+    if wildcard_discriminator_equality and literal_wildcard_intent is None:
+        artifacts.append(
+            "configuration discriminator containing SQL wildcards must use LIKE rather than equality"
+        )
 
     if re.search(r"\bsame\b[^.\n]{0,80}\b(?:season|period|effective\s+(?:window|override\s+set))\b", business_meaning, re.IGNORECASE):
         current_window = re.search(

@@ -463,13 +463,45 @@ def test_grounded_scc_history_pattern_uses_clean_column_ownership():
     assert "n.GCN_SeqNo = {{GCNSeqNo}}" in sql
 
 
+def test_submitted_scc_uses_runtime_request_value_not_epu_history():
+    meaning = "The submitted claim Submission Clarification Code equals 20."
+    unscoped_epu = (
+        "SELECT e.SubmissionClarification "
+        "FROM plandata_rx_production.dbo.edi_pharm_universal e WITH (NOLOCK) "
+        "WHERE RTRIM(e.SubmissionClarification) = '20'"
+    )
+    claim_scoped_epu = unscoped_epu.replace(
+        "WHERE ", "WHERE e.claimid = {{ClaimId}} AND "
+    )
+    runtime_value = (
+        "SELECT {{SubmissionClarificationCode}} AS SubmissionClarificationCode"
+    )
+    historical_epu = unscoped_epu.replace(
+        "submitted claim", "historical claim"
+    )
+
+    expected = [
+        "submitted Submission Clarification Code must use a runtime request value, not EPU history"
+    ]
+    assert _find_required_business_concept_artifacts(unscoped_epu, meaning) == expected
+    assert _find_required_business_concept_artifacts(claim_scoped_epu, meaning) == expected
+    assert _find_required_business_concept_artifacts(runtime_value, meaning) == []
+    assert _find_required_business_concept_artifacts(
+        historical_epu,
+        "Return the historical claim Submission Clarification Code.",
+    ) == []
+
+
 def test_grounded_compound_pattern_uses_prefiltered_tcns():
     ddl = "\n".join([
         "CREATE TABLE [HRX].[dbo].[COMPOUND] ([tcn] nvarchar(17), [ndc] nvarchar(50), [drug_qty] nvarchar(50));",
         "CREATE TABLE [HRX].[dbo].[NDC_Mstr] ([NDCKey] char(11), [GCN_SeqNo] char(6));",
     ])
     sql = _grounded_business_pattern_candidate(
-        "Calculate historical compound quantity for the same GCN_SeqNo", ddl
+        "Calculate historical compound quantity for the same GCN_SeqNo. The reviewed "
+        "HistoricalTcns contract is prefiltered to paid PAY/WAITPAY claims, UNIVERSALC, "
+        "non-reversed rows, the current member, and the DaysTillRefill date window.",
+        ddl,
     )
 
     assert sql is not None
@@ -661,6 +693,69 @@ def test_effective_current_ndc_desi_validation_rejects_independent_attribute_loo
     assert "same effective current-NDC DESI row is missing bundled outputs: RecordFound, DESI, DESIDate" in artifacts
     assert "same effective current-NDC DESI lookup does not select one row" in artifacts
     assert _find_required_business_concept_artifacts(bundled, meaning) == []
+
+
+def test_resolved_member_id_cannot_filter_inmemory_member_cardholder_id():
+    meaning = "Return the already-resolved current member's Date of Birth."
+    wrong = (
+        "SELECT m.BirthDate FROM InMemory.dbo.MEMBER m "
+        "WHERE m.CardholderID = {{MemberId}}"
+    )
+    corrected = wrong.replace("m.CardholderID", "m.MemberID")
+    explicit_cardholder_lookup = wrong.replace("{{MemberId}}", "{{CardholderId}}")
+
+    assert _find_required_business_concept_artifacts(wrong, meaning) == [
+        "resolved MemberId cannot filter InMemory MEMBER.CardholderID; use MEMBER.MemberID"
+    ]
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+    assert _find_required_business_concept_artifacts(
+        explicit_cardholder_lookup,
+        "Return a member by the explicitly submitted CardholderId.",
+    ) == []
+
+
+def test_resolved_member_id_filters_enrollment_member_id_not_cardholder_id():
+    meaning = (
+        "Count qualifying current-member enrollment segments for the resolved current "
+        "MemberId on the claim Date of Service."
+    )
+    wrong = (
+        "SELECT COUNT(*) FROM InMemory.dbo.ENROLLMENT e "
+        "WHERE e.CardholderId = {{MemberId}} "
+        "AND {{DateOfService}} BETWEEN e.EffectiveDate AND e.TermDate"
+    )
+    corrected = wrong.replace("e.CardholderId", "e.MemberId")
+    wrong_cardholder_placeholder = wrong.replace("{{MemberId}}", "{{CardholderId}}")
+    explicit_cardholder_lookup = wrong_cardholder_placeholder
+
+    assert _find_required_business_concept_artifacts(wrong, meaning) == [
+        "resolved MemberId cannot filter InMemory ENROLLMENT.CardholderId; use ENROLLMENT.MemberId",
+        "current-member enrollment lookup must filter ENROLLMENT.MemberId by resolved MemberId",
+    ]
+    assert _find_required_business_concept_artifacts(
+        wrong_cardholder_placeholder, meaning
+    ) == [
+        "current-member enrollment lookup must filter ENROLLMENT.MemberId by resolved MemberId"
+    ]
+    physical_wrong = (
+        "SELECT COUNT(*) FROM plandata_rx_production.dbo.enrollkeys e WITH (NOLOCK) "
+        "WHERE RTRIM(e.carriermemid) = {{CardholderId}} "
+        "AND {{DateOfService}} BETWEEN e.effdate AND e.termdate"
+    )
+    physical_corrected = physical_wrong.replace(
+        "RTRIM(e.carriermemid) = {{CardholderId}}",
+        "RTRIM(e.memid) = {{MemberId}}",
+    )
+
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+    assert _find_required_business_concept_artifacts(physical_wrong, meaning) == [
+        "current-member physical enrollment lookup must filter enrollkeys.memid by resolved MemberId"
+    ]
+    assert _find_required_business_concept_artifacts(physical_corrected, meaning) == []
+    assert _find_required_business_concept_artifacts(
+        explicit_cardholder_lookup,
+        "Count enrollment segments for an explicitly submitted CardholderId.",
+    ) == []
 
 
 def test_grounded_carrier_member_history_resolution_preserves_source_path():
@@ -884,6 +979,33 @@ def test_date_sensitive_parameter_requires_effective_evaluation_window():
     assert _find_required_business_concept_artifacts(current_date_window, meaning) == []
 
 
+def test_current_plus_prior_aggregate_excludes_current_claim_id():
+    meaning = (
+        "Calculate total quantity as the current quantity plus the summed prior paid "
+        "partial-fill history quantity."
+    )
+    aggregate = (
+        "SELECT {{QuantityDispensed}} + COALESCE(SUM(e.metricqty), 0) AS TotalQuantity "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.edi_pharm_universal e WITH (NOLOCK) "
+        "ON e.claimid = c.claimid "
+        "WHERE RTRIM(c.status) IN ('PAID', 'WAITPAY', 'PAY')"
+    )
+    ambiguous = aggregate + " AND c.claimid <> {{ClaimId}}"
+    corrected = aggregate + " AND c.claimid <> {{CurrentClaimId}}"
+
+    expected = [
+        "current-plus-prior aggregate does not exclude the semantic CurrentClaimId"
+    ]
+    assert _find_required_business_concept_artifacts(aggregate, meaning) == expected
+    assert _find_required_business_concept_artifacts(ambiguous, meaning) == expected
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
+    assert _find_required_business_concept_artifacts(
+        aggregate,
+        "Sum prior paid partial-fill history quantity without adding a current value.",
+    ) == []
+
+
 def test_active_parameter_window_preserves_nullable_date_defaults():
     meaning = (
         "Return the active default threshold parameter for the claim date of service."
@@ -998,6 +1120,32 @@ def test_required_like_and_same_period_semantics_are_preserved():
         "same-period lookup does not bind the incoming date to an effective window"
         in artifacts
     )
+
+
+def test_wildcard_configuration_discriminator_requires_like_and_effective_window():
+    meaning = (
+        "Determine whether the current drug has an active threshold override for the "
+        "claim date of service."
+    )
+    literal_equality = (
+        "SELECT COUNT(*) AS OverrideCount "
+        "FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE RTRIM(d.Type) = 'Claim_Threshold_Amount_%' "
+        "AND d.NDCKey = {{ClaimTransaction.Ndc}}"
+    )
+    corrected = (
+        "SELECT COUNT(*) AS OverrideCount "
+        "FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE RTRIM(d.Type) LIKE 'Claim_Threshold_Amount_%' "
+        "AND d.NDCKey = {{ClaimTransaction.Ndc}} "
+        "AND {{DateOfService}} BETWEEN d.EffDate AND d.TermDate"
+    )
+
+    assert _find_required_business_concept_artifacts(literal_equality, meaning) == [
+        "configuration discriminator containing SQL wildcards must use LIKE rather than equality",
+        "active DrugOverrides lookup is missing its DateOfService EffDate/TermDate window",
+    ]
+    assert _find_required_business_concept_artifacts(corrected, meaning) == []
 
 
 def test_current_drug_override_exclusion_requires_all_identifiers_and_active_window():
@@ -1119,6 +1267,37 @@ def test_generation_uses_effective_ncpdp_master_for_submitted_reject_occurrences
     assert "edi_pharm_universal" not in query
     assert "COUNT(" not in query
     call_openai.assert_not_called()
+
+
+def test_quantity_prescribed_requires_distinct_source_fact():
+    meaning = "Return Quantity Prescribed 460-ET from the original claim."
+    dispensed_metrics = (
+        "SELECT cp.metricqty AS OriginalMetricQuantity, "
+        "cp.dayssupply AS OriginalDaysSupply "
+        "FROM plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK)"
+    )
+    intended_quantity = (
+        "SELECT {{QuantityPrescribed}} AS IncomingQuantityPrescribed, "
+        "cp.IntendedQuantityToBeDispensed AS OriginalQuantityPrescribed "
+        "FROM plandata_rx_production.dbo.ClaimPartial cp WITH (NOLOCK)"
+    )
+    prescribed_quantity = (
+        "SELECT s.QuantityPrescribed AS OriginalQuantityPrescribed "
+        "FROM InMemory.dbo.SCHEDULEII s"
+    )
+
+    expected = [
+        "Quantity Prescribed task is missing an authoritative QuantityPrescribed source field"
+    ]
+    assert _find_required_business_concept_artifacts(
+        dispensed_metrics, meaning
+    ) == expected
+    assert _find_required_business_concept_artifacts(
+        intended_quantity, meaning
+    ) == expected
+    assert _find_required_business_concept_artifacts(
+        prescribed_quantity, meaning
+    ) == []
 
 
 def test_selected_history_row_requires_stable_identifier_correlation():
@@ -1403,10 +1582,52 @@ def test_prompt_preserves_history_scope_and_primary_lookup():
     assert "exact NDC before GCN sequence before therapeutic class" in SYSTEM_PROMPT
 
 
-def test_prefiltered_historical_tcns_represent_upstream_claim_scope():
+def test_historical_tcns_requires_an_explicit_reviewed_collection_contract():
     meaning = (
         "Sum historical compound quantity for paid UNIVERSALC claims with blank "
-        "resubclaimid and the same GCN"
+        "resubclaimid, the current member, a DaysTillRefill date window, and the same GCN."
+    )
+    sql = (
+        "SELECT SUM(TRY_CONVERT(decimal(29,9), c.drug_qty)) AS HistoricalQuantity "
+        "FROM HRX.dbo.COMPOUND c WITH (NOLOCK) "
+        "JOIN HRX.dbo.NDC_Mstr n WITH (NOLOCK) ON n.NDCKey = c.ndc "
+        "WHERE c.tcn IN ([[HistoricalTcns]]) AND n.GCN_SeqNo = {{GCNSeqNo}}"
+    )
+
+    assert _find_required_business_concept_artifacts(sql, meaning) == [
+        "HistoricalTcns collection has no explicit reviewed prefilter contract"
+    ]
+
+
+def test_unproven_historical_tcns_candidate_remains_review_only():
+    meaning = (
+        "Calculate historical compound quantity for paid UNIVERSALC, non-reversed claims "
+        "for the current member and DaysTillRefill window with the same GCN_SeqNo."
+    )
+    candidate = (
+        "SELECT SUM(TRY_CONVERT(decimal(29,9), c.drug_qty)) AS HistoricalQuantity "
+        "FROM HRX.dbo.COMPOUND c WITH (NOLOCK) "
+        "JOIN HRX.dbo.NDC_Mstr n WITH (NOLOCK) ON n.NDCKey = c.ndc "
+        "WHERE c.tcn IN ([[HistoricalTcns]]) AND n.GCN_SeqNo = {{GCNSeqNo}}"
+    )
+
+    with patch(
+        "inrules_data_agent.generator.generate._call_openai", return_value=candidate
+    ):
+        result = generate_query_result_for_step(meaning, draft_mode=True)
+
+    assert result["queries"] == [candidate]
+    assert result["validation_status"] == "DRAFT_REQUIRES_REVIEW"
+    assert result["review_warnings"] == [
+        "HistoricalTcns collection has no explicit reviewed prefilter contract"
+    ]
+
+
+def test_historical_tcns_accepts_a_complete_explicit_collection_contract():
+    meaning = (
+        "Sum historical compound quantity for the same GCN. The reviewed HistoricalTcns "
+        "contract is prefiltered to PAID, PAY, or WAITPAY UNIVERSALC claims, non-reversed "
+        "rows for the current member, and the inclusive DaysTillRefill date window."
     )
     sql = (
         "SELECT SUM(TRY_CONVERT(decimal(29,9), c.drug_qty)) AS HistoricalQuantity "
@@ -1416,6 +1637,40 @@ def test_prefiltered_historical_tcns_represent_upstream_claim_scope():
     )
 
     assert _find_required_business_concept_artifacts(sql, meaning) == []
+
+
+def test_historical_tcns_contract_includes_required_certification_exclusions():
+    sql = (
+        "SELECT SUM(TRY_CONVERT(decimal(29,9), c.drug_qty)) "
+        "FROM HRX.dbo.COMPOUND c WITH (NOLOCK) "
+        "WHERE c.tcn IN ([[HistoricalTcns]])"
+    )
+    incomplete = (
+        "Exclude certification numbers 04 and 99. The reviewed HistoricalTcns contract "
+        "is prefiltered to paid UNIVERSALC, non-reversed current-member rows in the "
+        "DaysTillRefill date window."
+    )
+    complete = (
+        incomplete + " The HistoricalTcns contract excludes certification numbers 04 and 99."
+    )
+
+    assert _find_required_business_concept_artifacts(sql, incomplete) == [
+        "HistoricalTcns reviewed contract does not explicitly guarantee: required certification exclusions"
+    ]
+    assert _find_required_business_concept_artifacts(sql, complete) == []
+
+
+def test_historical_tcns_does_not_silently_choose_a_conflicting_date_boundary():
+    meaning = (
+        "The history date boundary is unresolved between a strict lower bound and an "
+        "inclusive lower bound. The reviewed HistoricalTcns contract is prefiltered to "
+        "paid UNIVERSALC, non-reversed current-member rows in the DaysTillRefill window."
+    )
+    sql = "SELECT 1 FROM HRX.dbo.COMPOUND c WHERE c.tcn IN ([[HistoricalTcns]])"
+
+    assert _find_required_business_concept_artifacts(sql, meaning) == [
+        "HistoricalTcns history date boundary is explicitly unresolved"
+    ]
 
 
 def test_output_alias_repair_requests_raw_source_fact():
