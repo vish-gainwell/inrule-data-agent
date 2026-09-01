@@ -1,6 +1,9 @@
 /*
 Live SQL Server schema from INFORMATION_SCHEMA and key metadata.
 Observed production QueryText pattern: filter COMPOUND.tcn using a runtime TCN collection.
+The collection's paid, form-type, reversal, member, date-window, and optional certification
+prefilters must be explicitly guaranteed by its reviewed runtime contract; its name alone is
+not evidence of those filters.
 Reviewed relationship: COMPOUND.ndc = HRX.dbo.NDC_Mstr.NDCKey.
 Do not infer that COMPOUND.tcn equals a claim column without separate evidence.
 */
