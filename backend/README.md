@@ -45,6 +45,14 @@ uv run uvicorn inrules_data_agent.app:app --app-dir src --reload
 
 Health check: `GET /health`
 
+## Architecture reference
+
+The Claim Edit lifecycle architecture is included below for GitHub and documentation readers:
+
+![Claim Edit lifecycle architecture](docs/architecture/claim-edit-architecture-with-alm.png)
+
+The image is documentation only. It is not part of the deployed application and is not required at runtime.
+
 ## Local DataQuery reuse catalog
 
 Reuse matching reads a local, read-only SQLite catalog first. This lets normal
@@ -85,6 +93,34 @@ startup or for an individual ADO request.
 
 ## Tests
 
+Install the project and development tools with `uv`:
+
 ```bash
-uv run pytest tests/ -v
+uv sync --all-groups
 ```
+
+Run the complete backend suite:
+
+```bash
+uv run poe test
+```
+
+Run the focused fast suite for query generation and deterministic reuse matching:
+
+```bash
+uv run poe test-fast
+```
+
+Run only query-generation tests:
+
+```bash
+uv run poe test-query-generation
+```
+
+Run only SQLite-catalog and deterministic reuse tests:
+
+```bash
+uv run poe test-query-reuse
+```
+
+The upcoming SQL-accuracy regression suite will add the review-workbook issues as permanent test cases. New Data Agent SQL-generation changes must pass the complete suite before they are accepted.

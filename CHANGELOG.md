@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-01T18:31:02+05:30
+
+### Added
+
+- Added a GitHub-renderable Claim Edit lifecycle architecture image to the backend README.
+
+## 2026-09-01T18:22:38+05:30
+
+### Added
+
+- Added `uv run poe` test commands for the complete, focused, query-generation, and query-reuse backend test suites.
+- Added the optional local Claim Edit architecture presentation link to the backend README.
+
 ## 2026-09-01T17:05:24+05:30
 
 ### Added
