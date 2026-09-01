@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-01T18:31:02+05:30
+
+### Added
+
+- Added a GitHub-renderable Claim Edit lifecycle architecture image to the backend README.
+
 ## 2026-09-01T18:22:38+05:30
 
 ### Added

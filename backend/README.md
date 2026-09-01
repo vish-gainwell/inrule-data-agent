@@ -47,11 +47,11 @@ Health check: `GET /health`
 
 ## Architecture reference
 
-For local review, open the interactive Claim Edit architecture presentation:
+The Claim Edit lifecycle architecture is included below for GitHub and documentation readers:
 
-[Open the local architecture presentation](file:///C:/Users/gt131593/Documents/inrule_data_agent/inrule-docker-exporter/inrule-docker-exporter/output/inrule-claim-edit-architecture-with-alm.html)
+![Claim Edit lifecycle architecture](docs/architecture/claim-edit-architecture-with-alm.png)
 
-This link points to a local presentation artifact only. It is not part of the deployed application and is not required at runtime.
+The image is documentation only. It is not part of the deployed application and is not required at runtime.
 
 ## Local DataQuery reuse catalog
 
