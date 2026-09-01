@@ -45,10 +45,46 @@ uv run uvicorn inrules_data_agent.app:app --app-dir src --reload
 
 Health check: `GET /health`
 
+## Local DataQuery reuse catalog
+
+Reuse matching reads a local, read-only SQLite catalog first. This lets normal
+ADO/Data Agent runs validate exact reusable DataQuery templates without SQL
+Server credentials or a live ClaimEngine connection.
+
+```text
+ADO request → local SQLite catalog → deterministic reuse match
+```
+
+The catalog contains approved QueryText templates and DataPackage assignment
+metadata only; it does not contain claims, members, PHI, credentials, or live
+claim data. If no valid local catalog is available, the agent preserves the
+existing ClaimEngine lookup fallback. If both sources are unavailable, the API
+returns `REUSE_VALIDATION_UNAVAILABLE` rather than claiming a new query is not
+reusable.
+
+A controlled user with ClaimEngine access creates the initial static catalog:
+
+```bash
+PYTHONPATH=src python scripts/export_dataquery_catalog.py
+```
+
+The default output is:
+
+```text
+src/inrules_data_agent/retrieval/data/dataquery_reuse_catalog.sqlite3
+```
+
+To use a catalog stored elsewhere, set:
+
+```text
+DATAQUERY_CATALOG_PATH=C:\path\dataquery_reuse_catalog.sqlite3
+```
+
+Catalog export is an explicit maintenance command. It never runs during API
+startup or for an individual ADO request.
+
 ## Tests
 
 ```bash
 uv run pytest tests/ -v
 ```
-
-42 tests, all passing.
