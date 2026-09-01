@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import httpx
-import pyodbc
 import sqlglot
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -19,6 +18,13 @@ from sqlglot.expressions.core import Expression
 from ..retrieval.qdrant_schema import retrieve_schema_ddls
 
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+
+
+def _load_pyodbc():
+    import pyodbc
+
+    return pyodbc
+
 
 _SCHEMA_DIR = Path(__file__).resolve().parent.parent / "schema"
 _IN_MEMORY_SCHEMA_DIR = Path(__file__).resolve().parent.parent / "in_memory_schema"
@@ -1143,6 +1149,7 @@ def select_ddls(
 @lru_cache(maxsize=64)
 def _read_live_schema_table(database: str, schema: str, table: str) -> str | None:
     try:
+        pyodbc = _load_pyodbc()
         with pyodbc.connect(_metadata_connection_string(), timeout=10) as conn:
             cursor = conn.cursor()
             rows = cursor.execute(

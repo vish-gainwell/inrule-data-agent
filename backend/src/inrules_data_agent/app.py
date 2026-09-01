@@ -7,9 +7,8 @@ from importlib.metadata import PackageNotFoundError, version
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-import pyodbc
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,10 +26,17 @@ from .retrieval.querytext_shadow import (
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
+def _load_pyodbc():
+    import pyodbc
+
+    return pyodbc
+
+
 class Step(BaseModel):
     step_number: int
     business_meaning: str
     requires_data_query: bool = False
+    query_result_shape: Literal["scalar", "count", "value_set"] | None = None
 
     model_config = {"extra": "allow"}
 
@@ -104,6 +110,21 @@ def _query_task_with_constraints(objective: str, business_meaning: str) -> str:
     )
 
 
+def _with_result_shape(objective: str, result_shape: str | None) -> str:
+    """Ensure the deterministic shape is part of the atomic retrieval task."""
+    text = objective.strip()
+    if not result_shape:
+        return text
+    directive = f"Required result shape: {result_shape}."
+    if re.search(
+        r"\brequired\s+result\s+shape\s*:\s*(?:scalar|count|value_set)\s*\.?",
+        text,
+        re.IGNORECASE,
+    ):
+        return text
+    return f"{text} {directive}"
+
+
 def _query_task_for_step(step: Step) -> str:
     """Use an atomic objective without discarding business-fact constraints."""
 
@@ -117,12 +138,18 @@ def _query_task_for_step(step: Step) -> str:
                     instruction = entity.get("data_query_instruction")
                     if isinstance(instruction, str) and instruction.strip():
                         return _query_task_with_constraints(
-                            instruction, step.business_meaning
+                            _with_result_shape(
+                                instruction, step.query_result_shape
+                            ),
+                            step.business_meaning,
                         )
     reason = extras.get("data_query_reason")
     if isinstance(reason, str) and reason.strip():
-        return _query_task_with_constraints(reason, step.business_meaning)
-    return step.business_meaning
+        return _query_task_with_constraints(
+            _with_result_shape(reason, step.query_result_shape),
+            step.business_meaning,
+        )
+    return _with_result_shape(step.business_meaning, step.query_result_shape)
 
 
 def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str, Any]:
@@ -202,6 +229,7 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
             {
                 "step_number": step.step_number,
                 "business_meaning": step.business_meaning,
+                "query_result_shape": step.query_result_shape,
                 "query_generated": matched,
                 "reuse_decision": reuse_decision,
                 "data_query": data_query,
@@ -373,6 +401,7 @@ def create_app() -> FastAPI:
 
         start = time.perf_counter()
         try:
+            pyodbc = _load_pyodbc()
             with pyodbc.connect(_db_connection_string(), timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute(sql)

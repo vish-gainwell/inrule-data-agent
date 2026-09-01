@@ -1,6 +1,6 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
-import pyodbc
 from fastapi.testclient import TestClient
 
 from inrules_data_agent.app import create_app
@@ -387,12 +387,15 @@ def test_proposed_query_parameterizes_in_lists_and_runtime_comparison_values():
 
 
 def test_reuse_corpus_falls_back_to_templates_without_assignment_permissions():
+    class PermissionDenied(Exception):
+        pass
+
     class FakeCursor:
         rows = []
 
         def execute(self, sql):
             if "DataPackageDataQuery" in sql:
-                raise pyodbc.Error("SELECT permission denied")
+                raise PermissionDenied("SELECT permission denied")
             self.rows = [
                 (
                     68,
@@ -424,8 +427,14 @@ def test_reuse_corpus_falls_back_to_templates_without_assignment_permissions():
             return FakeCursor()
 
     with patch(
-        "inrules_data_agent.retrieval.querytext_shadow.pyodbc.connect",
-        return_value=FakeConnection(),
+        "inrules_data_agent.retrieval.querytext_shadow._load_pyodbc",
+        return_value=SimpleNamespace(
+            Error=PermissionDenied,
+            connect=lambda *args, **kwargs: FakeConnection(),
+        ),
+    ), patch(
+        "inrules_data_agent.retrieval.querytext_shadow._connection_string",
+        return_value="test",
     ):
         corpus = load_reuse_corpus()
 

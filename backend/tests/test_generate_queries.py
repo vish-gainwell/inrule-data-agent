@@ -37,6 +37,16 @@ def test_create_app_smoke():
     assert app is not None
 
 
+def test_create_app_does_not_load_odbc_driver():
+    with patch(
+        "inrules_data_agent.app._load_pyodbc",
+        side_effect=AssertionError("ODBC should be loaded only by database execution"),
+    ):
+        app = create_app()
+
+    assert app is not None
+
+
 def test_health_identifies_the_loaded_data_agent_implementation():
     client = TestClient(create_app())
 
@@ -141,6 +151,48 @@ def test_uses_atomic_data_query_reason_when_no_resolved_instruction_exists():
         "CURRENT BUSINESS FACT CONSTRAINTS AND REQUESTED OUTPUT:\n"
         "Compare the original claim date plus the configured reversal threshold."
     )
+
+
+def test_appends_and_echoes_deterministic_query_result_shape():
+    step = Step(
+        step_number=2,
+        business_meaning="Compare the submitted code with active configured values.",
+        requires_data_query=True,
+        query_result_shape="value_set",
+        entity_resolution={
+            "entities": [
+                {
+                    "data_query_instruction": (
+                        "Return active configured DelayReason codes. "
+                        "Required result shape: value_set."
+                    )
+                }
+            ]
+        },
+    )
+
+    assert _query_task_for_step(step) == (
+        "ATOMIC DATA RETRIEVAL OBJECTIVE:\n"
+        "Return active configured DelayReason codes. Required result shape: value_set.\n\n"
+        "CURRENT BUSINESS FACT CONSTRAINTS AND REQUESTED OUTPUT:\n"
+        "Compare the submitted code with active configured values."
+    )
+
+    with patch(
+        "inrules_data_agent.app.generate_query_result_for_step",
+        return_value={
+            "queries": ["SELECT PARAMETER_VALUE FROM HRX.dbo.NDCParameters"],
+            "failure_category": None,
+            "failure_reason": None,
+        },
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={"edit_id": "7200", "steps": [step.model_dump()]},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["step_queries"][0]["query_result_shape"] == "value_set"
 
 
 def test_uses_resolved_query_instruction_and_reports_unmatched_step():
@@ -3962,7 +4014,11 @@ def test_execute_query_returns_results():
     conn.__enter__.return_value = conn
     conn.cursor.return_value = cursor
 
-    with patch("inrules_data_agent.app.pyodbc.connect", return_value=conn):
+    with (
+        patch("inrules_data_agent.app._load_pyodbc") as load_pyodbc,
+        patch("inrules_data_agent.app._db_connection_string", return_value="test"),
+    ):
+        load_pyodbc.return_value.connect.return_value = conn
         client = TestClient(create_app())
         response = client.post(
             "/execute_query",
@@ -3988,7 +4044,11 @@ def test_execute_query_substitutes_placeholders():
     conn.__enter__.return_value = conn
     conn.cursor.return_value = cursor
 
-    with patch("inrules_data_agent.app.pyodbc.connect", return_value=conn):
+    with (
+        patch("inrules_data_agent.app._load_pyodbc") as load_pyodbc,
+        patch("inrules_data_agent.app._db_connection_string", return_value="test"),
+    ):
+        load_pyodbc.return_value.connect.return_value = conn
         client = TestClient(create_app())
         response = client.post(
             "/execute_query",
@@ -4010,7 +4070,11 @@ def test_execute_query_quotes_unquoted_placeholders():
     conn.__enter__.return_value = conn
     conn.cursor.return_value = cursor
 
-    with patch("inrules_data_agent.app.pyodbc.connect", return_value=conn):
+    with (
+        patch("inrules_data_agent.app._load_pyodbc") as load_pyodbc,
+        patch("inrules_data_agent.app._db_connection_string", return_value="test"),
+    ):
+        load_pyodbc.return_value.connect.return_value = conn
         client = TestClient(create_app())
         response = client.post(
             "/execute_query",
@@ -4047,7 +4111,11 @@ def test_execute_query_rejects_non_select():
 
 
 def test_execute_query_db_error_returns_500():
-    with patch("inrules_data_agent.app.pyodbc.connect", side_effect=Exception("db down")):
+    with (
+        patch("inrules_data_agent.app._load_pyodbc") as load_pyodbc,
+        patch("inrules_data_agent.app._db_connection_string", return_value="test"),
+    ):
+        load_pyodbc.return_value.connect.side_effect = Exception("db down")
         client = TestClient(create_app())
         response = client.post(
             "/execute_query",
