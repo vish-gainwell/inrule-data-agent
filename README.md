@@ -2,6 +2,12 @@
 
 A pharmacy claim-edit data agent that accepts Criteria Analyzer JSON, generates SQL per rule step using an LLM + real DDL schema files, and lets developers execute those queries against a live SQL Server database.
 
+## Claim Edit lifecycle architecture
+
+![Claim Edit lifecycle architecture](backend/docs/architecture/claim-edit-architecture-with-alm.png)
+
+The architecture image is documentation only and is not required at application runtime.
+
 ---
 
 ## Repository layout
