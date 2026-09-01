@@ -386,7 +386,9 @@ def test_proposed_query_parameterizes_in_lists_and_runtime_comparison_values():
     assert proposal.proposed_query_params[":ExpectedCompoundIndicator"] == "1"
 
 
-def test_reuse_corpus_falls_back_to_templates_without_assignment_permissions():
+def test_reuse_corpus_falls_back_to_templates_without_assignment_permissions(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATAQUERY_CATALOG_PATH", str(tmp_path / "missing.sqlite3"))
+
     class PermissionDenied(Exception):
         pass
 
