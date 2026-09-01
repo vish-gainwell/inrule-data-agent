@@ -31,3 +31,15 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/inrules_data_agent"]
+
+[tool.poe.tasks]
+test = "python -m pytest tests -v"
+test-fast = "python -m pytest tests/test_generate_queries.py tests/test_querytext_shadow.py -v"
+test-query-generation = "python -m pytest tests/test_generate_queries.py -v"
+test-query-reuse = "python -m pytest tests/test_dataquery_catalog.py tests/test_querytext_shadow.py -v"
+
+[dependency-groups]
+dev = [
+    "poethepoet>=0.48.0",
+    "pytest>=8.4.0",
+]

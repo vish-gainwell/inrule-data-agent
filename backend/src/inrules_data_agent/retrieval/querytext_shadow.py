@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import os
 import re
+import sqlite3
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Iterable
 
 import sqlglot
@@ -276,6 +279,15 @@ def patterns_equivalent(target: QueryPattern, candidate: QueryPattern) -> bool:
     )
 
 
+_CATALOG_SCHEMA_VERSION = 1
+_CATALOG_ENVIRONMENT_VARIABLE = "DATAQUERY_CATALOG_PATH"
+_PACKAGED_CATALOG_PATH = Path(__file__).resolve().parent / "data" / "dataquery_reuse_catalog.sqlite3"
+
+
+class DataQueryCatalogError(RuntimeError):
+    """The local catalog cannot safely be used for reuse validation."""
+
+
 def _connection_string() -> str:
     hostname = os.environ.get("DB_HOSTNAME") or os.environ.get("hostname")
     port = os.environ.get("DB_PORT") or os.environ.get("port") or "1433"
@@ -300,8 +312,80 @@ def _connection_string() -> str:
     )
 
 
-def load_querytext_rows() -> tuple[StoredQueryText, ...]:
-    """Read the current QueryText pool directly; intentionally no cache for MVP1."""
+def _catalog_path() -> Path:
+    configured = os.environ.get(_CATALOG_ENVIRONMENT_VARIABLE)
+    return Path(configured).expanduser() if configured else _PACKAGED_CATALOG_PATH
+
+
+def _catalog_connection(path: Path) -> sqlite3.Connection:
+    if not path.is_file():
+        raise DataQueryCatalogError(f"catalog file does not exist: {path}")
+    return sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+
+
+def _validate_catalog(connection: sqlite3.Connection) -> None:
+    version = connection.execute("PRAGMA user_version").fetchone()[0]
+    if version != _CATALOG_SCHEMA_VERSION:
+        raise DataQueryCatalogError(
+            f"unsupported catalog schema version {version}; expected {_CATALOG_SCHEMA_VERSION}"
+        )
+    required_tables = {"catalog_metadata", "data_queries", "data_query_assignments"}
+    actual_tables = {
+        str(row[0])
+        for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    missing = required_tables.difference(actual_tables)
+    if missing:
+        raise DataQueryCatalogError(
+            "catalog is missing required tables: " + ", ".join(sorted(missing))
+        )
+
+
+def _load_catalog_reuse_corpus(
+    path: Path,
+) -> dict[int, tuple[StoredQueryText, tuple[DataQueryAssignmentExample, ...]]]:
+    with _catalog_connection(path) as connection:
+        _validate_catalog(connection)
+        rows = connection.execute(
+            """
+            SELECT
+                q.data_query_id, q.name, q.db_id, q.query_text,
+                a.data_package_id, a.data_package_name,
+                a.query_params, a.return_vals, a.priority,
+                a.active, a.is_data_set
+            FROM data_queries q
+            LEFT JOIN data_query_assignments a
+                ON a.data_query_id = q.data_query_id
+            ORDER BY q.data_query_id, a.ordinal
+            """
+        ).fetchall()
+    if not rows:
+        raise DataQueryCatalogError("catalog contains no DataQuery templates")
+    corpus: dict[int, tuple[StoredQueryText, list[DataQueryAssignmentExample]]] = {}
+    for row in rows:
+        query = StoredQueryText(int(row[0]), str(row[1]), int(row[2]), str(row[3]))
+        if query.data_query_id not in corpus:
+            corpus[query.data_query_id] = (query, [])
+        if row[4] is not None:
+            corpus[query.data_query_id][1].append(
+                DataQueryAssignmentExample(
+                    int(row[4]), str(row[5]) if row[5] is not None else None,
+                    str(row[6]) if row[6] is not None else None,
+                    str(row[7]) if row[7] is not None else None,
+                    int(row[8]) if row[8] is not None else None,
+                    bool(row[9]) if row[9] is not None else None,
+                    bool(row[10]) if row[10] is not None else None,
+                )
+            )
+    return {query_id: (query, tuple(examples)) for query_id, (query, examples) in corpus.items()}
+
+
+def _load_catalog_querytext_rows(path: Path) -> tuple[StoredQueryText, ...]:
+    corpus = _load_catalog_reuse_corpus(path)
+    return tuple(query for query, _ in corpus.values())
+
+
+def _load_querytext_rows_from_claimengine() -> tuple[StoredQueryText, ...]:
     pyodbc = _load_pyodbc()
     with pyodbc.connect(_connection_string(), timeout=15) as connection:
         rows = connection.cursor().execute(
@@ -317,8 +401,7 @@ def load_querytext_rows() -> tuple[StoredQueryText, ...]:
     )
 
 
-def load_reuse_corpus() -> dict[int, tuple[StoredQueryText, tuple[DataQueryAssignmentExample, ...]]]:
-    """Load generic DataQueries, using assignment evidence when permissions allow it."""
+def _load_reuse_corpus_from_claimengine() -> dict[int, tuple[StoredQueryText, tuple[DataQueryAssignmentExample, ...]]]:
     pyodbc = _load_pyodbc()
     with pyodbc.connect(_connection_string(), timeout=15) as connection:
         cursor = connection.cursor()
@@ -371,6 +454,119 @@ def load_reuse_corpus() -> dict[int, tuple[StoredQueryText, tuple[DataQueryAssig
                 )
             )
     return {query_id: (query, tuple(examples)) for query_id, (query, examples) in corpus.items()}
+
+
+def _with_catalog_fallback(loader, catalog_loader):
+    path = _catalog_path()
+    try:
+        return catalog_loader(path)
+    except (DataQueryCatalogError, sqlite3.Error, OSError) as exc:
+        if path.is_file() or os.environ.get(_CATALOG_ENVIRONMENT_VARIABLE):
+            print(f"[dataquery_reuse] local SQLite catalog unavailable; using ClaimEngine: {exc}")
+        return loader()
+
+
+def load_querytext_rows() -> tuple[StoredQueryText, ...]:
+    """Load QueryText from the local catalog, falling back to ClaimEngine when needed."""
+    return _with_catalog_fallback(
+        _load_querytext_rows_from_claimengine,
+        _load_catalog_querytext_rows,
+    )
+
+
+def load_reuse_corpus() -> dict[int, tuple[StoredQueryText, tuple[DataQueryAssignmentExample, ...]]]:
+    """Load reuse templates locally first, preserving ClaimEngine fallback behavior."""
+    return _with_catalog_fallback(
+        _load_reuse_corpus_from_claimengine,
+        _load_catalog_reuse_corpus,
+    )
+
+
+def write_reuse_catalog(
+    output_path: str | Path,
+    corpus: dict[int, tuple[StoredQueryText, tuple[DataQueryAssignmentExample, ...]]],
+    *,
+    source_description: str = "ClaimEngine DataQuery export",
+) -> Path:
+    """Create a versioned catalog snapshot. This is an explicit maintenance operation."""
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_suffix(output.suffix + ".tmp")
+    if temporary.exists():
+        temporary.unlink()
+    connection = sqlite3.connect(temporary)
+    try:
+        connection.executescript(
+            """
+            CREATE TABLE catalog_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE data_queries (
+                data_query_id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                db_id INTEGER NOT NULL,
+                query_text TEXT NOT NULL
+            );
+            CREATE TABLE data_query_assignments (
+                data_query_id INTEGER NOT NULL REFERENCES data_queries(data_query_id),
+                ordinal INTEGER NOT NULL,
+                data_package_id INTEGER,
+                data_package_name TEXT,
+                query_params TEXT,
+                return_vals TEXT,
+                priority INTEGER,
+                active INTEGER,
+                is_data_set INTEGER,
+                PRIMARY KEY (data_query_id, ordinal)
+            );
+            """
+        )
+        connection.execute(f"PRAGMA user_version = {_CATALOG_SCHEMA_VERSION}")
+        connection.executemany(
+            "INSERT INTO data_queries (data_query_id, name, db_id, query_text) VALUES (?, ?, ?, ?)",
+            [
+                (query.data_query_id, query.name, query.db_id, query.query_text)
+                for query, _ in corpus.values()
+            ],
+        )
+        assignments = []
+        for query_id, (_, examples) in corpus.items():
+            for ordinal, example in enumerate(examples):
+                assignments.append(
+                    (
+                        query_id,
+                        ordinal,
+                        example.data_package_id,
+                        example.data_package_name,
+                        example.query_params,
+                        example.return_vals,
+                        example.priority,
+                        None if example.active is None else int(example.active),
+                        None if example.is_data_set is None else int(example.is_data_set),
+                    )
+                )
+        connection.executemany(
+            """
+            INSERT INTO data_query_assignments (
+                data_query_id, ordinal, data_package_id, data_package_name,
+                query_params, return_vals, priority, active, is_data_set
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            assignments,
+        )
+        metadata = {
+            "schema_version": str(_CATALOG_SCHEMA_VERSION),
+            "source_description": source_description,
+            "source_extracted_at": datetime.now(timezone.utc).isoformat(),
+            "query_count": str(len(corpus)),
+        }
+        connection.executemany(
+            "INSERT INTO catalog_metadata (key, value) VALUES (?, ?)",
+            metadata.items(),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    temporary.replace(output)
+    return output
 
 
 def find_shadow_match(
