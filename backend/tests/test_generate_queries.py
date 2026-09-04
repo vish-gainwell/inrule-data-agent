@@ -2149,6 +2149,89 @@ def test_generate_queries_repairs_incomplete_drug_override_exclusion_lookup():
     assert "DateOfService EffDate/TermDate" in repair_feedback
 
 
+def test_edit_7013_original_claim_match_preserves_acceptance_criteria_correlations():
+    meaning = "Return CreateDate from the matched original claim."
+    criteria = (
+        "Use Rx/Service Reference Number, Product/Service ID (NDC), Date of Service, "
+        "and Service Provider ID to find the original submission in claim history."
+    )
+    rx_only = (
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "ON cp.claimid = c.claimid "
+        "WHERE RTRIM(cp.rxnumber) = {{RxNumber}}"
+    )
+    complete_match = rx_only + (
+        " AND cp.ndckey = {{ClaimTransaction.Ndc}} "
+        "AND c.provid = {{ProviderId}} "
+        "AND c.startdate = {{DateOfService}}"
+    )
+    stable_id = (
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "WHERE c.claimid = {{OriginalClaimId}}"
+    )
+
+    assert _find_required_business_concept_artifacts(
+        rx_only, meaning, acceptance_criteria=criteria
+    ) == [
+        "original-claim match is missing acceptance-criteria correlations: "
+        "NDC, ProviderId, DateOfService"
+    ]
+    assert _find_required_business_concept_artifacts(
+        complete_match, meaning, acceptance_criteria=criteria
+    ) == []
+    assert _find_required_business_concept_artifacts(
+        stable_id, meaning, acceptance_criteria=criteria
+    ) == []
+
+
+def test_edit_7013_generation_repairs_rx_only_original_claim_match():
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ("
+        "[claimid] char(15), [createdate] datetime, [provid] char(15), "
+        "[startdate] datetime);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] ("
+        "[claimid] char(15), [rxnumber] char(50), [ndckey] char(11));",
+    ]
+    criteria = (
+        "Use Rx/Service Reference Number, Product/Service ID (NDC), Date of Service, "
+        "and Service Provider ID to find the original submission in claim history."
+    )
+    wrong = (
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "ON cp.claimid = c.claimid "
+        "WHERE RTRIM(cp.rxnumber) = {{RxNumber}}"
+    )
+    corrected = wrong + (
+        " AND cp.ndckey = {{ClaimTransaction.Ndc}} "
+        "AND c.provid = {{ProviderId}} "
+        "AND c.startdate = {{DateOfService}}"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            side_effect=[wrong, corrected],
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            "Return CreateDate from the matched original claim.",
+            acceptance_criteria=criteria,
+        )
+
+    assert result["queries"] == [corrected]
+    assert result["validation_status"] == "VALIDATED"
+    assert call_openai.call_count == 2
+    assert (
+        "NDC, ProviderId, DateOfService"
+        in call_openai.call_args_list[1].args[2]
+    )
+
+
 def test_generate_queries_repairs_selected_row_to_use_stable_identifier():
     ddls = [
         "CREATE TABLE [InMemory].[dbo].[SCHEDULEII] "

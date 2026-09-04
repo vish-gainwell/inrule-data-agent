@@ -731,7 +731,11 @@ def generate_query_result_for_step(
 
                 invalid_artifacts = _find_invalid_sql_artifacts(sql, ddl_context, business_meaning)
                 invalid_artifacts.extend(
-                    _find_required_business_concept_artifacts(sql, business_meaning)
+                    _find_required_business_concept_artifacts(
+                        sql,
+                        business_meaning,
+                        acceptance_criteria=acceptance_criteria,
+                    )
                 )
                 invalid_artifacts.extend(
                     _find_deterministic_selection_artifacts(
@@ -1747,8 +1751,92 @@ def _find_historical_tcns_contract_artifacts(
     return []
 
 
+def _acceptance_criteria_text(
+    acceptance_criteria: str | list[str] | None,
+) -> str:
+    if isinstance(acceptance_criteria, list):
+        return "\n".join(acceptance_criteria)
+    return acceptance_criteria or ""
+
+
+def _find_original_claim_match_artifacts(
+    sql: str,
+    business_meaning: str,
+    acceptance_criteria: str | list[str] | None,
+) -> list[str]:
+    """Preserve an acceptance-criteria-defined original-claim identity."""
+    if not re.search(r"\boriginal\s+(?:claim|submission)\b", business_meaning, re.IGNORECASE):
+        return []
+
+    criteria = _acceptance_criteria_text(acceptance_criteria)
+    if not re.search(r"\boriginal\s+(?:claim|submission)\b", criteria, re.IGNORECASE):
+        return []
+
+    normalized_sql = re.sub(r"[\[\]]", "", sql.lower())
+    where_match = re.search(
+        r"\bwhere\b(?P<where>.*?)(?:\bgroup\s+by\b|\border\s+by\b|\bhaving\b|$)",
+        normalized_sql,
+        re.IGNORECASE | re.DOTALL,
+    )
+    where_sql = where_match.group("where") if where_match else ""
+    stable_original_claim_id = re.search(
+        r"\b(?:[a-z_][a-z0-9_]*\.)?claimid\b\s*=\s*"
+        r"\{\{[^}]*originalclaimid[^}]*\}\}|"
+        r"\{\{[^}]*originalclaimid[^}]*\}\}\s*=\s*"
+        r"\b(?:[a-z_][a-z0-9_]*\.)?claimid\b",
+        where_sql,
+        re.IGNORECASE,
+    )
+    if stable_original_claim_id:
+        return []
+
+    concepts = (
+        (
+            r"\b(?:rx(?:\s*/\s*service)?|prescription|service\s+(?:ref|reference))\s*(?:number)?\b",
+            "RxNumber",
+            r"\b(?:[a-z_][a-z0-9_]*\.)?(?:rxnumber|rx_nbr|associatedprescriptionrefnumber)\b[^=\n]{0,20}=\s*\{\{[^}]*(?:rx|prescription)[^}]*\}\}",
+        ),
+        (
+            r"\bndc\b|\bproduct\s*/?\s*service\s+id\b",
+            "NDC",
+            r"\b(?:[a-z_][a-z0-9_]*\.)?(?:ndc|ndckey|ndccode)\b[^=\n]{0,20}=\s*\{\{[^}]*ndc[^}]*\}\}",
+        ),
+        (
+            r"\b(?:service\s+)?provider(?:\s+id)?\b",
+            "ProviderId",
+            r"\b(?:[a-z_][a-z0-9_]*\.)?(?:provid|providerid|provider_npi|pharmacyid)\b[^=\n]{0,20}=\s*\{\{[^}]*(?:provider|pharmacy)[^}]*\}\}",
+        ),
+        (
+            r"\b(?:date\s+of\s+service|dos)\b",
+            "DateOfService",
+            r"\b(?:[a-z_][a-z0-9_]*\.)?(?:dateofservice|rxdateofservice|startdate|rxdate)\b[^=\n]{0,20}=\s*\{\{[^}]*dateofservice[^}]*\}\}",
+        ),
+    )
+    required = [
+        (label, sql_pattern)
+        for criteria_pattern, label, sql_pattern in concepts
+        if re.search(criteria_pattern, criteria, re.IGNORECASE)
+    ]
+    if len(required) < 2:
+        return []
+
+    missing = [
+        label
+        for label, sql_pattern in required
+        if not re.search(sql_pattern, where_sql, re.IGNORECASE)
+    ]
+    if not missing:
+        return []
+    return [
+        "original-claim match is missing acceptance-criteria correlations: "
+        + ", ".join(missing)
+    ]
+
+
 def _find_required_business_concept_artifacts(
-    sql: str, business_meaning: str
+    sql: str,
+    business_meaning: str,
+    acceptance_criteria: str | list[str] | None = None,
 ) -> list[str]:
     """Reject candidates that silently omit strongly named atomic constraints."""
     requirements = (
@@ -1808,6 +1896,11 @@ def _find_required_business_concept_artifacts(
         re.search(r"\[\[\s*historicaltcns\s*\]\]", sql, re.IGNORECASE)
     )
     artifacts = list(historical_tcns_contract_artifacts)
+    artifacts.extend(
+        _find_original_claim_match_artifacts(
+            sql, business_meaning, acceptance_criteria
+        )
+    )
 
     quantity_prescribed_fact = bool(re.search(
         r"\bquantity\s+prescribed\b|\b460[-_ ]?et\b",
