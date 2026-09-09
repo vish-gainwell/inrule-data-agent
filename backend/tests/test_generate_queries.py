@@ -13,6 +13,7 @@ from inrules_data_agent.generator.generate import (
     _build_artifact_repair_feedback,
     _build_user_message,
     _column_repair_suggestions,
+    _find_atomic_source_guard_artifacts,
     _find_deterministic_selection_artifacts,
     _find_output_name_artifacts,
     _find_required_business_concept_artifacts,
@@ -1186,6 +1187,274 @@ def test_current_drug_override_exclusion_requires_or_alternatives():
 
     assert _find_required_business_concept_artifacts(sql, meaning) == [
         "DrugOverrides exclusion identifiers are not combined as NDC/GCN/HIC3 alternatives"
+    ]
+
+
+def test_current_member_attribute_guard_requires_source_member_and_window():
+    meaning = (
+        "The current member has an active member attribute where AttributeId equals the "
+        "configured identifier and TheValue equals the configured value on the date of service."
+    )
+    configuration_only = (
+        "SELECT p.PARAMETER_VALUE FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'PACE_Attribute'"
+    )
+    correlated = (
+        "SELECT COUNT(*) AS MemberAttributeCount FROM IPA.dbo.memberattribute ma WITH (NOLOCK) "
+        "WHERE ma.memid = {{MemberId}} "
+        "AND ma.attributeid = {{ConfiguredAttributeId}} "
+        "AND ma.thevalue = {{ConfiguredAttributeValue}} "
+        "AND {{DateOfService}} BETWEEN ma.effdate AND ma.termdate"
+    )
+
+    assert "current member-attribute lookup has no supported memberattribute source" in (
+        _find_required_business_concept_artifacts(configuration_only, meaning)
+    )
+    assert _find_required_business_concept_artifacts(correlated, meaning) == []
+    reversed_window = correlated.replace(
+        "{{DateOfService}} BETWEEN ma.effdate AND ma.termdate",
+        "ma.effdate BETWEEN {{DateOfService}} AND ma.termdate",
+    )
+    assert "correctly oriented DOS window" in " ".join(
+        _find_required_business_concept_artifacts(reversed_window, meaning)
+    )
+    assert _find_required_business_concept_artifacts(
+        "SELECT COUNT(*) FROM IPA.dbo.memberattribute ma WITH (NOLOCK) "
+        "WHERE ma.memid = {{MemberId}} "
+        "AND {{DateOfService}} BETWEEN ma.effdate AND ma.termdate",
+        "The current member has an active member attribute on the date of service.",
+    ) == []
+
+
+def test_member_diagnosis_history_guard_rejects_configuration_only_and_unbounded_sql():
+    meaning = (
+        "No member medical diagnosis history record has a diagnosis code in the Malignant "
+        "Cancer DiagnosisList within the configured lookback from the date of service."
+    )
+    configuration_only = (
+        "SELECT dl.diagnosis_code FROM HRX.dbo.DiagnosisList dl WITH (NOLOCK) "
+        "WHERE dl.diagnosis_type = 'Malignant Cancer'"
+    )
+    correlated = (
+        "SELECT COUNT(*) AS DiagnosisHistoryCount FROM IPA.dbo.meddiagnosis md WITH (NOLOCK) "
+        "JOIN HRX.dbo.DiagnosisList dl WITH (NOLOCK) "
+        "ON md.diagnosis_code = dl.diagnosis_code "
+        "WHERE md.memberid = {{MemberId}} AND md.diagnosis_date BETWEEN "
+        "DATEADD(day, -{{DiagnosisLookbackDays}}, {{DateOfService}}) AND {{DateOfService}}"
+    )
+
+    assert _find_required_business_concept_artifacts(configuration_only, meaning) == [
+        "member diagnosis-history lookup has no supported diagnosis-history source"
+    ]
+    assert _find_required_business_concept_artifacts(correlated, meaning) == []
+    assert "member diagnosis-history lookup is missing a bounded retrospective lookback" in (
+        _find_required_business_concept_artifacts(
+            correlated.split(" AND md.diagnosis_date", 1)[0], meaning
+        )
+    )
+
+
+def test_explicit_drug_override_identifiers_require_owned_runtime_or_alternatives():
+    meaning = "Match DrugOverrides by NDC, GcnSeqNo, GCN, HICL_SeqNO, or HIC3."
+    incomplete = (
+        "SELECT COUNT(*) FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) WHERE "
+        "d.NDCKey = {{ClaimTransaction.Ndc}} OR "
+        "d.GCN_SeqNo = {{ClaimRequest.DrugRequested.GCNSeqNo.Code}} OR "
+        "d.HIC3 = {{ClaimRequest.DrugRequested.HIC3.Code}}"
+    )
+    known_identifiers = meaning.replace(", GCN, HICL_SeqNO", "")
+    wrong_topology = incomplete.replace(" OR d.GCN_SeqNo", " AND d.GCN_SeqNo")
+
+    assert _find_required_business_concept_artifacts(incomplete, meaning) == [
+        "DrugOverrides lookup is missing matching-runtime alternatives: GCN, HICL_SeqNO"
+    ]
+    assert _find_required_business_concept_artifacts(incomplete, known_identifiers) == []
+    assert _find_required_business_concept_artifacts(wrong_topology, known_identifiers)
+
+
+def test_drug_override_guard_requires_one_exact_owned_positive_or_group():
+    meaning = "Match DrugOverrides by NDC, GCN, or HIC3."
+    positive = (
+        "SELECT COUNT(*) FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE d.Type = 'List' AND (d.NDCKey = {{Ndc}} OR "
+        "d.GCN_SeqNo = {{GcnSeqNo}} OR d.HIC3 = {{Hic3}})"
+    )
+    invalid = (
+        "SELECT 1 FROM HRX.dbo.NDCParameters p WITH (NOLOCK)",
+        positive.replace("d.Type = 'List'", "d.Notes = 'NDC OR GCN OR HIC3'").replace(
+            " OR d.GCN_SeqNo", " AND d.GCN_SeqNo"
+        ),
+        positive.replace(
+            "d.Type = 'List' AND (d.NDCKey = {{Ndc}} OR ",
+            "d.NDCKey = {{Ndc}} AND (",
+        ),
+        positive.replace("(d.NDCKey", "NOT (d.NDCKey"),
+        positive.replace(
+            "d.HIC3 = {{Hic3}})",
+            "d.HIC3 = {{Hic3}} OR d.Type = {{OverrideType}})",
+        ),
+        "SELECT COUNT(*) FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "JOIN HRX.dbo.DrugOverrides x WITH (NOLOCK) ON d.NDCKey = {{Ndc}} "
+        "OR x.GCN_SeqNo = {{GcnSeqNo}} WHERE d.HIC3 = {{Hic3}}",
+    )
+
+    assert _find_atomic_source_guard_artifacts(positive, meaning) == []
+    assert _find_atomic_source_guard_artifacts(
+        positive.replace("d.", "DrugOverrides.").replace(" d WITH", " WITH"),
+        meaning,
+    ) == []
+    assert _find_atomic_source_guard_artifacts(
+        positive.replace("d.", "").replace(" d WITH", " WITH"), meaning
+    ) == []
+    assert all(_find_atomic_source_guard_artifacts(sql, meaning) for sql in invalid)
+    assert _find_atomic_source_guard_artifacts(invalid[0], meaning) == [
+        "explicit DrugOverrides identifier lookup has no DrugOverrides source"
+    ]
+
+
+def test_member_attribute_guard_uses_mandatory_same_select_predicates():
+    meaning = "The current member has an active memberattribute on the date of service."
+    positive = (
+        "SELECT COUNT(*) FROM IPA.dbo.memberattribute ma WITH (NOLOCK) "
+        "WHERE ma.memid = {{MemberId}} AND "
+        "{{DateOfService}} BETWEEN ma.effdate AND ma.termdate"
+    )
+    invalid = (
+        "SELECT CASE WHEN ma.memid = {{MemberId}} AND {{DateOfService}} BETWEEN "
+        "ma.effdate AND ma.termdate THEN 1 END FROM IPA.dbo.memberattribute ma WITH (NOLOCK)",
+        positive.replace(" AND {{DateOfService}}", " OR {{DateOfService}}"),
+        "SELECT COUNT(*) FROM IPA.dbo.memberattribute ma WITH (NOLOCK) WHERE EXISTS "
+        "(SELECT 1 FROM IPA.dbo.memberattribute x WITH (NOLOCK) WHERE "
+        "x.memid = {{MemberId}} AND {{DateOfService}} BETWEEN x.effdate AND x.termdate)",
+        "SELECT COUNT(*) FROM HRX.dbo.NDCParameters p WITH (NOLOCK) CROSS JOIN "
+        "IPA.dbo.memberattribute ma WITH (NOLOCK) WHERE ma.memid = {{MemberId}} "
+        "AND {{DateOfService}} BETWEEN ma.effdate AND ma.termdate",
+    )
+
+    assert _find_atomic_source_guard_artifacts(positive, meaning) == []
+    assert _find_atomic_source_guard_artifacts(
+        positive.replace("ma.", "").replace(" ma WITH", " WITH"), meaning
+    ) == []
+    assert all(_find_atomic_source_guard_artifacts(sql, meaning) for sql in invalid)
+
+
+def test_member_attribute_config_requires_semantic_runtime_or_owned_parameter():
+    meaning = (
+        "The current member has a memberattribute whose AttributeId and TheValue match "
+        "their configured values on the date of service."
+    )
+    base = (
+        "SELECT COUNT(*) FROM IPA.dbo.memberattribute ma WITH (NOLOCK) WHERE "
+        "ma.memid = {{MemberId}} AND {{DateOfService}} BETWEEN ma.effdate AND ma.termdate "
+    )
+    bad = base + "AND ma.attributeid = {{EditId}} AND ma.thevalue = {{ConfiguredAttributeId}}"
+    runtime = base + (
+        "AND ma.attributeid = {{ConfiguredAttributeId}} "
+        "AND ma.thevalue = {{ConfiguredAttributeValue}}"
+    )
+    parameter = (
+        "SELECT COUNT(*) FROM IPA.dbo.memberattribute ma WITH (NOLOCK) JOIN "
+        "HRX.dbo.NDCParameters p WITH (NOLOCK) ON ma.attributeid = p.parameter_title "
+        "AND ma.thevalue = p.parameter_value WHERE ma.memid = {{MemberId}} "
+        "AND {{DateOfService}} BETWEEN ma.effdate AND ma.termdate"
+    )
+
+    bad_artifacts = _find_atomic_source_guard_artifacts(bad, meaning)
+    assert any("AttributeId" in item for item in bad_artifacts)
+    assert any("TheValue" in item for item in bad_artifacts)
+    assert _find_atomic_source_guard_artifacts(runtime, meaning) == []
+    assert _find_atomic_source_guard_artifacts(parameter, meaning) == []
+
+
+def test_diagnosis_guard_requires_mandatory_correlations_and_semantic_lookback():
+    meaning = (
+        "A member medical diagnosis history record matches DiagnosisList within the "
+        "configured lookback from the date of service."
+    )
+    prefix = (
+        "SELECT COUNT(*) FROM IPA.dbo.meddiagnosis md WITH (NOLOCK) JOIN "
+        "HRX.dbo.DiagnosisList dl WITH (NOLOCK) ON md.diagnosis_code = dl.diagnosis_code "
+        "WHERE md.memberid = {{MemberId}} AND md.diagnosis_date BETWEEN "
+    )
+    good = prefix + (
+        "DATEADD(day, -{{DiagnosisLookbackDays}}, {{DateOfService}}) AND {{DateOfService}}"
+    )
+    bad_lowers = ("30", "{{MemberId}}", "{{UnrelatedDays}}")
+    bad_paths = (
+        good.replace("WHERE md.memberid", "WHERE CASE WHEN md.memberid").replace(
+            " AND md.diagnosis_date", " THEN 1 END = 1 AND md.diagnosis_date"
+        ),
+        good.replace("WHERE md.memberid", "WHERE md.memberid").replace(
+            " AND md.diagnosis_date", " OR md.diagnosis_date"
+        ),
+        "SELECT COUNT(*) FROM HRX.dbo.DiagnosisList dl WITH (NOLOCK) WHERE EXISTS ("
+        + good.replace("SELECT COUNT(*)", "SELECT 1") + ")",
+        good.replace("JOIN HRX.dbo.DiagnosisList", "CROSS JOIN HRX.dbo.DiagnosisList").replace(
+            " ON md.diagnosis_code = dl.diagnosis_code", ""
+        ),
+    )
+
+    assert _find_atomic_source_guard_artifacts(good, meaning) == []
+    qualified = good.replace("md.", "meddiagnosis.").replace(
+        "dl.", "DiagnosisList."
+    ).replace(" md WITH", " WITH").replace(" dl WITH", " WITH")
+    assert _find_atomic_source_guard_artifacts(qualified, meaning) == []
+    assert all(
+        _find_atomic_source_guard_artifacts(
+            prefix + "DATEADD(day, -" + lower + ", {{DateOfService}}) AND {{DateOfService}}",
+            meaning,
+        )
+        for lower in bad_lowers
+    )
+    assert all(_find_atomic_source_guard_artifacts(sql, meaning) for sql in bad_paths)
+    parameter = good.replace(
+        "JOIN HRX.dbo.DiagnosisList dl WITH (NOLOCK)",
+        "JOIN HRX.dbo.DiagnosisList dl WITH (NOLOCK)",
+    ).replace(
+        "-{{DiagnosisLookbackDays}}",
+        "-CAST(p.PARAMETER_VALUE AS int)",
+    ).replace(
+        "WHERE md.memberid",
+        "JOIN HRX.dbo.NDCParameters p WITH (NOLOCK) ON p.PARAMETER_NAME = "
+        "'Cancer_Diagnosis_LookBack_Days' WHERE md.memberid",
+    )
+    assert _find_atomic_source_guard_artifacts(parameter, meaning) == []
+
+
+def test_atomic_guard_uses_only_one_selected_acceptance_criterion():
+    meaning = "Return the current DrugOverrides match."
+    candidate = "SELECT COUNT(*) FROM HRX.dbo.DrugOverrides d WITH (NOLOCK)"
+    criterion = "Match by NDC, GCN, or HIC3."
+
+    assert _find_atomic_source_guard_artifacts(candidate, meaning, criterion) == []
+    assert _find_atomic_source_guard_artifacts(candidate, meaning, [criterion])
+    assert _find_atomic_source_guard_artifacts(candidate, meaning, [criterion, criterion]) == []
+
+
+def test_atomic_guard_strict_rejects_while_draft_requires_review():
+    meaning = "The current member has an active member attribute on the date of service."
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[NDCParameters] "
+        "([PARAMETER_VALUE] varchar(50), [PARAMETER_NAME] varchar(50));"
+    )
+    candidate = (
+        "SELECT p.PARAMETER_VALUE FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'PACE_Attribute'"
+    )
+    with patch(
+        "inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]
+    ), patch(
+        "inrules_data_agent.generator.generate._call_openai", return_value=candidate
+    ):
+        strict = generate_query_result_for_step(meaning)
+        draft = generate_query_result_for_step(meaning, draft_mode=True)
+
+    assert strict["queries"] == []
+    assert strict["failure_category"] == "VALIDATION_REJECTED"
+    assert draft["queries"] == [candidate]
+    assert draft["validation_status"] == "DRAFT_REQUIRES_REVIEW"
+    assert "current member-attribute lookup has no supported memberattribute source" in draft[
+        "review_warnings"
     ]
 
 
