@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from inrules_data_agent.app import (
@@ -13,6 +14,7 @@ from inrules_data_agent.generator.generate import (
     _build_artifact_repair_feedback,
     _build_user_message,
     _column_repair_suggestions,
+    _find_atomic_source_guard_artifacts,
     _find_deterministic_selection_artifacts,
     _find_output_name_artifacts,
     _find_required_business_concept_artifacts,
@@ -1189,6 +1191,386 @@ def test_current_drug_override_exclusion_requires_or_alternatives():
     ]
 
 
+def test_current_member_attribute_guard_requires_source_member_and_window():
+    meaning = (
+        "The current member has an active member attribute where AttributeId equals the "
+        "configured identifier and TheValue equals the configured value on the date of service."
+    )
+    configuration_only = (
+        "SELECT p.PARAMETER_VALUE FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'PACE_Attribute'"
+    )
+    correlated = (
+        "SELECT COUNT(*) AS MemberAttributeCount FROM IPA.dbo.memberattribute ma WITH (NOLOCK) "
+        "WHERE ma.memid = {{MemberId}} "
+        "AND ma.attributeid = {{ConfiguredAttributeId}} "
+        "AND ma.thevalue = {{ConfiguredAttributeValue}} "
+        "AND {{DateOfService}} BETWEEN ma.effdate AND ma.termdate"
+    )
+
+    assert "current member-attribute lookup has no supported memberattribute source" in (
+        _find_required_business_concept_artifacts(configuration_only, meaning)
+    )
+    assert _find_required_business_concept_artifacts(correlated, meaning) == []
+    reversed_window = correlated.replace(
+        "{{DateOfService}} BETWEEN ma.effdate AND ma.termdate",
+        "ma.effdate BETWEEN {{DateOfService}} AND ma.termdate",
+    )
+    assert "correctly oriented DOS window" in " ".join(
+        _find_required_business_concept_artifacts(reversed_window, meaning)
+    )
+    assert _find_required_business_concept_artifacts(
+        "SELECT COUNT(*) FROM IPA.dbo.memberattribute ma WITH (NOLOCK) "
+        "WHERE ma.memid = {{MemberId}} "
+        "AND {{DateOfService}} BETWEEN ma.effdate AND ma.termdate",
+        "The current member has an active member attribute on the date of service.",
+    ) == []
+
+
+def test_member_diagnosis_history_guard_rejects_configuration_only_and_unbounded_sql():
+    meaning = (
+        "No member medical diagnosis history record has a diagnosis code in the Malignant "
+        "Cancer DiagnosisList within the configured lookback from the date of service."
+    )
+    configuration_only = (
+        "SELECT dl.diagnosis_code FROM HRX.dbo.DiagnosisList dl WITH (NOLOCK) "
+        "WHERE dl.diagnosis_type = 'Malignant Cancer'"
+    )
+    correlated = (
+        "SELECT COUNT(*) AS DiagnosisHistoryCount FROM IPA.dbo.meddiagnosis md WITH (NOLOCK) "
+        "JOIN HRX.dbo.DiagnosisList dl WITH (NOLOCK) "
+        "ON md.diagnosis_code = dl.diagnosis_code "
+        "WHERE md.memberid = {{MemberId}} AND md.diagnosis_date BETWEEN "
+        "DATEADD(day, -{{DiagnosisLookbackDays}}, {{DateOfService}}) AND {{DateOfService}}"
+    )
+
+    assert _find_required_business_concept_artifacts(configuration_only, meaning) == [
+        "member diagnosis-history lookup has no supported diagnosis-history source"
+    ]
+    assert _find_required_business_concept_artifacts(correlated, meaning) == []
+    assert "member diagnosis-history lookup is missing a bounded retrospective lookback" in (
+        _find_required_business_concept_artifacts(
+            correlated.split(" AND md.diagnosis_date", 1)[0], meaning
+        )
+    )
+
+
+def test_explicit_drug_override_identifiers_require_owned_runtime_or_alternatives():
+    meaning = "Match DrugOverrides by NDC, GcnSeqNo, GCN, HICL_SeqNO, or HIC3."
+    incomplete = (
+        "SELECT COUNT(*) FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) WHERE "
+        "d.NDCKey = {{ClaimTransaction.Ndc}} OR "
+        "d.GCN_SeqNo = {{ClaimRequest.DrugRequested.GCNSeqNo.Code}} OR "
+        "d.HIC3 = {{ClaimRequest.DrugRequested.HIC3.Code}}"
+    )
+    known_identifiers = meaning.replace(", GCN, HICL_SeqNO", "")
+    wrong_topology = incomplete.replace(" OR d.GCN_SeqNo", " AND d.GCN_SeqNo")
+
+    assert _find_required_business_concept_artifacts(incomplete, meaning) == [
+        "DrugOverrides lookup is missing matching-runtime alternatives: GCN, HICL_SeqNO"
+    ]
+    assert _find_required_business_concept_artifacts(incomplete, known_identifiers) == []
+    assert _find_required_business_concept_artifacts(wrong_topology, known_identifiers)
+
+
+def test_drug_override_guard_requires_one_exact_owned_positive_or_group():
+    meaning = "Match DrugOverrides by NDC, GCN, or HIC3."
+    positive = (
+        "SELECT COUNT(*) FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "WHERE d.Type = 'List' AND (d.NDCKey = {{Ndc}} OR "
+        "d.GCN_SeqNo = {{GcnSeqNo}} OR d.HIC3 = {{Hic3}})"
+    )
+    invalid = (
+        "SELECT 1 FROM HRX.dbo.NDCParameters p WITH (NOLOCK)",
+        positive.replace("d.Type = 'List'", "d.Notes = 'NDC OR GCN OR HIC3'").replace(
+            " OR d.GCN_SeqNo", " AND d.GCN_SeqNo"
+        ),
+        positive.replace(
+            "d.Type = 'List' AND (d.NDCKey = {{Ndc}} OR ",
+            "d.NDCKey = {{Ndc}} AND (",
+        ),
+        positive.replace("(d.NDCKey", "NOT (d.NDCKey"),
+        positive.replace(
+            "d.HIC3 = {{Hic3}})",
+            "d.HIC3 = {{Hic3}} OR d.Type = {{OverrideType}})",
+        ),
+        "SELECT COUNT(*) FROM HRX.dbo.DrugOverrides d WITH (NOLOCK) "
+        "JOIN HRX.dbo.DrugOverrides x WITH (NOLOCK) ON d.NDCKey = {{Ndc}} "
+        "OR x.GCN_SeqNo = {{GcnSeqNo}} WHERE d.HIC3 = {{Hic3}}",
+    )
+
+    assert _find_atomic_source_guard_artifacts(positive, meaning) == []
+    assert _find_atomic_source_guard_artifacts(
+        positive.replace("d.", "DrugOverrides.").replace(" d WITH", " WITH"),
+        meaning,
+    ) == []
+    assert _find_atomic_source_guard_artifacts(
+        positive.replace("d.", "").replace(" d WITH", " WITH"), meaning
+    ) == []
+    assert all(_find_atomic_source_guard_artifacts(sql, meaning) for sql in invalid)
+    assert _find_atomic_source_guard_artifacts(invalid[0], meaning) == [
+        "explicit DrugOverrides identifier lookup has no DrugOverrides source"
+    ]
+
+
+def test_member_attribute_guard_uses_mandatory_same_select_predicates():
+    meaning = "The current member has an active memberattribute on the date of service."
+    positive = (
+        "SELECT COUNT(*) FROM IPA.dbo.memberattribute ma WITH (NOLOCK) "
+        "WHERE ma.memid = {{MemberId}} AND "
+        "{{DateOfService}} BETWEEN ma.effdate AND ma.termdate"
+    )
+    invalid = (
+        "SELECT CASE WHEN ma.memid = {{MemberId}} AND {{DateOfService}} BETWEEN "
+        "ma.effdate AND ma.termdate THEN 1 END FROM IPA.dbo.memberattribute ma WITH (NOLOCK)",
+        positive.replace(" AND {{DateOfService}}", " OR {{DateOfService}}"),
+        "SELECT COUNT(*) FROM IPA.dbo.memberattribute ma WITH (NOLOCK) WHERE EXISTS "
+        "(SELECT 1 FROM IPA.dbo.memberattribute x WITH (NOLOCK) WHERE "
+        "x.memid = {{MemberId}} AND {{DateOfService}} BETWEEN x.effdate AND x.termdate)",
+        "SELECT COUNT(*) FROM HRX.dbo.NDCParameters p WITH (NOLOCK) CROSS JOIN "
+        "IPA.dbo.memberattribute ma WITH (NOLOCK) WHERE ma.memid = {{MemberId}} "
+        "AND {{DateOfService}} BETWEEN ma.effdate AND ma.termdate",
+    )
+
+    assert _find_atomic_source_guard_artifacts(positive, meaning) == []
+    assert _find_atomic_source_guard_artifacts(
+        positive.replace("ma.", "").replace(" ma WITH", " WITH"), meaning
+    ) == []
+    assert all(_find_atomic_source_guard_artifacts(sql, meaning) for sql in invalid)
+
+
+def test_member_attribute_config_requires_semantic_runtime_or_owned_parameter():
+    meaning = (
+        "The current member has a memberattribute whose AttributeId and TheValue match "
+        "their configured values on the date of service."
+    )
+    base = (
+        "SELECT COUNT(*) FROM IPA.dbo.memberattribute ma WITH (NOLOCK) WHERE "
+        "ma.memid = {{MemberId}} AND {{DateOfService}} BETWEEN ma.effdate AND ma.termdate "
+    )
+    bad = base + "AND ma.attributeid = {{EditId}} AND ma.thevalue = {{ConfiguredAttributeId}}"
+    runtime = base + (
+        "AND ma.attributeid = {{ConfiguredAttributeId}} "
+        "AND ma.thevalue = {{ConfiguredAttributeValue}}"
+    )
+    parameter = (
+        "SELECT COUNT(*) FROM IPA.dbo.memberattribute ma WITH (NOLOCK) JOIN "
+        "HRX.dbo.NDCParameters p WITH (NOLOCK) ON ma.attributeid = p.parameter_title "
+        "AND ma.thevalue = p.parameter_value WHERE ma.memid = {{MemberId}} "
+        "AND {{DateOfService}} BETWEEN ma.effdate AND ma.termdate"
+    )
+
+    bad_artifacts = _find_atomic_source_guard_artifacts(bad, meaning)
+    assert any("AttributeId" in item for item in bad_artifacts)
+    assert any("TheValue" in item for item in bad_artifacts)
+    assert _find_atomic_source_guard_artifacts(runtime, meaning) == []
+    assert _find_atomic_source_guard_artifacts(parameter, meaning) == []
+
+
+def test_configured_product_list_requires_structured_ndcparameters_evidence():
+    candidate = (
+        "SELECT COUNT(*) AS ProductMatchCount FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'REGIONAL_PRODUCTS' "
+        "AND p.PARAMETER_VALUE = {{SubmittedProductCode}}"
+    )
+    warning = (
+        "configured drug-list source is unverified; atomic evidence does not identify "
+        "NDCParameters as the list source"
+    )
+
+    for subject in ("drug", "prescription", "product"):
+        meaning = f"The submitted {subject} is found in the configured REGIONAL_PRODUCTS list."
+        assert _find_atomic_source_guard_artifacts(candidate, meaning) == [warning]
+    assert _find_atomic_source_guard_artifacts(
+        candidate.replace(
+            "WHERE", "JOIN HRX.dbo.ReferenceData r ON r.Code = p.PARAMETER_VALUE WHERE"
+        ),
+        "The current product matches the named REGIONAL_PRODUCTS list.",
+    ) == [warning]
+
+    prefix = "The incoming product is found in the configured REGIONAL_PRODUCTS list.\n"
+    for declaration in (
+        "Source: NDCParameters.",
+        "Source: [HRX].[dbo].[NDCParameters].",
+        "List contract: NDCParameters.PARAMETER_NAME and "
+        "[NDCParameters].[PARAMETER_VALUE].",
+        "List contract: [HRX].[dbo].[NDCParameters].[PARAMETER_NAME] and "
+        "HRX.dbo.NDCParameters.PARAMETER_VALUE.",
+    ):
+        assert _find_atomic_source_guard_artifacts(candidate, prefix + declaration) == []
+
+    for prose in (
+        "Query NDCParameters for the list.",
+        "Match using NDCParameters.",
+        "The list is sourced from NDCParameters.",
+        "NDCParameters is likely the source of the list.",
+        "NDCParameters is not the source of the list.",
+        "The reviewer says Source: NDCParameters is wrong.",
+    ):
+        assert _find_atomic_source_guard_artifacts(candidate, prefix + prose) == [warning]
+
+    contradictory = (
+        "Source: NDCParameters (likely).",
+        "Source: NDCParameters; verify with the reviewer.",
+        "Source: NDCParameters.\nSource: DrugOverrides.",
+        "Source: NDCParameters.\nList contract: NDCParameters.PARAMETER_NAME and "
+        "NDCParameters.PARAMETER_VALUE are unverified.",
+    )
+    assert all(
+        _find_atomic_source_guard_artifacts(candidate, prefix + declaration) == [warning]
+        for declaration in contradictory
+    )
+
+
+def test_authorized_ndcparameters_list_requires_owned_mandatory_predicates():
+    meaning = (
+        "The current product is found in the configured REGIONAL_PRODUCTS list.\n"
+        "Source: NDCParameters."
+    )
+    valid = (
+        "SELECT COUNT(*) FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'REGIONAL_PRODUCTS' "
+        "AND p.PARAMETER_VALUE = {{SubmittedProductCode}}"
+    )
+    invalid = (
+        "SELECT p.PARAMETER_NAME, p.PARAMETER_VALUE FROM HRX.dbo.NDCParameters p WITH (NOLOCK)",
+        "SELECT CASE WHEN p.PARAMETER_NAME = 'REGIONAL_PRODUCTS' AND "
+        "p.PARAMETER_VALUE = {{SubmittedProductCode}} THEN 1 END "
+        "FROM HRX.dbo.NDCParameters p WITH (NOLOCK)",
+        "SELECT COUNT(*) FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "JOIN HRX.dbo.NDCParameters x WITH (NOLOCK) ON p.PARAMETER_NAME = 'REGIONAL_PRODUCTS' "
+        "WHERE x.PARAMETER_VALUE = {{SubmittedProductCode}}",
+        "SELECT COUNT(*) FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'REGIONAL_PRODUCTS' "
+        "OR p.PARAMETER_VALUE = {{SubmittedProductCode}}",
+    )
+
+    assert _find_atomic_source_guard_artifacts(valid, meaning) == []
+    assert all(_find_atomic_source_guard_artifacts(sql, meaning) for sql in invalid)
+
+
+def test_configured_drug_list_source_guard_rejects_strict_and_warns_in_draft():
+    meaning = "The current drug is found in the named REGIONAL_DRUGS list."
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[NDCParameters] "
+        "([PARAMETER_NAME] varchar(50), [PARAMETER_VALUE] varchar(50));"
+    )
+    candidate = (
+        "SELECT COUNT(*) AS DrugMatchCount FROM HRX.dbo.NDCParameters WITH (NOLOCK) "
+        "WHERE PARAMETER_NAME = 'REGIONAL_DRUGS' "
+        "AND PARAMETER_VALUE = {{ClaimTransaction.Ndc}}"
+    )
+
+    with patch(
+        "inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]
+    ), patch(
+        "inrules_data_agent.generator.generate._call_openai", return_value=candidate
+    ):
+        strict = generate_query_result_for_step(meaning)
+        draft = generate_query_result_for_step(meaning, draft_mode=True)
+
+    assert strict["queries"] == []
+    assert strict["failure_category"] == "VALIDATION_REJECTED"
+    assert draft["queries"] == [candidate]
+    assert draft["validation_status"] == "DRAFT_REQUIRES_REVIEW"
+    assert any(
+        "configured drug-list source is unverified" in item
+        for item in draft["review_warnings"]
+    )
+
+
+def test_diagnosis_guard_requires_mandatory_correlations_and_semantic_lookback():
+    meaning = (
+        "A member medical diagnosis history record matches DiagnosisList within the "
+        "configured lookback from the date of service."
+    )
+    prefix = (
+        "SELECT COUNT(*) FROM IPA.dbo.meddiagnosis md WITH (NOLOCK) JOIN "
+        "HRX.dbo.DiagnosisList dl WITH (NOLOCK) ON md.diagnosis_code = dl.diagnosis_code "
+        "WHERE md.memberid = {{MemberId}} AND md.diagnosis_date BETWEEN "
+    )
+    good = prefix + (
+        "DATEADD(day, -{{DiagnosisLookbackDays}}, {{DateOfService}}) AND {{DateOfService}}"
+    )
+    bad_lowers = ("30", "{{MemberId}}", "{{UnrelatedDays}}")
+    bad_paths = (
+        good.replace("WHERE md.memberid", "WHERE CASE WHEN md.memberid").replace(
+            " AND md.diagnosis_date", " THEN 1 END = 1 AND md.diagnosis_date"
+        ),
+        good.replace("WHERE md.memberid", "WHERE md.memberid").replace(
+            " AND md.diagnosis_date", " OR md.diagnosis_date"
+        ),
+        "SELECT COUNT(*) FROM HRX.dbo.DiagnosisList dl WITH (NOLOCK) WHERE EXISTS ("
+        + good.replace("SELECT COUNT(*)", "SELECT 1") + ")",
+        good.replace("JOIN HRX.dbo.DiagnosisList", "CROSS JOIN HRX.dbo.DiagnosisList").replace(
+            " ON md.diagnosis_code = dl.diagnosis_code", ""
+        ),
+    )
+
+    assert _find_atomic_source_guard_artifacts(good, meaning) == []
+    qualified = good.replace("md.", "meddiagnosis.").replace(
+        "dl.", "DiagnosisList."
+    ).replace(" md WITH", " WITH").replace(" dl WITH", " WITH")
+    assert _find_atomic_source_guard_artifacts(qualified, meaning) == []
+    assert all(
+        _find_atomic_source_guard_artifacts(
+            prefix + "DATEADD(day, -" + lower + ", {{DateOfService}}) AND {{DateOfService}}",
+            meaning,
+        )
+        for lower in bad_lowers
+    )
+    assert all(_find_atomic_source_guard_artifacts(sql, meaning) for sql in bad_paths)
+    parameter = good.replace(
+        "JOIN HRX.dbo.DiagnosisList dl WITH (NOLOCK)",
+        "JOIN HRX.dbo.DiagnosisList dl WITH (NOLOCK)",
+    ).replace(
+        "-{{DiagnosisLookbackDays}}",
+        "-CAST(p.PARAMETER_VALUE AS int)",
+    ).replace(
+        "WHERE md.memberid",
+        "JOIN HRX.dbo.NDCParameters p WITH (NOLOCK) ON p.PARAMETER_NAME = "
+        "'Cancer_Diagnosis_LookBack_Days' WHERE md.memberid",
+    )
+    assert _find_atomic_source_guard_artifacts(parameter, meaning) == []
+
+
+def test_atomic_guard_uses_only_one_selected_acceptance_criterion():
+    meaning = "Return the current DrugOverrides match."
+    candidate = "SELECT COUNT(*) FROM HRX.dbo.DrugOverrides d WITH (NOLOCK)"
+    criterion = "Match by NDC, GCN, or HIC3."
+
+    assert _find_atomic_source_guard_artifacts(candidate, meaning, criterion) == []
+    assert _find_atomic_source_guard_artifacts(candidate, meaning, [criterion])
+    assert _find_atomic_source_guard_artifacts(candidate, meaning, [criterion, criterion]) == []
+
+
+def test_atomic_guard_strict_rejects_while_draft_requires_review():
+    meaning = "The current member has an active member attribute on the date of service."
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[NDCParameters] "
+        "([PARAMETER_VALUE] varchar(50), [PARAMETER_NAME] varchar(50));"
+    )
+    candidate = (
+        "SELECT p.PARAMETER_VALUE FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'PACE_Attribute'"
+    )
+    with patch(
+        "inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]
+    ), patch(
+        "inrules_data_agent.generator.generate._call_openai", return_value=candidate
+    ):
+        strict = generate_query_result_for_step(meaning)
+        draft = generate_query_result_for_step(meaning, draft_mode=True)
+
+    assert strict["queries"] == []
+    assert strict["failure_category"] == "VALIDATION_REJECTED"
+    assert draft["queries"] == [candidate]
+    assert draft["validation_status"] == "DRAFT_REQUIRES_REVIEW"
+    assert "current member-attribute lookup has no supported memberattribute source" in draft[
+        "review_warnings"
+    ]
+
+
 def test_reject_code_configuration_list_stays_effective_and_occurrence_independent():
     meaning = (
         "Return the approved NDCParameters Reject_Code list for the submitted COB "
@@ -2147,6 +2529,169 @@ def test_generate_queries_repairs_incomplete_drug_override_exclusion_lookup():
     repair_feedback = call_openai.call_args_list[1].args[2]
     assert "GCN_SeqNo, HIC3" in repair_feedback
     assert "DateOfService EffDate/TermDate" in repair_feedback
+
+
+ORIGINAL_CLAIM_MEANING = "Return CreateDate from the matched original claim."
+ORIGINAL_CLAIM_CRITERION = [
+    "Use Rx/Service Reference Number, Product/Service ID (NDC), Date of Service, "
+    "and Service Provider ID to find the original submission in claim history."
+]
+ORIGINAL_CLAIM_FROM = (
+    "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+    "JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+    "ON cp.claimid = c.claimid "
+)
+ORIGINAL_CLAIM_PREDICATES = (
+    "cp.rxnumber = {{RxNumber}} AND cp.ndckey = {{ClaimTransaction.Ndc}} "
+    "AND c.provid = {{ProviderId}} AND c.startdate = {{DateOfService}}"
+)
+
+
+def _original_claim_artifacts(sql, criteria=ORIGINAL_CLAIM_CRITERION):
+    return _find_required_business_concept_artifacts(
+        sql, ORIGINAL_CLAIM_MEANING, acceptance_criteria=criteria
+    )
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE "
+        + ORIGINAL_CLAIM_PREDICATES,
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "WHERE c.claimid = {{OriginalClaimId}}",
+    ],
+    ids=["composite", "original-claim-id"],
+)
+def test_original_claim_match_accepts_owned_mandatory_runtime_predicates(sql):
+    assert _original_claim_artifacts(sql) == []
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE cp.rxnumber = {{RxNumber}}",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE ("
+        + ORIGINAL_CLAIM_PREDICATES.replace(" AND ", " OR ")
+        + ")",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE NOT ("
+        + ORIGINAL_CLAIM_PREDICATES
+        + ")",
+        "SELECT CASE WHEN "
+        + ORIGINAL_CLAIM_PREDICATES
+        + " THEN c.createdate END AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM,
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "JOIN plandata_rx_production.dbo.unrelated u WITH (NOLOCK) "
+        "ON u.otherid = c.claimid WHERE u.rxnumber = {{RxNumber}} "
+        "AND u.ndckey = {{ClaimTransaction.Ndc}} AND u.provid = {{ProviderId}} "
+        "AND u.startdate = {{DateOfService}}",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE EXISTS ("
+        "SELECT 1 FROM plandata_rx_production.dbo.claim x "
+        "JOIN plandata_rx_production.dbo.claimpharm xp ON xp.claimid = x.claimid "
+        "WHERE xp.rxnumber = {{RxNumber}} "
+        "AND xp.ndckey = {{ClaimTransaction.Ndc}} "
+        "AND x.provid = {{ProviderId}} AND x.startdate = {{DateOfService}})",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE cp.rxnumber = {{DateOfService}} "
+        "AND cp.ndckey = {{ProviderId}} AND c.provid = {{ClaimTransaction.Ndc}} "
+        "AND c.startdate = {{RxNumber}}",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "WHERE NOT c.claimid = {{OriginalClaimId}}",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "WHERE c.claimid = {{OriginalClaimId}} OR c.claimid IS NULL",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "WHERE EXISTS (SELECT 1 FROM plandata_rx_production.dbo.claim x "
+        "WHERE x.claimid = {{OriginalClaimId}})",
+        "SELECT CASE WHEN c.claimid = {{OriginalClaimId}} THEN c.createdate END "
+        "AS OriginalClaimCreateDate FROM plandata_rx_production.dbo.claim c WITH (NOLOCK)",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "ON cp.claimid = c.claimid WHERE cp.claimid = {{OriginalClaimId}}",
+    ],
+    ids=[
+        "partial",
+        "or",
+        "not",
+        "projection",
+        "unrelated-alias",
+        "subquery",
+        "wrong-runtime",
+        "id-not",
+        "id-or",
+        "id-subquery",
+        "id-projection",
+        "id-wrong-owner",
+    ],
+)
+def test_original_claim_match_rejects_nonmandatory_or_misowned_predicates(sql):
+    assert _original_claim_artifacts(sql)
+
+
+def test_original_claim_match_uses_only_one_selected_list_criterion():
+    sql = "SELECT c.createdate FROM plandata_rx_production.dbo.claim c"
+    complete = ["Match by Rx number, NDC, provider, and DOS."]
+    incomplete = ["Match by Rx number, NDC, and provider."]
+
+    assert _original_claim_artifacts(sql, ORIGINAL_CLAIM_CRITERION[0]) == []
+    assert _original_claim_artifacts(sql, ORIGINAL_CLAIM_CRITERION * 2) == []
+    assert _original_claim_artifacts(sql, incomplete) == []
+    assert _original_claim_artifacts(sql, complete)
+
+
+@pytest.mark.parametrize("draft_mode", [False, True], ids=["strict", "draft"])
+def test_original_claim_match_integrates_with_strict_and_draft_validation(draft_mode):
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ("
+        "[claimid] char(15), [createdate] datetime, [provid] char(15), "
+        "[startdate] datetime);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] ("
+        "[claimid] char(15), [rxnumber] char(50), [ndckey] char(11));",
+    ]
+    candidate = (
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE cp.rxnumber = {{RxNumber}}"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=candidate,
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            ORIGINAL_CLAIM_MEANING,
+            acceptance_criteria=ORIGINAL_CLAIM_CRITERION,
+            draft_mode=draft_mode,
+        )
+
+    expected = "original-claim match is missing mandatory selected-criterion predicates"
+    if draft_mode:
+        assert result["queries"] == [candidate]
+        assert result["validation_status"] == "DRAFT_REQUIRES_REVIEW"
+        assert any(expected in warning for warning in result["review_warnings"])
+    else:
+        assert result["queries"] == []
+        assert result["validation_status"] is None
+        assert expected in call_openai.call_args_list[1].args[2]
 
 
 def test_generate_queries_repairs_selected_row_to_use_stable_identifier():
