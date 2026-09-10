@@ -731,7 +731,9 @@ def generate_query_result_for_step(
 
                 invalid_artifacts = _find_invalid_sql_artifacts(sql, ddl_context, business_meaning)
                 invalid_artifacts.extend(
-                    _find_required_business_concept_artifacts(sql, business_meaning)
+                    _find_required_business_concept_artifacts(
+                        sql, business_meaning, acceptance_criteria
+                    )
                 )
                 invalid_artifacts.extend(
                     _find_deterministic_selection_artifacts(
@@ -1747,8 +1749,340 @@ def _find_historical_tcns_contract_artifacts(
     return []
 
 
+def _find_atomic_source_guard_artifacts(
+    sql: str,
+    business_meaning: str,
+    acceptance_criteria: str | list[str] | None = None,
+) -> list[str]:
+    """Validate the three narrow atomic member/drug retrieval contracts."""
+    selected = acceptance_criteria[0] if isinstance(acceptance_criteria, list) and len(acceptance_criteria) == 1 else ""
+    evidence_text = "\n".join(part for part in (business_meaning, selected) if part)
+    task = re.sub(r"\s+", " ", evidence_text).strip()
+    parseable = re.sub(r"\bWITH\s*\(\s*NOLOCK\s*\)", "(NOLOCK)", sql, flags=re.I)
+    statement, runtimes = _runtime_semantic_statement(parseable)
+    select = statement if isinstance(statement, exp.Select) else None
+    artifacts: list[str] = []
+
+    def flatten(node: Any, kind: type[Any]) -> list[Any]:
+        while isinstance(node, exp.Paren):
+            node = node.this
+        return flatten(node.left, kind) + flatten(node.right, kind) if isinstance(node, kind) else [node]
+
+    joins = select.args.get("joins") or () if select is not None else ()
+    cross = {
+        join.this.alias_or_name.casefold() for join in joins
+        if isinstance(join, exp.Join) and isinstance(join.this, exp.Table)
+        and str(join.args.get("kind") or "").upper() == "CROSS"
+    }
+
+    def tables(pattern: str) -> list[exp.Table]:
+        return [] if select is None else [
+            table for table in select.find_all(exp.Table)
+            if table.find_ancestor(exp.Select) is select
+            and table.alias_or_name.casefold() not in cross
+            and re.fullmatch(pattern, table.name, re.I)
+        ]
+
+    roots: list[Any] = []
+    if select is not None:
+        where = select.args.get("where")
+        roots += [where.this] if isinstance(where, exp.Where) else []
+        roots += [
+            join.args["on"] for join in joins if isinstance(join, exp.Join)
+            and not join.side and str(join.args.get("kind") or "").upper() in {"", "INNER"}
+            and isinstance(join.args.get("on"), Expression)
+        ]
+    leaves = [leaf for root in roots for leaf in flatten(root, exp.And)]
+
+    def runtime_names(node: Any) -> list[str]:
+        return [re.sub(r"[^a-z0-9]", "", name.casefold()) for name in _expression_runtime_names(node, runtimes)]
+
+    def runtime_is(node: Any, pattern: str) -> bool:
+        names = runtime_names(node)
+        return len(names) == 1 and bool(re.fullmatch(pattern, names[0]))
+
+    def owns(node: Any, table: exp.Table, column: str, unqualified: bool = True) -> bool:
+        columns = _expression_columns(node)
+        if len(columns) != 1 or not re.fullmatch(column, columns[0].name, re.I):
+            return False
+        owner = (table.alias or table.name).casefold()
+        return columns[0].table.casefold() == owner or (not columns[0].table and unqualified)
+
+    def eq_runtime(
+        node: Any, table: exp.Table, column: str, runtime: str, unqualified: bool = True
+    ) -> bool:
+        return isinstance(node, exp.EQ) and any(
+            owns(left, table, column, unqualified) and runtime_is(right, runtime)
+            for left, right in ((node.left, node.right), (node.right, node.left))
+        )
+
+    parameters = tables(r"ndcparameters")
+
+    def configured_eq(
+        node: Any, source: exp.Table, column: str, runtime: str, parameter: str
+    ) -> bool:
+        return isinstance(node, exp.EQ) and any(
+            owns(left, source, column) and (
+                runtime_is(right, runtime) or any(owns(right, p, parameter) for p in parameters)
+            ) for left, right in ((node.left, node.right), (node.right, node.left))
+        )
+
+    def has_window(table: exp.Table, start: str, end: str) -> bool:
+        if any(
+            isinstance(x, exp.Between) and runtime_is(x.this, r"dateofservice|dos")
+            and owns(x.args["low"], table, start) and owns(x.args["high"], table, end)
+            for x in leaves
+        ):
+            return True
+        lower = any(
+            isinstance(x, exp.LTE) and owns(x.left, table, start)
+            and runtime_is(x.right, r"dateofservice|dos")
+            or isinstance(x, exp.GTE) and runtime_is(x.left, r"dateofservice|dos")
+            and owns(x.right, table, start) for x in leaves
+        )
+        upper = any(
+            isinstance(x, exp.GTE) and owns(x.left, table, end)
+            and runtime_is(x.right, r"dateofservice|dos")
+            or isinstance(x, exp.LTE) and runtime_is(x.left, r"dateofservice|dos")
+            and owns(x.right, table, end) for x in leaves
+        )
+        return lower and upper
+
+    member_task = re.search(r"\bmember\s*[- ]?attribute\b|\bmemberattribute\b", task, re.I) and re.search(
+        r"\b(?:current|claim)\s+member\b", task, re.I
+    )
+    if member_task:
+        sources = tables(r"member_?attribute")
+        if not sources:
+            artifacts.append("current member-attribute lookup has no supported memberattribute source")
+        else:
+            source = sources[0]
+            needs_id = bool(re.search(
+                r"\bconfigured\b[^.]{0,100}\battribute\s*id\b|\battribute\s*id\b[^.]{0,100}\bconfigured\b",
+                task, re.I,
+            ))
+            needs_value = bool(re.search(
+                r"\bconfigured\b[^.]{0,100}\b(?:the\s*)?value\b|\bthevalue\b[^.]{0,100}\bconfigured\b",
+                task, re.I,
+            ))
+            checks = (
+                any(eq_runtime(x, source, r"mem(?:ber)?id", r"memberid") for x in leaves),
+                has_window(source, r"eff(?:ective)?date", r"term(?:ination)?date"),
+                not needs_id or any(configured_eq(
+                    x, source, r"attribute_?id", r"(?:configured|member)?attributeid",
+                    r"parameter_(?:title|value)",
+                ) for x in leaves),
+                not needs_value or any(configured_eq(
+                    x, source, r"the_?value", r"(?:configured(?:attribute)?|memberattribute|the)value",
+                    r"parameter_value",
+                ) for x in leaves),
+            )
+            messages = (
+                "current member-attribute lookup is not correlated by MemberId",
+                "current member-attribute lookup is missing its correctly oriented DOS window",
+                "memberattribute AttributeId is not correlated to its stated configured value",
+                "memberattribute TheValue is not correlated to its stated configured value",
+            )
+            artifacts += [message for passed, message in zip(checks, messages) if not passed]
+
+    diagnosis_task = re.search(
+        r"\bmember\s+medical\s+diagnosis\s+history\b|\bmedical\s+diagnosis\s+history\s+record\b",
+        task, re.I,
+    )
+    if diagnosis_task:
+        histories = tables(r"meddiagnosis|medical_?diagnosis_?history|member_?diagnosis_?history")
+        lists = tables(r"diagnosislist")
+        if not histories:
+            artifacts.append("member diagnosis-history lookup has no supported diagnosis-history source")
+        else:
+            history = histories[0]
+            configured = bool(re.search(
+                r"\bconfigured\b[^.]{0,80}\blookback\b|\blookback\b[^.]{0,80}\bconfigured\b",
+                task, re.I,
+            ))
+
+            def valid_lower(node: Any) -> bool:
+                names = runtime_names(node)
+                retrospective = re.search(r"\bDATEADD\s*\(\s*DAY\s*,\s*-", node.sql(dialect="tsql"), re.I)
+                dos = any("dateofservice" in name or name == "dos" for name in names)
+                source = any(owns(node, p, r"parameter_value|(?:dec|int)_param_val") for p in parameters)
+                return bool(retrospective and dos and (not configured or source or any("lookback" in name for name in names)))
+
+            date = r"(?:diagnosis|service|start|effective|recorded)_?date|dateofservice"
+            lookback = any(
+                isinstance(x, exp.Between) and owns(x.this, history, date)
+                and valid_lower(x.args["low"]) and runtime_is(x.args["high"], r"dateofservice|dos")
+                for x in leaves
+            )
+            if not lookback:
+                lower = any(isinstance(x, exp.GTE) and owns(x.left, history, date) and valid_lower(x.right) for x in leaves)
+                upper = any(isinstance(x, exp.LTE) and owns(x.left, history, date) and runtime_is(x.right, r"dateofservice|dos") for x in leaves)
+                lookback = lower and upper
+            code = any(
+                isinstance(x, exp.EQ) and any(
+                    owns(left, history, r"(?:diagnosis|diag)(?:_?code)?", False)
+                    and owns(right, item, r"diagnosis_?code", False)
+                    for item in lists for left, right in ((x.left, x.right), (x.right, x.left))
+                ) for x in leaves
+            )
+            checks = (
+                any(eq_runtime(x, history, r"mem(?:ber)?id", r"memberid") for x in leaves),
+                code,
+                lookback,
+            )
+            if not lists:
+                artifacts.append("member diagnosis-history lookup is missing DiagnosisList")
+            messages = (
+                "member diagnosis-history lookup is not correlated by MemberId",
+                "member diagnosis-history lookup is not correlated to DiagnosisList",
+                "member diagnosis-history lookup is missing a bounded retrospective lookback",
+            )
+            artifacts += [message for passed, message in zip(checks, messages) if not passed]
+
+    configured_drug_list = (
+        re.search(
+            r"\b(?:submitted|current|incoming)\s+(?:drug|prescription|product)\b",
+            task,
+            re.I,
+        )
+        and re.search(
+            r"\b(?:configured|named)\b[^.]{0,100}\b(?:drug\s+)?(?:list|set)\b",
+            task,
+            re.I,
+        )
+        and re.search(
+            r"\b(?:found|match(?:es|ed|ing)?|belongs?|contained|in|on)\b",
+            task,
+            re.I,
+        )
+    )
+    ndcparameters_table = (
+        r"(?:\[?hrx\]?\s*\.\s*\[?dbo\]?\s*\.\s*)?\[?ndcparameters\]?"
+    )
+    source_lines = re.findall(r"^\s*source\s*:.*$", evidence_text, re.I | re.M)
+    source_declaration = len(source_lines) == 1 and bool(re.fullmatch(
+        rf"\s*source\s*:\s*{ndcparameters_table}\s*\.?\s*",
+        source_lines[0],
+        re.I,
+    ))
+    parameter_name_contract = rf"{ndcparameters_table}\s*\.\s*\[?parameter_name\]?"
+    parameter_value_contract = rf"{ndcparameters_table}\s*\.\s*\[?parameter_value\]?"
+    contract_lines = re.findall(
+        r"^\s*(?:configured\s+)?(?:drug\s+)?list\s+contract\s*:.*$",
+        evidence_text,
+        re.I | re.M,
+    )
+    contract_pair = (
+        rf"(?:{parameter_name_contract}\s*(?:,|\band\b)\s*{parameter_value_contract}|"
+        rf"{parameter_value_contract}\s*(?:,|\band\b)\s*{parameter_name_contract})"
+    )
+    contract_declaration = len(contract_lines) == 1 and bool(re.fullmatch(
+        rf"\s*(?:configured\s+)?(?:drug\s+)?list\s+contract\s*:\s*"
+        rf"{contract_pair}\s*[.;]?\s*",
+        contract_lines[0],
+        re.I,
+    ))
+    declarations_are_consistent = (
+        (not source_lines or source_declaration)
+        and (not contract_lines or contract_declaration)
+    )
+    parameter_list_evidence = declarations_are_consistent and bool(
+        source_declaration or contract_declaration
+    )
+
+    if configured_drug_list and parameters:
+        if not parameter_list_evidence:
+            artifacts.append(
+                "configured drug-list source is unverified; atomic evidence does not identify "
+                "NDCParameters as the list source"
+            )
+        else:
+            unqualified = len(tables(r".*")) == 1
+
+            def discriminator(node: Any, source: exp.Table) -> bool:
+                if isinstance(node, exp.EQ):
+                    return any(
+                        owns(left, source, r"parameter_name", unqualified)
+                        and not _expression_columns(right)
+                        for left, right in ((node.left, node.right), (node.right, node.left))
+                    )
+                return (
+                    isinstance(node, exp.In)
+                    and owns(node.this, source, r"parameter_name", unqualified)
+                    and not node.args.get("query")
+                    and bool(node.expressions)
+                    and all(not _expression_columns(item) for item in node.expressions)
+                )
+
+            complete_source = any(
+                any(discriminator(leaf, source) for leaf in leaves)
+                and any(
+                    eq_runtime(
+                        leaf, source, r"parameter_value", r".*", unqualified
+                    )
+                    for leaf in leaves
+                )
+                for source in parameters
+            )
+            if not complete_source:
+                artifacts.append(
+                    "authorized NDCParameters drug-list lookup requires mandatory owned "
+                    "PARAMETER_NAME discrimination and PARAMETER_VALUE submitted-product "
+                    "correlation on the same source"
+                )
+
+    specs = (
+        ("NDC", r"\bndc(?:key)?\b", r"ndckey", r"(?:claimtransaction)?ndc|incomingndc"),
+        ("GCN SeqNo", r"\bgcn[ _-]*(?:seqno|seq(?:uence)?[ _-]*no)\b", r"gcn_?seqno", r".*gcn.*"),
+        ("HICL_SeqNO", r"\bhicl[ _-]*seq(?:uence)?[ _-]*no\b", r"hicl_?seqno", r".*hicl.*"),
+        ("HIC3", r"\bhic3\b", r"hic3", r".*(?:hic3|therapeuticclass).*")
+    )
+    identifiers = [item for item in specs if re.search(item[1], task, re.I)]
+    if re.search(r"\bgcn\b(?![ _-]*(?:seqno|seq(?:uence)?[ _-]*no))", task, re.I):
+        column = r"gcn" if any(item[0] == "GCN SeqNo" for item in identifiers) else r"gcn_?seqno"
+        identifiers.insert(2, ("GCN", "", column, r".*gcn.*"))
+    explicit = (
+        len(identifiers) > 1
+        and re.search(r"\bdrug\s+override|\bdrugoverrides\b", task, re.I)
+        and re.search(r"\b(?:match(?:ed|es|ing)?|by|using)\b", task, re.I)
+    )
+    if explicit:
+        sources = tables(r"drugoverrides")
+        if not sources:
+            artifacts.append("explicit DrugOverrides identifier lookup has no DrugOverrides source")
+        else:
+            source = sources[0]
+            unqualified = len(tables(r".*")) == 1
+
+            def identifier(node: Any) -> str | None:
+                return next((
+                    label for label, _, column, runtime in identifiers
+                    if eq_runtime(node, source, column, runtime, unqualified)
+                ), None)
+
+            exact = False
+            found: set[str] = set()
+            for root in leaves:
+                labels = [identifier(node) for node in flatten(root, exp.Or)]
+                found.update(label for label in labels if label)
+                exact |= (
+                    isinstance(root, exp.Or) and len(labels) == len(identifiers)
+                    and None not in labels and set(cast(list[str], labels)) == {item[0] for item in identifiers}
+                )
+            if not exact:
+                missing = [item[0] for item in identifiers if item[0] not in found]
+                artifacts.append(
+                    "DrugOverrides lookup is missing matching-runtime alternatives: " + ", ".join(missing)
+                    if missing else "DrugOverrides identifiers are not one exact OR-connected alternative group on the same row"
+                )
+
+    return artifacts
+
+
 def _find_required_business_concept_artifacts(
-    sql: str, business_meaning: str
+    sql: str,
+    business_meaning: str,
+    acceptance_criteria: str | list[str] | None = None,
 ) -> list[str]:
     """Reject candidates that silently omit strongly named atomic constraints."""
     requirements = (
@@ -1808,6 +2142,11 @@ def _find_required_business_concept_artifacts(
         re.search(r"\[\[\s*historicaltcns\s*\]\]", sql, re.IGNORECASE)
     )
     artifacts = list(historical_tcns_contract_artifacts)
+    artifacts.extend(
+        _find_atomic_source_guard_artifacts(
+            sql, business_meaning, acceptance_criteria
+        )
+    )
 
     quantity_prescribed_fact = bool(re.search(
         r"\bquantity\s+prescribed\b|\b460[-_ ]?et\b",
