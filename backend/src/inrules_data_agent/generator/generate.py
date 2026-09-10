@@ -1756,7 +1756,8 @@ def _find_atomic_source_guard_artifacts(
 ) -> list[str]:
     """Validate the three narrow atomic member/drug retrieval contracts."""
     selected = acceptance_criteria[0] if isinstance(acceptance_criteria, list) and len(acceptance_criteria) == 1 else ""
-    task = re.sub(r"\s+", " ", f"{business_meaning} {selected}").strip()
+    evidence_text = "\n".join(part for part in (business_meaning, selected) if part)
+    task = re.sub(r"\s+", " ", evidence_text).strip()
     parseable = re.sub(r"\bWITH\s*\(\s*NOLOCK\s*\)", "(NOLOCK)", sql, flags=re.I)
     statement, runtimes = _runtime_semantic_statement(parseable)
     select = statement if isinstance(statement, exp.Select) else None
@@ -1937,6 +1938,98 @@ def _find_atomic_source_guard_artifacts(
                 "member diagnosis-history lookup is missing a bounded retrospective lookback",
             )
             artifacts += [message for passed, message in zip(checks, messages) if not passed]
+
+    configured_drug_list = (
+        re.search(
+            r"\b(?:submitted|current|incoming)\s+(?:drug|prescription|product)\b",
+            task,
+            re.I,
+        )
+        and re.search(
+            r"\b(?:configured|named)\b[^.]{0,100}\b(?:drug\s+)?(?:list|set)\b",
+            task,
+            re.I,
+        )
+        and re.search(
+            r"\b(?:found|match(?:es|ed|ing)?|belongs?|contained|in|on)\b",
+            task,
+            re.I,
+        )
+    )
+    ndcparameters_table = (
+        r"(?:\[?hrx\]?\s*\.\s*\[?dbo\]?\s*\.\s*)?\[?ndcparameters\]?"
+    )
+    source_lines = re.findall(r"^\s*source\s*:.*$", evidence_text, re.I | re.M)
+    source_declaration = len(source_lines) == 1 and bool(re.fullmatch(
+        rf"\s*source\s*:\s*{ndcparameters_table}\s*\.?\s*",
+        source_lines[0],
+        re.I,
+    ))
+    parameter_name_contract = rf"{ndcparameters_table}\s*\.\s*\[?parameter_name\]?"
+    parameter_value_contract = rf"{ndcparameters_table}\s*\.\s*\[?parameter_value\]?"
+    contract_lines = re.findall(
+        r"^\s*(?:configured\s+)?(?:drug\s+)?list\s+contract\s*:.*$",
+        evidence_text,
+        re.I | re.M,
+    )
+    contract_pair = (
+        rf"(?:{parameter_name_contract}\s*(?:,|\band\b)\s*{parameter_value_contract}|"
+        rf"{parameter_value_contract}\s*(?:,|\band\b)\s*{parameter_name_contract})"
+    )
+    contract_declaration = len(contract_lines) == 1 and bool(re.fullmatch(
+        rf"\s*(?:configured\s+)?(?:drug\s+)?list\s+contract\s*:\s*"
+        rf"{contract_pair}\s*[.;]?\s*",
+        contract_lines[0],
+        re.I,
+    ))
+    declarations_are_consistent = (
+        (not source_lines or source_declaration)
+        and (not contract_lines or contract_declaration)
+    )
+    parameter_list_evidence = declarations_are_consistent and bool(
+        source_declaration or contract_declaration
+    )
+
+    if configured_drug_list and parameters:
+        if not parameter_list_evidence:
+            artifacts.append(
+                "configured drug-list source is unverified; atomic evidence does not identify "
+                "NDCParameters as the list source"
+            )
+        else:
+            unqualified = len(tables(r".*")) == 1
+
+            def discriminator(node: Any, source: exp.Table) -> bool:
+                if isinstance(node, exp.EQ):
+                    return any(
+                        owns(left, source, r"parameter_name", unqualified)
+                        and not _expression_columns(right)
+                        for left, right in ((node.left, node.right), (node.right, node.left))
+                    )
+                return (
+                    isinstance(node, exp.In)
+                    and owns(node.this, source, r"parameter_name", unqualified)
+                    and not node.args.get("query")
+                    and bool(node.expressions)
+                    and all(not _expression_columns(item) for item in node.expressions)
+                )
+
+            complete_source = any(
+                any(discriminator(leaf, source) for leaf in leaves)
+                and any(
+                    eq_runtime(
+                        leaf, source, r"parameter_value", r".*", unqualified
+                    )
+                    for leaf in leaves
+                )
+                for source in parameters
+            )
+            if not complete_source:
+                artifacts.append(
+                    "authorized NDCParameters drug-list lookup requires mandatory owned "
+                    "PARAMETER_NAME discrimination and PARAMETER_VALUE submitted-product "
+                    "correlation on the same source"
+                )
 
     specs = (
         ("NDC", r"\bndc(?:key)?\b", r"ndckey", r"(?:claimtransaction)?ndc|incomingndc"),

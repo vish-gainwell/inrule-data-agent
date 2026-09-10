@@ -1366,6 +1366,118 @@ def test_member_attribute_config_requires_semantic_runtime_or_owned_parameter():
     assert _find_atomic_source_guard_artifacts(parameter, meaning) == []
 
 
+def test_configured_product_list_requires_structured_ndcparameters_evidence():
+    candidate = (
+        "SELECT COUNT(*) AS ProductMatchCount FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'REGIONAL_PRODUCTS' "
+        "AND p.PARAMETER_VALUE = {{SubmittedProductCode}}"
+    )
+    warning = (
+        "configured drug-list source is unverified; atomic evidence does not identify "
+        "NDCParameters as the list source"
+    )
+
+    for subject in ("drug", "prescription", "product"):
+        meaning = f"The submitted {subject} is found in the configured REGIONAL_PRODUCTS list."
+        assert _find_atomic_source_guard_artifacts(candidate, meaning) == [warning]
+    assert _find_atomic_source_guard_artifacts(
+        candidate.replace(
+            "WHERE", "JOIN HRX.dbo.ReferenceData r ON r.Code = p.PARAMETER_VALUE WHERE"
+        ),
+        "The current product matches the named REGIONAL_PRODUCTS list.",
+    ) == [warning]
+
+    prefix = "The incoming product is found in the configured REGIONAL_PRODUCTS list.\n"
+    for declaration in (
+        "Source: NDCParameters.",
+        "Source: [HRX].[dbo].[NDCParameters].",
+        "List contract: NDCParameters.PARAMETER_NAME and "
+        "[NDCParameters].[PARAMETER_VALUE].",
+        "List contract: [HRX].[dbo].[NDCParameters].[PARAMETER_NAME] and "
+        "HRX.dbo.NDCParameters.PARAMETER_VALUE.",
+    ):
+        assert _find_atomic_source_guard_artifacts(candidate, prefix + declaration) == []
+
+    for prose in (
+        "Query NDCParameters for the list.",
+        "Match using NDCParameters.",
+        "The list is sourced from NDCParameters.",
+        "NDCParameters is likely the source of the list.",
+        "NDCParameters is not the source of the list.",
+        "The reviewer says Source: NDCParameters is wrong.",
+    ):
+        assert _find_atomic_source_guard_artifacts(candidate, prefix + prose) == [warning]
+
+    contradictory = (
+        "Source: NDCParameters (likely).",
+        "Source: NDCParameters; verify with the reviewer.",
+        "Source: NDCParameters.\nSource: DrugOverrides.",
+        "Source: NDCParameters.\nList contract: NDCParameters.PARAMETER_NAME and "
+        "NDCParameters.PARAMETER_VALUE are unverified.",
+    )
+    assert all(
+        _find_atomic_source_guard_artifacts(candidate, prefix + declaration) == [warning]
+        for declaration in contradictory
+    )
+
+
+def test_authorized_ndcparameters_list_requires_owned_mandatory_predicates():
+    meaning = (
+        "The current product is found in the configured REGIONAL_PRODUCTS list.\n"
+        "Source: NDCParameters."
+    )
+    valid = (
+        "SELECT COUNT(*) FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'REGIONAL_PRODUCTS' "
+        "AND p.PARAMETER_VALUE = {{SubmittedProductCode}}"
+    )
+    invalid = (
+        "SELECT p.PARAMETER_NAME, p.PARAMETER_VALUE FROM HRX.dbo.NDCParameters p WITH (NOLOCK)",
+        "SELECT CASE WHEN p.PARAMETER_NAME = 'REGIONAL_PRODUCTS' AND "
+        "p.PARAMETER_VALUE = {{SubmittedProductCode}} THEN 1 END "
+        "FROM HRX.dbo.NDCParameters p WITH (NOLOCK)",
+        "SELECT COUNT(*) FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "JOIN HRX.dbo.NDCParameters x WITH (NOLOCK) ON p.PARAMETER_NAME = 'REGIONAL_PRODUCTS' "
+        "WHERE x.PARAMETER_VALUE = {{SubmittedProductCode}}",
+        "SELECT COUNT(*) FROM HRX.dbo.NDCParameters p WITH (NOLOCK) "
+        "WHERE p.PARAMETER_NAME = 'REGIONAL_PRODUCTS' "
+        "OR p.PARAMETER_VALUE = {{SubmittedProductCode}}",
+    )
+
+    assert _find_atomic_source_guard_artifacts(valid, meaning) == []
+    assert all(_find_atomic_source_guard_artifacts(sql, meaning) for sql in invalid)
+
+
+def test_configured_drug_list_source_guard_rejects_strict_and_warns_in_draft():
+    meaning = "The current drug is found in the named REGIONAL_DRUGS list."
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[NDCParameters] "
+        "([PARAMETER_NAME] varchar(50), [PARAMETER_VALUE] varchar(50));"
+    )
+    candidate = (
+        "SELECT COUNT(*) AS DrugMatchCount FROM HRX.dbo.NDCParameters WITH (NOLOCK) "
+        "WHERE PARAMETER_NAME = 'REGIONAL_DRUGS' "
+        "AND PARAMETER_VALUE = {{ClaimTransaction.Ndc}}"
+    )
+
+    with patch(
+        "inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]
+    ), patch(
+        "inrules_data_agent.generator.generate._call_openai", return_value=candidate
+    ):
+        strict = generate_query_result_for_step(meaning)
+        draft = generate_query_result_for_step(meaning, draft_mode=True)
+
+    assert strict["queries"] == []
+    assert strict["failure_category"] == "VALIDATION_REJECTED"
+    assert draft["queries"] == [candidate]
+    assert draft["validation_status"] == "DRAFT_REQUIRES_REVIEW"
+    assert any(
+        "configured drug-list source is unverified" in item
+        for item in draft["review_warnings"]
+    )
+
+
 def test_diagnosis_guard_requires_mandatory_correlations_and_semantic_lookback():
     meaning = (
         "A member medical diagnosis history record matches DiagnosisList within the "
