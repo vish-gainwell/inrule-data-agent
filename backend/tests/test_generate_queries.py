@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from inrules_data_agent.app import (
@@ -2528,6 +2529,169 @@ def test_generate_queries_repairs_incomplete_drug_override_exclusion_lookup():
     repair_feedback = call_openai.call_args_list[1].args[2]
     assert "GCN_SeqNo, HIC3" in repair_feedback
     assert "DateOfService EffDate/TermDate" in repair_feedback
+
+
+ORIGINAL_CLAIM_MEANING = "Return CreateDate from the matched original claim."
+ORIGINAL_CLAIM_CRITERION = [
+    "Use Rx/Service Reference Number, Product/Service ID (NDC), Date of Service, "
+    "and Service Provider ID to find the original submission in claim history."
+]
+ORIGINAL_CLAIM_FROM = (
+    "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+    "JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+    "ON cp.claimid = c.claimid "
+)
+ORIGINAL_CLAIM_PREDICATES = (
+    "cp.rxnumber = {{RxNumber}} AND cp.ndckey = {{ClaimTransaction.Ndc}} "
+    "AND c.provid = {{ProviderId}} AND c.startdate = {{DateOfService}}"
+)
+
+
+def _original_claim_artifacts(sql, criteria=ORIGINAL_CLAIM_CRITERION):
+    return _find_required_business_concept_artifacts(
+        sql, ORIGINAL_CLAIM_MEANING, acceptance_criteria=criteria
+    )
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE "
+        + ORIGINAL_CLAIM_PREDICATES,
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "WHERE c.claimid = {{OriginalClaimId}}",
+    ],
+    ids=["composite", "original-claim-id"],
+)
+def test_original_claim_match_accepts_owned_mandatory_runtime_predicates(sql):
+    assert _original_claim_artifacts(sql) == []
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE cp.rxnumber = {{RxNumber}}",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE ("
+        + ORIGINAL_CLAIM_PREDICATES.replace(" AND ", " OR ")
+        + ")",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE NOT ("
+        + ORIGINAL_CLAIM_PREDICATES
+        + ")",
+        "SELECT CASE WHEN "
+        + ORIGINAL_CLAIM_PREDICATES
+        + " THEN c.createdate END AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM,
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "JOIN plandata_rx_production.dbo.unrelated u WITH (NOLOCK) "
+        "ON u.otherid = c.claimid WHERE u.rxnumber = {{RxNumber}} "
+        "AND u.ndckey = {{ClaimTransaction.Ndc}} AND u.provid = {{ProviderId}} "
+        "AND u.startdate = {{DateOfService}}",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE EXISTS ("
+        "SELECT 1 FROM plandata_rx_production.dbo.claim x "
+        "JOIN plandata_rx_production.dbo.claimpharm xp ON xp.claimid = x.claimid "
+        "WHERE xp.rxnumber = {{RxNumber}} "
+        "AND xp.ndckey = {{ClaimTransaction.Ndc}} "
+        "AND x.provid = {{ProviderId}} AND x.startdate = {{DateOfService}})",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE cp.rxnumber = {{DateOfService}} "
+        "AND cp.ndckey = {{ProviderId}} AND c.provid = {{ClaimTransaction.Ndc}} "
+        "AND c.startdate = {{RxNumber}}",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "WHERE NOT c.claimid = {{OriginalClaimId}}",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "WHERE c.claimid = {{OriginalClaimId}} OR c.claimid IS NULL",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "WHERE EXISTS (SELECT 1 FROM plandata_rx_production.dbo.claim x "
+        "WHERE x.claimid = {{OriginalClaimId}})",
+        "SELECT CASE WHEN c.claimid = {{OriginalClaimId}} THEN c.createdate END "
+        "AS OriginalClaimCreateDate FROM plandata_rx_production.dbo.claim c WITH (NOLOCK)",
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        "FROM plandata_rx_production.dbo.claim c WITH (NOLOCK) "
+        "JOIN plandata_rx_production.dbo.claimpharm cp WITH (NOLOCK) "
+        "ON cp.claimid = c.claimid WHERE cp.claimid = {{OriginalClaimId}}",
+    ],
+    ids=[
+        "partial",
+        "or",
+        "not",
+        "projection",
+        "unrelated-alias",
+        "subquery",
+        "wrong-runtime",
+        "id-not",
+        "id-or",
+        "id-subquery",
+        "id-projection",
+        "id-wrong-owner",
+    ],
+)
+def test_original_claim_match_rejects_nonmandatory_or_misowned_predicates(sql):
+    assert _original_claim_artifacts(sql)
+
+
+def test_original_claim_match_uses_only_one_selected_list_criterion():
+    sql = "SELECT c.createdate FROM plandata_rx_production.dbo.claim c"
+    complete = ["Match by Rx number, NDC, provider, and DOS."]
+    incomplete = ["Match by Rx number, NDC, and provider."]
+
+    assert _original_claim_artifacts(sql, ORIGINAL_CLAIM_CRITERION[0]) == []
+    assert _original_claim_artifacts(sql, ORIGINAL_CLAIM_CRITERION * 2) == []
+    assert _original_claim_artifacts(sql, incomplete) == []
+    assert _original_claim_artifacts(sql, complete)
+
+
+@pytest.mark.parametrize("draft_mode", [False, True], ids=["strict", "draft"])
+def test_original_claim_match_integrates_with_strict_and_draft_validation(draft_mode):
+    ddls = [
+        "CREATE TABLE [plandata_rx_production].[dbo].[claim] ("
+        "[claimid] char(15), [createdate] datetime, [provid] char(15), "
+        "[startdate] datetime);",
+        "CREATE TABLE [plandata_rx_production].[dbo].[claimpharm] ("
+        "[claimid] char(15), [rxnumber] char(50), [ndckey] char(11));",
+    ]
+    candidate = (
+        "SELECT c.createdate AS OriginalClaimCreateDate "
+        + ORIGINAL_CLAIM_FROM
+        + "WHERE cp.rxnumber = {{RxNumber}}"
+    )
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
+        patch(
+            "inrules_data_agent.generator.generate._call_openai",
+            return_value=candidate,
+        ) as call_openai,
+    ):
+        result = generate_query_result_for_step(
+            ORIGINAL_CLAIM_MEANING,
+            acceptance_criteria=ORIGINAL_CLAIM_CRITERION,
+            draft_mode=draft_mode,
+        )
+
+    expected = "original-claim match is missing mandatory selected-criterion predicates"
+    if draft_mode:
+        assert result["queries"] == [candidate]
+        assert result["validation_status"] == "DRAFT_REQUIRES_REVIEW"
+        assert any(expected in warning for warning in result["review_warnings"])
+    else:
+        assert result["queries"] == []
+        assert result["validation_status"] is None
+        assert expected in call_openai.call_args_list[1].args[2]
 
 
 def test_generate_queries_repairs_selected_row_to_use_stable_identifier():

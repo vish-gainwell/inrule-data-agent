@@ -2079,6 +2079,164 @@ def _find_atomic_source_guard_artifacts(
     return artifacts
 
 
+def _find_original_claim_match_artifacts(
+    sql: str,
+    business_meaning: str,
+    acceptance_criteria: str | list[str] | None,
+) -> list[str]:
+    """Require the selected original-claim criterion's runtime correlations."""
+    criterion = (
+        acceptance_criteria[0].strip()
+        if isinstance(acceptance_criteria, list)
+        and len(acceptance_criteria) == 1
+        and isinstance(acceptance_criteria[0], str)
+        and acceptance_criteria[0].strip()
+        else ""
+    )
+    criterion_contract = (
+        r"\b(?:rx(?:\s*/\s*service)?(?:\s+reference)?|"
+        r"prescription(?:\s*/\s*service)?(?:\s+reference)?|"
+        r"service\s+reference)\s+number\b",
+        r"\b(?:ndc|product\s*/?\s*service\s+id)\b",
+        r"\b(?:service\s+)?provider(?:\s+id)?\b",
+        r"\b(?:date\s+of\s+service|dos)\b",
+    )
+    if not (
+        criterion
+        and re.search(r"\boriginal\s+(?:claim|submission)\b", business_meaning, re.I)
+        and all(re.search(pattern, criterion, re.I) for pattern in criterion_contract)
+    ):
+        return []
+
+    parseable = re.sub(r"\bWITH\s*\(\s*NOLOCK\s*\)", "(NOLOCK)", sql, flags=re.I)
+    statement, runtimes = _runtime_semantic_statement(parseable)
+    if not isinstance(statement, exp.Select):
+        return ["original-claim match has no relevant SELECT"]
+
+    def flatten_and(node: Expression) -> list[Expression]:
+        while isinstance(node, exp.Paren):
+            node = node.this
+        if isinstance(node, exp.And):
+            return flatten_and(cast(Expression, node.left)) + flatten_and(
+                cast(Expression, node.right)
+            )
+        return [node]
+
+    tables = [
+        table
+        for table in statement.find_all(exp.Table)
+        if table.find_ancestor(exp.Select) is statement
+    ]
+    table_by_alias = {
+        table.alias_or_name.casefold(): table.name.casefold() for table in tables
+    }
+    joins = [
+        join
+        for join in statement.args.get("joins") or ()
+        if isinstance(join, exp.Join)
+    ]
+    roots = []
+    where = statement.args.get("where")
+    if isinstance(where, exp.Where):
+        roots.append(where.this)
+    roots.extend(
+        join.args["on"]
+        for join in joins
+        if isinstance(join, exp.Join)
+        and not join.side
+        and str(join.args.get("kind") or "").upper() in {"", "INNER"}
+        and isinstance(join.args.get("on"), Expression)
+    )
+    leaves = [leaf for root in roots for leaf in flatten_and(root)]
+
+    if _find_ungrounded_joins(joins, tables):
+        return ["original-claim match uses disconnected or unsafe sources"]
+
+    def matches(
+        leaf: Expression, alias: str, column_name: str, runtime: str
+    ) -> bool:
+        if not isinstance(leaf, exp.EQ):
+            return False
+        for column_side, runtime_side in (
+            (leaf.left, leaf.right),
+            (leaf.right, leaf.left),
+        ):
+            columns = _expression_columns(cast(Expression, column_side))
+            names = _expression_runtime_names(cast(Expression, runtime_side), runtimes)
+            if len(columns) != 1 or len(names) != 1:
+                continue
+            column = columns[0]
+            owner = column.table.casefold() if column.table else ""
+            if (
+                column.name.casefold() == column_name
+                and (owner == alias or not owner and len(tables) == 1)
+                and not _expression_runtime_names(cast(Expression, column_side), runtimes)
+                and not _expression_columns(cast(Expression, runtime_side))
+                and re.sub(r"[^a-z0-9]", "", names[0].casefold()) == runtime
+            ):
+                return True
+        return False
+
+    claim_aliases = {
+        alias for alias, table_name in table_by_alias.items() if table_name == "claim"
+    }
+    if any(
+        matches(leaf, alias, "claimid", "originalclaimid")
+        for alias in claim_aliases
+        for leaf in leaves
+    ):
+        return []
+
+    def joined_claim_pair(join: exp.Join) -> tuple[str, str] | None:
+        if (
+            join.side
+            or str(join.args.get("kind") or "").upper() not in {"", "INNER"}
+            or not isinstance(join.args.get("on"), Expression)
+        ):
+            return None
+        for leaf in flatten_and(cast(Expression, join.args["on"])):
+            if not isinstance(leaf, exp.EQ):
+                continue
+            left, right = leaf.left, leaf.right
+            if not isinstance(left, exp.Column) or not isinstance(right, exp.Column):
+                continue
+            if left.name.casefold() != "claimid" or right.name.casefold() != "claimid":
+                continue
+            aliases = (left.table.casefold(), right.table.casefold())
+            names = tuple(table_by_alias.get(alias) for alias in aliases)
+            if names == ("claim", "claimpharm"):
+                return aliases
+            if names == ("claimpharm", "claim"):
+                return aliases[1], aliases[0]
+        return None
+
+    requirements = (
+        ("RxNumber", "claimpharm", "rxnumber", "rxnumber"),
+        ("NDC", "claimpharm", "ndckey", "claimtransactionndc"),
+        ("ProviderId", "claim", "provid", "providerid"),
+        ("DateOfService", "claim", "startdate", "dateofservice"),
+    )
+    closest_missing = [label for label, *_ in requirements]
+    for claim_alias, pharm_alias in filter(None, map(joined_claim_pair, joins)):
+        aliases = {"claim": claim_alias, "claimpharm": pharm_alias}
+        missing = [
+            label
+            for label, table_name, column, runtime in requirements
+            if not any(
+                matches(leaf, aliases[table_name], column, runtime) for leaf in leaves
+            )
+        ]
+        if not missing:
+            return []
+        if len(missing) < len(closest_missing):
+            closest_missing = missing
+
+    return [
+        "original-claim match is missing mandatory selected-criterion predicates: "
+        + ", ".join(closest_missing)
+    ]
+
+
 def _find_required_business_concept_artifacts(
     sql: str,
     business_meaning: str,
@@ -2144,6 +2302,11 @@ def _find_required_business_concept_artifacts(
     artifacts = list(historical_tcns_contract_artifacts)
     artifacts.extend(
         _find_atomic_source_guard_artifacts(
+            sql, business_meaning, acceptance_criteria
+        )
+    )
+    artifacts.extend(
+        _find_original_claim_match_artifacts(
             sql, business_meaning, acceptance_criteria
         )
     )
