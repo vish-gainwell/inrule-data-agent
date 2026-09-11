@@ -11,6 +11,7 @@ import httpx
 import sqlglot
 from dotenv import load_dotenv
 from openai import OpenAI
+from openai.providers import bedrock
 from sqlglot import exp
 from sqlglot.errors import ParseError, TokenError
 from sqlglot.expressions.core import Expression
@@ -503,6 +504,7 @@ def generate_query_result_for_step(
     description: str | None = None,
     acceptance_criteria: str | list[str] | None = None,
     draft_mode: bool = False,
+    jurisdiction: str = "IL",
 ) -> dict[str, str | list[str] | None]:
     """Generate SQL and retain the reason when no safe query can be returned.
 
@@ -577,13 +579,14 @@ def generate_query_result_for_step(
             if source == "deterministic_pattern":
                 sql = deterministic_candidate
             else:
-                sql = _call_openai(
+                sql = _call_bedrock(
                     business_meaning,
                     ddl_context,
                     repair_feedback,
                     description=description,
                     acceptance_criteria=acceptance_criteria,
                     draft_mode=draft_mode,
+                    jurisdiction=jurisdiction,
                 )
             if not sql:
                 record_attempt(
@@ -1262,7 +1265,41 @@ def _build_user_message(
     )
 
 
-def _call_openai(
+def _call_bedrock(
+    business_meaning: str,
+    ddl_context: str,
+    repair_feedback: str | None = None,
+    description: str | None = None,
+    acceptance_criteria: str | list[str] | None = None,
+    draft_mode: bool = False,
+    jurisdiction: str = "IL",
+) -> str | None:
+    state = str(jurisdiction or "").strip().upper()
+    project = os.environ.get(f"BEDROCK_PROJECT_{state}")
+    if state not in {"IL", "MO"} or not project:
+        raise EnvironmentError(f"BEDROCK_PROJECT_{state} is not configured")
+
+    model = os.environ.get("BEDROCK_MODEL", "openai.gpt-5.5")
+    region = os.environ.get("BEDROCK_REGION", "us-east-1")
+    timeout_seconds = float(os.environ.get("OPENAI_TIMEOUT_SECONDS", "180"))
+    client = OpenAI(
+        provider=bedrock(region=region, api_key=None),
+        project=project,
+        timeout=timeout_seconds,
+    )
+    return _complete_query_request(
+        client,
+        model,
+        business_meaning,
+        ddl_context,
+        repair_feedback=repair_feedback,
+        description=description,
+        acceptance_criteria=acceptance_criteria,
+        draft_mode=draft_mode,
+    )
+
+
+def _call_openai_legacy(
     business_meaning: str,
     ddl_context: str,
     repair_feedback: str | None = None,
@@ -1284,6 +1321,28 @@ def _call_openai(
     if base_url:
         client_kwargs["base_url"] = base_url
     client = OpenAI(**client_kwargs)
+    return _complete_query_request(
+        client,
+        model,
+        business_meaning,
+        ddl_context,
+        repair_feedback=repair_feedback,
+        description=description,
+        acceptance_criteria=acceptance_criteria,
+        draft_mode=draft_mode,
+    )
+
+
+def _complete_query_request(
+    client: OpenAI,
+    model: str,
+    business_meaning: str,
+    ddl_context: str,
+    repair_feedback: str | None = None,
+    description: str | None = None,
+    acceptance_criteria: str | list[str] | None = None,
+    draft_mode: bool = False,
+) -> str | None:
     user_message = _build_user_message(
         business_meaning,
         ddl_context,
@@ -1315,7 +1374,7 @@ def _call_openai(
         "messages": messages,
         "response_format": {"type": "json_object"},
     }
-    if model.lower().startswith(("gpt-5", "o1", "o3", "o4")):
+    if model.lower().startswith(("gpt-5", "openai.gpt-5", "o1", "o3", "o4")):
         request_kwargs["max_completion_tokens"] = 4000
     else:
         request_kwargs["temperature"] = 0
