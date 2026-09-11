@@ -1497,7 +1497,7 @@ def test_configured_drug_list_source_guard_rejects_strict_and_warns_in_draft():
     with patch(
         "inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]
     ), patch(
-        "inrules_data_agent.generator.generate._call_openai", return_value=candidate
+        "inrules_data_agent.generator.generate._call_bedrock", return_value=candidate
     ):
         strict = generate_query_result_for_step(meaning)
         draft = generate_query_result_for_step(meaning, draft_mode=True)
@@ -1590,7 +1590,7 @@ def test_atomic_guard_strict_rejects_while_draft_requires_review():
     with patch(
         "inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]
     ), patch(
-        "inrules_data_agent.generator.generate._call_openai", return_value=candidate
+        "inrules_data_agent.generator.generate._call_bedrock", return_value=candidate
     ):
         strict = generate_query_result_for_step(meaning)
         draft = generate_query_result_for_step(meaning, draft_mode=True)
