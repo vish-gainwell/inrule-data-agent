@@ -3408,6 +3408,28 @@ def test_packaged_ndc_maintenance_schema_uses_verified_physical_columns():
     assert "[MaxScriptDays]" not in ddl
 
 
+def test_select_ddls_includes_verified_ndc_term_master_schema():
+    meaning = (
+        "For the current compound ingredient NDC, the effective NDC_Term_Mstr "
+        "TermDate for the claim Date of Service is equal to or earlier than the "
+        "claim Date of Service. A missing effective record or null TermDate should "
+        "make this step false."
+    )
+    with patch(
+        "inrules_data_agent.generator.generate.retrieve_schema_ddls", return_value=[]
+    ):
+        ddls = select_ddls(meaning)
+
+    ddl = next(ddl for ddl in ddls if "[HRX].[dbo].[NDC_Term_Mstr]" in ddl)
+    assert "[NDCKey] char(11) NOT NULL" in ddl
+    assert "[TermDate] datetime NULL" in ddl
+    assert "[EffDate] smalldatetime NOT NULL" in ddl
+    assert "[EndDate] smalldatetime NOT NULL" in ddl
+    assert "[ReactivationDate] smalldatetime NULL" in ddl
+    assert "7161" not in ddl
+    assert "7107" not in ddl
+
+
 def test_select_ddls_includes_dto_derived_in_memory_tables():
     ddls = select_ddls("Query logical Rules Engine data")
     joined = "\n".join(ddls)
@@ -3437,7 +3459,7 @@ def test_select_ddls_includes_dto_derived_in_memory_tables():
 def test_select_ddls_without_table_keywords_returns_all_packaged_schemas():
     ddls = select_ddls("Completely unknown data requirement")
 
-    assert len(ddls) == 63
+    assert len(ddls) == 64
     joined = "\n".join(ddls)
     assert "[HRX].[dbo].[NCPDP_Reject_Codes]" in joined
     assert "[HRX].[dbo].[step_therapy_drug]" in joined
