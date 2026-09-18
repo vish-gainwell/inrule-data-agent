@@ -98,6 +98,30 @@ def test_local_il_query_generation_uses_openai_fallback(monkeypatch):
     call_bedrock.assert_not_called()
 
 
+def test_local_openai_defaults_to_us_regional_endpoint(monkeypatch):
+    captured = {}
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
+    monkeypatch.setattr(generate_module.httpx, "Client", lambda **kwargs: object())
+
+    def fake_openai(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(generate_module, "OpenAI", fake_openai)
+    monkeypatch.setattr(
+        generate_module,
+        "_complete_query_request",
+        lambda *args, **kwargs: MOCK_SQL,
+    )
+
+    result = generate_module._call_openai_legacy("Load a value", "DDL")
+
+    assert result == MOCK_SQL
+    assert captured["base_url"] == "https://us.api.openai.com/v1"
+
+
 def test_create_app_smoke():
     app = create_app()
     assert app is not None

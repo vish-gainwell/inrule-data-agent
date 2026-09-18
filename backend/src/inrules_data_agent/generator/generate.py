@@ -1338,7 +1338,11 @@ def _call_openai_legacy(
     model = os.environ.get("OPENAI_MODEL") or os.environ.get(
         "BEDROCK_MODEL", "openai.gpt-5.5"
     ).removeprefix("openai.")
-    base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENAI_API_BASE")
+    base_url = (
+        os.environ.get("OPENAI_BASE_URL")
+        or os.environ.get("OPENAI_API_BASE")
+        or "https://us.api.openai.com/v1"
+    )
     verify_ssl = os.environ.get("OPENAI_VERIFY_SSL", "false").lower() in {"1", "true", "yes"}
     timeout_seconds = float(os.environ.get("OPENAI_TIMEOUT_SECONDS", "180"))
     http_client = httpx.Client(verify=verify_ssl, timeout=timeout_seconds)
