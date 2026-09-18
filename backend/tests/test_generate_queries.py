@@ -66,6 +66,38 @@ def test_bedrock_query_call_uses_jurisdiction_project(monkeypatch):
     assert captured["model"] == "openai.gpt-5.5"
 
 
+def test_local_openai_fallback_is_il_only_and_not_available_in_kubernetes(monkeypatch):
+    monkeypatch.setenv("LOCAL_OPENAI_FALLBACK", "true")
+    monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+
+    assert generate_module._local_openai_enabled("IL")
+    assert not generate_module._local_openai_enabled("MO")
+
+    monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+    assert not generate_module._local_openai_enabled("IL")
+
+
+def test_local_il_query_generation_uses_openai_fallback(monkeypatch):
+    monkeypatch.setenv("LOCAL_OPENAI_FALLBACK", "true")
+    monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+
+    with (
+        patch(
+            "inrules_data_agent.generator.generate._call_openai_legacy",
+            return_value=MOCK_SQL,
+        ) as call_openai,
+        patch("inrules_data_agent.generator.generate._call_bedrock") as call_bedrock,
+    ):
+        result = generate_query_result_for_step(
+            "Query DrugOverrides where NDC matches incoming ndc",
+            jurisdiction="IL",
+        )
+
+    assert result["queries"] == [MOCK_SQL]
+    call_openai.assert_called_once()
+    call_bedrock.assert_not_called()
+
+
 def test_create_app_smoke():
     app = create_app()
     assert app is not None

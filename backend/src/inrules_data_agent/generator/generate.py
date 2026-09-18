@@ -579,15 +579,25 @@ def generate_query_result_for_step(
             if source == "deterministic_pattern":
                 sql = deterministic_candidate
             else:
-                sql = _call_bedrock(
-                    business_meaning,
-                    ddl_context,
-                    repair_feedback,
-                    description=description,
-                    acceptance_criteria=acceptance_criteria,
-                    draft_mode=draft_mode,
-                    jurisdiction=jurisdiction,
-                )
+                if _local_openai_enabled(jurisdiction):
+                    sql = _call_openai_legacy(
+                        business_meaning,
+                        ddl_context,
+                        repair_feedback,
+                        description=description,
+                        acceptance_criteria=acceptance_criteria,
+                        draft_mode=draft_mode,
+                    )
+                else:
+                    sql = _call_bedrock(
+                        business_meaning,
+                        ddl_context,
+                        repair_feedback,
+                        description=description,
+                        acceptance_criteria=acceptance_criteria,
+                        draft_mode=draft_mode,
+                        jurisdiction=jurisdiction,
+                    )
             if not sql:
                 record_attempt(
                     attempt,
@@ -1301,6 +1311,17 @@ def _call_bedrock(
     )
 
 
+def _local_openai_enabled(jurisdiction: str) -> bool:
+    """Allow direct OpenAI only for explicitly opted-in local IL runs."""
+    state = str(jurisdiction or "").strip().upper()
+    enabled = os.environ.get("LOCAL_OPENAI_FALLBACK", "").strip().lower()
+    return (
+        state == "IL"
+        and enabled in {"1", "true", "yes"}
+        and not os.environ.get("KUBERNETES_SERVICE_HOST")
+    )
+
+
 def _call_openai_legacy(
     business_meaning: str,
     ddl_context: str,
@@ -1314,7 +1335,9 @@ def _call_openai_legacy(
         print("[generate_queries_for_step] OPENAI_API_KEY is not set; returning no query")
         return None
 
-    model = os.environ.get("OPENAI_MODEL", "gpt-5.6-luna")
+    model = os.environ.get("OPENAI_MODEL") or os.environ.get(
+        "BEDROCK_MODEL", "openai.gpt-5.5"
+    ).removeprefix("openai.")
     base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENAI_API_BASE")
     verify_ssl = os.environ.get("OPENAI_VERIFY_SSL", "false").lower() in {"1", "true", "yes"}
     timeout_seconds = float(os.environ.get("OPENAI_TIMEOUT_SECONDS", "180"))
