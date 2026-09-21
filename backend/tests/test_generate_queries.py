@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
+from inrules_data_agent.generator import generate as generate_module
 from inrules_data_agent.app import (
     Step,
     _acceptance_criteria_for_step,
@@ -31,6 +32,94 @@ from inrules_data_agent.generator.generate import (
 )
 
 MOCK_SQL = "select count(*) from HRX.dbo.DrugOverrides (nolock) where Type = '3013_Opioid'"
+
+
+def test_bedrock_query_call_uses_jurisdiction_project(monkeypatch):
+    captured = {}
+
+    monkeypatch.setenv("BEDROCK_PROJECT_IL", "project-il")
+    monkeypatch.setenv("BEDROCK_PROJECT_MO", "project-mo")
+    monkeypatch.setenv("BEDROCK_REGION", "us-east-1")
+    monkeypatch.setenv("BEDROCK_MODEL", "openai.gpt-5.5")
+    monkeypatch.setattr(
+        generate_module,
+        "bedrock",
+        lambda **kwargs: captured.setdefault("provider", kwargs),
+    )
+    monkeypatch.setattr(
+        generate_module,
+        "OpenAI",
+        lambda **kwargs: captured.setdefault("client", kwargs),
+    )
+    monkeypatch.setattr(
+        generate_module,
+        "_complete_query_request",
+        lambda client, model, *args, **kwargs: captured.setdefault("model", model)
+        and MOCK_SQL,
+    )
+
+    result = generate_module._call_bedrock("Load a value", "DDL", jurisdiction="MO")
+
+    assert result == MOCK_SQL
+    assert captured["provider"] == {"region": "us-east-1", "api_key": None}
+    assert captured["client"]["project"] == "project-mo"
+    assert captured["model"] == "openai.gpt-5.5"
+
+
+def test_local_openai_fallback_is_il_only_and_not_available_in_kubernetes(monkeypatch):
+    monkeypatch.setenv("LOCAL_OPENAI_FALLBACK", "true")
+    monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+
+    assert generate_module._local_openai_enabled("IL")
+    assert not generate_module._local_openai_enabled("MO")
+
+    monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+    assert not generate_module._local_openai_enabled("IL")
+
+
+def test_local_il_query_generation_uses_openai_fallback(monkeypatch):
+    monkeypatch.setenv("LOCAL_OPENAI_FALLBACK", "true")
+    monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+
+    with (
+        patch(
+            "inrules_data_agent.generator.generate._call_openai_legacy",
+            return_value=MOCK_SQL,
+        ) as call_openai,
+        patch("inrules_data_agent.generator.generate._call_bedrock") as call_bedrock,
+    ):
+        result = generate_query_result_for_step(
+            "Query DrugOverrides where NDC matches incoming ndc",
+            jurisdiction="IL",
+        )
+
+    assert result["queries"] == [MOCK_SQL]
+    call_openai.assert_called_once()
+    call_bedrock.assert_not_called()
+
+
+def test_local_openai_defaults_to_us_regional_endpoint(monkeypatch):
+    captured = {}
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
+    monkeypatch.setattr(generate_module.httpx, "Client", lambda **kwargs: object())
+
+    def fake_openai(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(generate_module, "OpenAI", fake_openai)
+    monkeypatch.setattr(
+        generate_module,
+        "_complete_query_request",
+        lambda *args, **kwargs: MOCK_SQL,
+    )
+
+    result = generate_module._call_openai_legacy("Load a value", "DDL")
+
+    assert result == MOCK_SQL
+    assert captured["base_url"] == "https://us.api.openai.com/v1"
 
 
 def test_create_app_smoke():
@@ -65,8 +154,8 @@ def test_health_identifies_the_loaded_data_agent_implementation():
 
 def test_requires_data_query_filter_skips_false_steps():
     with patch(
-        "inrules_data_agent.generator.generate._call_openai", return_value=MOCK_SQL
-    ) as call_openai:
+        "inrules_data_agent.generator.generate._call_bedrock", return_value=MOCK_SQL
+    ) as call_bedrock:
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
@@ -92,7 +181,7 @@ def test_requires_data_query_filter_skips_false_steps():
     assert body["queries"][0]["step_number"] == 2
     assert body["queries"][0]["queries"] == [MOCK_SQL]
     assert body["data_agent_runtime"]["implementation_path"]
-    call_openai.assert_called_once()
+    call_bedrock.assert_called_once()
 
 
 def test_rule_context_is_passed_to_data_query_generation():
@@ -131,6 +220,7 @@ def test_rule_context_is_passed_to_data_query_generation():
         description="CHIP eligibility rule",
         acceptance_criteria=None,
         draft_mode=False,
+        jurisdiction="IL",
     )
     assert response.json()["description"] == "CHIP eligibility rule"
     assert response.json()["queries"][0]["generation_attempts"] == [
@@ -266,7 +356,7 @@ def test_draft_mode_returns_safe_schema_valid_candidate_with_review_warnings():
         "inrules_data_agent.generator.generate.select_ddls",
         return_value=["CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int NULL);"],
     ), patch(
-        "inrules_data_agent.generator.generate._call_openai",
+        "inrules_data_agent.generator.generate._call_bedrock",
         return_value="SELECT Id FROM HRX.dbo.KnownTable WITH (NOLOCK) WHERE 1 = 1",
     ):
         client = TestClient(create_app())
@@ -302,7 +392,7 @@ def test_strict_mode_still_rejects_semantically_incomplete_candidate():
         "inrules_data_agent.generator.generate.select_ddls",
         return_value=["CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int NULL);"],
     ), patch(
-        "inrules_data_agent.generator.generate._call_openai",
+        "inrules_data_agent.generator.generate._call_bedrock",
         return_value="SELECT Id FROM HRX.dbo.KnownTable WITH (NOLOCK) WHERE 1 = 1",
     ):
         response = TestClient(create_app()).post(
@@ -332,9 +422,9 @@ def test_draft_mode_retries_model_null_with_runtime_placeholder_instruction():
             return_value=["CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int NULL);"],
         ),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=["NO_SUPPORTED_QUERY", candidate],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         result = generate_query_result_for_step(
             "Determine whether a system-related condition prevents processing.",
@@ -345,7 +435,7 @@ def test_draft_mode_retries_model_null_with_runtime_placeholder_instruction():
 
     assert result["queries"] == [candidate]
     assert result["validation_status"] == "DRAFT_REQUIRES_REVIEW"
-    repair_feedback = call_openai.call_args_list[1].args[2]
+    repair_feedback = call_bedrock.call_args_list[1].args[2]
     assert "do not return null" in repair_feedback
     assert "authoritative business meaning" in repair_feedback
     assert "do not use irAuthor contracts" in repair_feedback
@@ -361,7 +451,7 @@ def test_draft_mode_returns_safe_runtime_only_select_with_warning():
             return_value=["CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int NULL);"],
         ),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=candidate,
         ),
     ):
@@ -380,7 +470,7 @@ def test_draft_mode_does_not_return_unknown_table_candidate():
         "inrules_data_agent.generator.generate.select_ddls",
         return_value=["CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int NULL);"],
     ), patch(
-        "inrules_data_agent.generator.generate._call_openai",
+        "inrules_data_agent.generator.generate._call_bedrock",
         return_value="SELECT Id FROM HRX.dbo.UnknownTable WITH (NOLOCK)",
     ):
         response = TestClient(create_app()).post(
@@ -1463,7 +1553,7 @@ def test_configured_drug_list_source_guard_rejects_strict_and_warns_in_draft():
     with patch(
         "inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]
     ), patch(
-        "inrules_data_agent.generator.generate._call_openai", return_value=candidate
+        "inrules_data_agent.generator.generate._call_bedrock", return_value=candidate
     ):
         strict = generate_query_result_for_step(meaning)
         draft = generate_query_result_for_step(meaning, draft_mode=True)
@@ -1556,7 +1646,7 @@ def test_atomic_guard_strict_rejects_while_draft_requires_review():
     with patch(
         "inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]
     ), patch(
-        "inrules_data_agent.generator.generate._call_openai", return_value=candidate
+        "inrules_data_agent.generator.generate._call_bedrock", return_value=candidate
     ):
         strict = generate_query_result_for_step(meaning)
         draft = generate_query_result_for_step(meaning, draft_mode=True)
@@ -1636,7 +1726,7 @@ def test_generation_uses_effective_ncpdp_master_for_submitted_reject_occurrences
 
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
-        patch("inrules_data_agent.generator.generate._call_openai") as call_openai,
+        patch("inrules_data_agent.generator.generate._call_bedrock") as call_bedrock,
     ):
         result = generate_query_result_for_step(meaning)
 
@@ -1647,7 +1737,7 @@ def test_generation_uses_effective_ncpdp_master_for_submitted_reject_occurrences
     assert "{{DateOfService}} BETWEEN rc.effdate AND rc.termdate" in query
     assert "edi_pharm_universal" not in query
     assert "COUNT(" not in query
-    call_openai.assert_not_called()
+    call_bedrock.assert_not_called()
 
 
 def test_quantity_prescribed_requires_distinct_source_fact():
@@ -1993,7 +2083,7 @@ def test_unproven_historical_tcns_candidate_remains_review_only():
     )
 
     with patch(
-        "inrules_data_agent.generator.generate._call_openai", return_value=candidate
+        "inrules_data_agent.generator.generate._call_bedrock", return_value=candidate
     ):
         result = generate_query_result_for_step(meaning, draft_mode=True)
 
@@ -2194,7 +2284,7 @@ def test_generation_repairs_reserved_alias_then_runs_normal_validation():
     )
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
-        patch("inrules_data_agent.generator.generate._call_openai", return_value=generated),
+        patch("inrules_data_agent.generator.generate._call_bedrock", return_value=generated),
         patch("inrules_data_agent.app.load_reuse_corpus", return_value={}),
     ):
         response = TestClient(create_app()).post(
@@ -2235,7 +2325,7 @@ def test_generation_attempts_preserve_rejected_candidate_and_final_success():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[invalid, corrected],
         ),
     ):
@@ -2272,9 +2362,9 @@ def test_generate_queries_retries_invalid_structured_model_response():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=["INVALID_STRUCTURED_RESPONSE", corrected],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -2292,8 +2382,8 @@ def test_generate_queries_retries_invalid_structured_model_response():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected]
-    assert call_openai.call_count == 2
-    assert "required JSON envelope" in call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    assert "required JSON envelope" in call_bedrock.call_args_list[1].args[2]
 
 
 def test_prompt_requires_structured_query_text_json():
@@ -2357,9 +2447,9 @@ def test_generate_queries_repairs_semantically_incompatible_runtime_column():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[wrong, corrected],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -2377,7 +2467,7 @@ def test_generate_queries_repairs_semantically_incompatible_runtime_column():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected]
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_generate_queries_repairs_prescription_history_scope_and_ordering():
@@ -2400,9 +2490,9 @@ def test_generate_queries_repairs_prescription_history_scope_and_ordering():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[wrong, corrected],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         result = generate_query_result_for_step(
             "Return the oldest prescription occurrence for the current provider and "
@@ -2411,8 +2501,8 @@ def test_generate_queries_repairs_prescription_history_scope_and_ordering():
 
     assert result["queries"] == [corrected]
     assert result["validation_status"] == "VALIDATED"
-    assert call_openai.call_count == 2
-    assert "provider scope" in call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    assert "provider scope" in call_bedrock.call_args_list[1].args[2]
 
 
 def test_generate_queries_repairs_reject_code_configuration_list_lookup():
@@ -2439,9 +2529,9 @@ def test_generate_queries_repairs_reject_code_configuration_list_lookup():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[wrong, corrected],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         result = generate_query_result_for_step(
             "Return the approved NDCParameters Reject_Code list for the submitted COB "
@@ -2450,8 +2540,8 @@ def test_generate_queries_repairs_reject_code_configuration_list_lookup():
 
     assert result["queries"] == [corrected]
     assert result["validation_status"] == "VALIDATED"
-    assert call_openai.call_count == 2
-    assert "configuration-list query" in call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    assert "configuration-list query" in call_bedrock.call_args_list[1].args[2]
 
 
 def test_generate_queries_repairs_date_sensitive_parameter_effective_window():
@@ -2474,9 +2564,9 @@ def test_generate_queries_repairs_date_sensitive_parameter_effective_window():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[wrong, corrected],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         result = generate_query_result_for_step(
             "Return the configured retention threshold used to evaluate the current "
@@ -2485,8 +2575,8 @@ def test_generate_queries_repairs_date_sensitive_parameter_effective_window():
 
     assert result["queries"] == [corrected]
     assert result["validation_status"] == "VALIDATED"
-    assert call_openai.call_count == 2
-    assert "EFFDATE/ENDDATE evaluation window" in call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    assert "EFFDATE/ENDDATE evaluation window" in call_bedrock.call_args_list[1].args[2]
 
 
 def test_generate_queries_repairs_incomplete_drug_override_exclusion_lookup():
@@ -2514,9 +2604,9 @@ def test_generate_queries_repairs_incomplete_drug_override_exclusion_lookup():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[wrong, corrected],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         result = generate_query_result_for_step(
             "Check that the current prescription is not on the configured exclusion list."
@@ -2524,8 +2614,8 @@ def test_generate_queries_repairs_incomplete_drug_override_exclusion_lookup():
 
     assert result["queries"] == [corrected]
     assert result["validation_status"] == "VALIDATED"
-    assert call_openai.call_count == 2
-    repair_feedback = call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    repair_feedback = call_bedrock.call_args_list[1].args[2]
     assert "GCN_SeqNo, HIC3" in repair_feedback
     assert "DateOfService EffDate/TermDate" in repair_feedback
 
@@ -2558,9 +2648,9 @@ def test_generate_queries_repairs_selected_row_to_use_stable_identifier():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[wrong, corrected],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         result = generate_query_result_for_step(
             "Return Quantity Prescribed from the selected original paid claim."
@@ -2568,8 +2658,8 @@ def test_generate_queries_repairs_selected_row_to_use_stable_identifier():
 
     assert result["queries"] == [corrected]
     assert result["validation_status"] == "VALIDATED"
-    assert call_openai.call_count == 2
-    assert "stable claim identifier" in call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    assert "stable claim identifier" in call_bedrock.call_args_list[1].args[2]
 
 
 def test_generation_repairs_unordered_initial_partial_scalar_lookup():
@@ -2602,9 +2692,9 @@ def test_generation_repairs_unordered_initial_partial_scalar_lookup():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[unordered, corrected],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         result = generate_query_result_for_step(
             "Return the Rx Written Date from the qualifying initial partial claim."
@@ -2612,8 +2702,8 @@ def test_generation_repairs_unordered_initial_partial_scalar_lookup():
 
     assert result["queries"] == [corrected]
     assert result["validation_status"] == "VALIDATED"
-    assert call_openai.call_count == 2
-    assert "TOP (1)" in call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    assert "TOP (1)" in call_bedrock.call_args_list[1].args[2]
 
 
 def test_generation_repairs_exact_icd10_diagnosis_match_to_four_characters():
@@ -2635,9 +2725,9 @@ def test_generation_repairs_exact_icd10_diagnosis_match_to_four_characters():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[wrong, corrected],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         result = generate_query_result_for_step(
             "Count matching active ICD-10 diagnosis-code reference rows for the submitted "
@@ -2646,8 +2736,8 @@ def test_generation_repairs_exact_icd10_diagnosis_match_to_four_characters():
 
     assert result["queries"] == [corrected]
     assert result["validation_status"] == "VALIDATED"
-    assert call_openai.call_count == 2
-    assert "first four code characters" in call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    assert "first four code characters" in call_bedrock.call_args_list[1].args[2]
 
 
 def test_generation_repairs_edit_prefixed_package_billing_type():
@@ -2675,9 +2765,9 @@ def test_generation_repairs_edit_prefixed_package_billing_type():
             return_value=None,
         ),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[wrong, corrected],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         result = generate_query_result_for_step(
             "Return the active package-billing bypass DrugOverrides count for the current drug."
@@ -2685,8 +2775,8 @@ def test_generation_repairs_edit_prefixed_package_billing_type():
 
     assert result["queries"] == [corrected]
     assert result["validation_status"] == "VALIDATED"
-    assert call_openai.call_count == 2
-    assert "PkgBilling_Bypass" in call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    assert "PkgBilling_Bypass" in call_bedrock.call_args_list[1].args[2]
 
 
 def test_generation_repairs_member_exclusion_gcn_type_literal():
@@ -2707,9 +2797,9 @@ def test_generation_repairs_member_exclusion_gcn_type_literal():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[wrong, corrected],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         result = generate_query_result_for_step(
             "Count active MemberExclusion rows for the current member and date of service "
@@ -2718,8 +2808,8 @@ def test_generation_repairs_member_exclusion_gcn_type_literal():
 
     assert result["queries"] == [corrected]
     assert result["validation_status"] == "VALIDATED"
-    assert call_openai.call_count == 2
-    assert "GCNSEQNO" in call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    assert "GCNSEQNO" in call_bedrock.call_args_list[1].args[2]
 
 
 def test_generation_repairs_incomplete_contract_term_drug_lookup():
@@ -2747,9 +2837,9 @@ def test_generation_repairs_incomplete_contract_term_drug_lookup():
             return_value=None,
         ),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[wrong, corrected],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         result = generate_query_result_for_step(
             "Determine whether no valid direct NDC or GCN contract-term match exists "
@@ -2758,8 +2848,8 @@ def test_generation_repairs_incomplete_contract_term_drug_lookup():
 
     assert result["queries"] == [corrected]
     assert result["validation_status"] == "VALIDATED"
-    assert call_openai.call_count == 2
-    assert "nonblank ContractId" in call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    assert "nonblank ContractId" in call_bedrock.call_args_list[1].args[2]
 
 
 def test_generation_converges_compound_max_day_dose_tasks_on_source_lookup():
@@ -2778,7 +2868,7 @@ def test_generation_converges_compound_max_day_dose_tasks_on_source_lookup():
 
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
-        patch("inrules_data_agent.generator.generate._call_openai") as call_openai,
+        patch("inrules_data_agent.generator.generate._call_bedrock") as call_bedrock,
     ):
         results = [generate_query_result_for_step(meaning) for meaning in meanings]
 
@@ -2790,7 +2880,7 @@ def test_generation_converges_compound_max_day_dose_tasks_on_source_lookup():
     assert "RTRIM(nmd.Planid) = RTRIM({{PlanId}})" in queries[0]
     assert "QuantityDispensed" not in queries[0]
     assert "DaysSupply" not in queries[0]
-    call_openai.assert_not_called()
+    call_bedrock.assert_not_called()
 
 
 def test_generation_converges_effective_ingredient_desi_tasks_on_one_row():
@@ -2811,7 +2901,7 @@ def test_generation_converges_effective_ingredient_desi_tasks_on_one_row():
 
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
-        patch("inrules_data_agent.generator.generate._call_openai") as call_openai,
+        patch("inrules_data_agent.generator.generate._call_bedrock") as call_bedrock,
     ):
         results = [generate_query_result_for_step(meaning) for meaning in meanings]
 
@@ -2822,7 +2912,7 @@ def test_generation_converges_effective_ingredient_desi_tasks_on_one_row():
     assert "d.DESI AS Desi" in queries[0]
     assert "d.DESIDate AS DesiDate" in queries[0]
     assert "ORDER BY d.EffDate DESC, d.EndDate DESC" in queries[0]
-    call_openai.assert_not_called()
+    call_bedrock.assert_not_called()
 
 
 def test_generation_converges_current_ndc_desi_tasks_on_one_effective_row():
@@ -2844,7 +2934,7 @@ def test_generation_converges_current_ndc_desi_tasks_on_one_effective_row():
 
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
-        patch("inrules_data_agent.generator.generate._call_openai") as call_openai,
+        patch("inrules_data_agent.generator.generate._call_bedrock") as call_bedrock,
     ):
         results = [generate_query_result_for_step(meaning) for meaning in meanings]
 
@@ -2857,7 +2947,7 @@ def test_generation_converges_current_ndc_desi_tasks_on_one_effective_row():
     assert "d.DESIDate AS DesiDate" in queries[0]
     assert "ORDER BY d.EffDate DESC, d.EndDate DESC" in queries[0]
     assert "{{IngredientNdc}}" not in queries[0]
-    call_openai.assert_not_called()
+    call_bedrock.assert_not_called()
 
 
 def test_generation_converges_same_candidate_eo_tasks_on_one_count_query():
@@ -2881,7 +2971,7 @@ def test_generation_converges_same_candidate_eo_tasks_on_one_count_query():
 
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
-        patch("inrules_data_agent.generator.generate._call_openai") as call_openai,
+        patch("inrules_data_agent.generator.generate._call_bedrock") as call_bedrock,
     ):
         results = [generate_query_result_for_step(meaning) for meaning in meanings]
 
@@ -2891,7 +2981,7 @@ def test_generation_converges_same_candidate_eo_tasks_on_one_count_query():
     assert "COUNT(DISTINCT eh.AuthorizationId)" in queries[0]
     assert "eh.Status = '1'" in queries[0]
     assert "eh.IT_CNT > 0" in queries[0]
-    call_openai.assert_not_called()
+    call_bedrock.assert_not_called()
 
 
 def test_generation_converges_selected_partial_tasks_on_reusable_latest_row():
@@ -2916,7 +3006,7 @@ def test_generation_converges_selected_partial_tasks_on_reusable_latest_row():
 
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
-        patch("inrules_data_agent.generator.generate._call_openai") as call_openai,
+        patch("inrules_data_agent.generator.generate._call_bedrock") as call_bedrock,
     ):
         results = [generate_query_result_for_step(meaning) for meaning in meanings]
 
@@ -2925,7 +3015,7 @@ def test_generation_converges_selected_partial_tasks_on_reusable_latest_row():
     assert all(result["validation_status"] == "VALIDATED" for result in results)
     assert "c.claimid AS SelectedPartialClaimId" in queries[0]
     assert "ORDER BY c.startdate DESC, c.claimid DESC, p.claimline DESC" in queries[0]
-    call_openai.assert_not_called()
+    call_bedrock.assert_not_called()
 
 
 def test_deterministic_column_repair_uses_unique_schema_owner():
@@ -2979,9 +3069,9 @@ def test_generate_queries_returns_deterministically_repaired_column_without_retr
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=generated,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -2999,7 +3089,7 @@ def test_generate_queries_returns_deterministically_repaired_column_without_retr
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected]
-    assert call_openai.call_count == 1
+    assert call_bedrock.call_count == 1
 
 
 def test_column_repair_suggests_schema_owned_business_columns():
@@ -3047,13 +3137,13 @@ def test_generate_queries_repairs_count_when_values_are_requested():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[
                 "SELECT COUNT(*) FROM InMemory.dbo.ENROLLMENT "
                 "WHERE MemberId = {{MemberId}}",
                 corrected_sql,
             ],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         client = TestClient(create_app())
         response = client.post(
@@ -3075,8 +3165,8 @@ def test_generate_queries_repairs_count_when_values_are_requested():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected_sql]
-    assert call_openai.call_count == 2
-    repair_feedback = call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    repair_feedback = call_bedrock.call_args_list[1].args[2]
     assert "COUNT(*) output does not match" in repair_feedback
 
 
@@ -3090,9 +3180,9 @@ def test_generate_queries_rejects_count_when_values_are_requested_after_repair()
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=count_sql,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         client = TestClient(create_app())
         response = client.post(
@@ -3112,11 +3202,11 @@ def test_generate_queries_rejects_count_when_values_are_requested_after_repair()
     result = response.json()["queries"][0]
     assert result["matched"] is False
     assert result["queries"] == []
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_matched_true_when_openai_returns_sql():
-    with patch("inrules_data_agent.generator.generate._call_openai", return_value=MOCK_SQL):
+    with patch("inrules_data_agent.generator.generate._call_bedrock", return_value=MOCK_SQL):
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
@@ -3139,8 +3229,8 @@ def test_matched_true_when_openai_returns_sql():
 
 def test_empty_model_completion_is_retried_before_failure():
     with patch(
-        "inrules_data_agent.generator.generate._call_openai", return_value=None
-    ) as call_openai:
+        "inrules_data_agent.generator.generate._call_bedrock", return_value=None
+    ) as call_bedrock:
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries",
@@ -3160,7 +3250,7 @@ def test_empty_model_completion_is_retried_before_failure():
     assert result["matched"] is False
     assert result["queries"] == []
     assert result["failure_category"] == "EMPTY_MODEL_COMPLETION"
-    assert call_openai.call_count == 4
+    assert call_bedrock.call_count == 4
 
 
 def test_repeated_rejected_candidate_stops_repairs_early():
@@ -3169,15 +3259,15 @@ def test_repeated_rejected_candidate_stops_repairs_early():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=repeated,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         result = generate_query_result_for_step("Return DrugOverrides NDCKey values")
 
     assert result["queries"] == []
     assert result["failure_category"] == "COLUMN_NOT_IN_DDL"
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
     assert [attempt["failure_category"] for attempt in result["generation_attempts"]] == [
         "COLUMN_NOT_IN_DDL",
         "REPEATED_MODEL_CANDIDATE",
@@ -3185,7 +3275,7 @@ def test_repeated_rejected_candidate_stops_repairs_early():
 
 
 def test_bulk_generate_queries_returns_result_per_item_in_order():
-    with patch("inrules_data_agent.generator.generate._call_openai", return_value=MOCK_SQL):
+    with patch("inrules_data_agent.generator.generate._call_bedrock", return_value=MOCK_SQL):
         client = TestClient(create_app())
         response = client.post(
             "/generate_queries/bulk",
@@ -3487,7 +3577,7 @@ def test_select_ddls_without_table_keywords_returns_all_packaged_schemas():
 
 def test_rejects_non_select_llm_output():
     with patch(
-        "inrules_data_agent.generator.generate._call_openai",
+        "inrules_data_agent.generator.generate._call_bedrock",
         return_value="delete from HRX.dbo.DrugOverrides",
     ):
         client = TestClient(create_app())
@@ -3517,12 +3607,12 @@ def test_generate_queries_retries_when_sql_uses_table_outside_schema():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[
                 "SELECT COUNT(*) FROM HRX.dbo.HrxRequest WITH (nolock)",
                 corrected_sql,
             ],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         client = TestClient(create_app())
         response = client.post(
@@ -3542,7 +3632,7 @@ def test_generate_queries_retries_when_sql_uses_table_outside_schema():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected_sql]
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_generate_queries_retries_when_sql_has_junk_predicates():
@@ -3555,13 +3645,13 @@ def test_generate_queries_retries_when_sql_has_junk_predicates():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[
                 "SELECT COUNT(*) FROM plandata_rx_production.dbo.claimpharm WITH (nolock) "
                 "WHERE 1 = 0 AND ndckey = ndckey",
                 corrected_sql,
             ],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         client = TestClient(create_app())
         response = client.post(
@@ -3581,7 +3671,7 @@ def test_generate_queries_retries_when_sql_has_junk_predicates():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected_sql]
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_generate_queries_retries_when_sql_uses_join():
@@ -3596,14 +3686,14 @@ def test_generate_queries_retries_when_sql_uses_join():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[
                 "SELECT COUNT(*) FROM plandata_rx_production.dbo.claim c WITH (nolock) "
                 "JOIN plandata_rx_production.dbo.claimdetail cd WITH (nolock) "
                 "ON cd.claimid = c.claimid",
                 corrected_sql,
             ],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         client = TestClient(create_app())
         response = client.post(
@@ -3623,7 +3713,7 @@ def test_generate_queries_retries_when_sql_uses_join():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected_sql]
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_generate_queries_accepts_grounded_physical_join_requested_by_business_meaning():
@@ -3640,9 +3730,9 @@ def test_generate_queries_accepts_grounded_physical_join_requested_by_business_m
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=joined_sql,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         client = TestClient(create_app())
         response = client.post(
@@ -3665,7 +3755,7 @@ def test_generate_queries_accepts_grounded_physical_join_requested_by_business_m
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [joined_sql]
-    call_openai.assert_called_once()
+    call_bedrock.assert_called_once()
 
 
 def test_generate_queries_accepts_reviewed_member_history_drugoverride_gcn_join():
@@ -3687,7 +3777,7 @@ def test_generate_queries_accepts_reviewed_member_history_drugoverride_gcn_join(
     )
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
-        patch("inrules_data_agent.generator.generate._call_openai", return_value=joined_sql),
+        patch("inrules_data_agent.generator.generate._call_bedrock", return_value=joined_sql),
         patch("inrules_data_agent.app.load_reuse_corpus", return_value={}),
     ):
         response = TestClient(create_app()).post(
@@ -3728,9 +3818,9 @@ def test_generate_queries_rejects_ungrounded_join_key_after_two_attempts():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=ungrounded_join_sql,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         client = TestClient(create_app())
         response = client.post(
@@ -3752,8 +3842,8 @@ def test_generate_queries_rejects_ungrounded_join_key_after_two_attempts():
     result = response.json()["queries"][0]
     assert result["matched"] is False
     assert result["queries"] == []
-    assert call_openai.call_count == 2
-    repair_feedback = call_openai.call_args_list[1].args[2].lower()
+    assert call_bedrock.call_count == 2
+    repair_feedback = call_bedrock.call_args_list[1].args[2].lower()
     assert "join key" in repair_feedback
     assert "ground" in repair_feedback
     assert "runtime placeholders" in repair_feedback
@@ -3777,9 +3867,9 @@ def test_generate_queries_rejects_join_that_does_not_connect_its_target():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=disconnected_sql,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -3800,7 +3890,7 @@ def test_generate_queries_rejects_join_that_does_not_connect_its_target():
     result = response.json()["queries"][0]
     assert result["matched"] is False
     assert result["queries"] == []
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_generate_queries_rejects_repeated_table_join_with_disconnected_alias():
@@ -3819,9 +3909,9 @@ def test_generate_queries_rejects_repeated_table_join_with_disconnected_alias():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=disconnected_sql,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -3840,7 +3930,7 @@ def test_generate_queries_rejects_repeated_table_join_with_disconnected_alias():
     result = response.json()["queries"][0]
     assert result["matched"] is False
     assert result["queries"] == []
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_generate_queries_does_not_treat_table_name_substring_as_explicit_intent():
@@ -3858,9 +3948,9 @@ def test_generate_queries_does_not_treat_table_name_substring_as_explicit_intent
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=joined_sql,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -3879,7 +3969,7 @@ def test_generate_queries_does_not_treat_table_name_substring_as_explicit_intent
     result = response.json()["queries"][0]
     assert result["matched"] is False
     assert result["queries"] == []
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_generate_queries_rejects_join_when_repair_still_uses_multiple_tables():
@@ -3896,9 +3986,9 @@ def test_generate_queries_rejects_join_when_repair_still_uses_multiple_tables():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=joined_sql,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         client = TestClient(create_app())
         response = client.post(
@@ -3918,7 +4008,7 @@ def test_generate_queries_rejects_join_when_repair_still_uses_multiple_tables():
     result = response.json()["queries"][0]
     assert result["matched"] is False
     assert result["queries"] == []
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_generate_queries_repairs_inmemory_nolock_hint():
@@ -3928,9 +4018,9 @@ def test_generate_queries_repairs_inmemory_nolock_hint():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value="SELECT MemberId FROM InMemory.dbo.ENROLLMENT WITH (NOLOCK)",
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         client = TestClient(create_app())
         response = client.post(
@@ -3950,7 +4040,7 @@ def test_generate_queries_repairs_inmemory_nolock_hint():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected_sql]
-    assert call_openai.call_count == 1
+    assert call_bedrock.call_count == 1
 
 
 def test_generate_queries_normalizes_inmemory_nolock_after_alias():
@@ -3960,7 +4050,7 @@ def test_generate_queries_normalizes_inmemory_nolock_after_alias():
 
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
-        patch("inrules_data_agent.generator.generate._call_openai", return_value=generated),
+        patch("inrules_data_agent.generator.generate._call_bedrock", return_value=generated),
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -3987,9 +4077,9 @@ def test_generate_queries_repairs_missing_physical_nolock_hint():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value="SELECT NDCKey FROM HRX.dbo.DrugOverrides",
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         client = TestClient(create_app())
         response = client.post(
@@ -4009,7 +4099,7 @@ def test_generate_queries_repairs_missing_physical_nolock_hint():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected_sql]
-    assert call_openai.call_count == 1
+    assert call_bedrock.call_count == 1
 
 
 def test_generate_queries_allows_sme_grounded_mixed_inmemory_and_physical_join():
@@ -4025,9 +4115,9 @@ def test_generate_queries_allows_sme_grounded_mixed_inmemory_and_physical_join()
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=joined_sql,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -4048,7 +4138,7 @@ def test_generate_queries_allows_sme_grounded_mixed_inmemory_and_physical_join()
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [joined_sql]
-    assert call_openai.call_count == 1
+    assert call_bedrock.call_count == 1
 
 
 def test_generate_queries_allows_grounded_tables_implied_by_business_columns():
@@ -4075,7 +4165,7 @@ def test_generate_queries_allows_grounded_tables_implied_by_business_columns():
 
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
-        patch("inrules_data_agent.generator.generate._call_openai", return_value=sql),
+        patch("inrules_data_agent.generator.generate._call_bedrock", return_value=sql),
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -4104,9 +4194,9 @@ def test_generate_queries_extracts_single_fenced_select_from_model_prose():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=response_text,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -4124,7 +4214,7 @@ def test_generate_queries_extracts_single_fenced_select_from_model_prose():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [sql]
-    assert call_openai.call_count == 1
+    assert call_bedrock.call_count == 1
 
 
 def test_generate_queries_repairs_unparseable_or_multiple_statement_output():
@@ -4133,12 +4223,12 @@ def test_generate_queries_repairs_unparseable_or_multiple_statement_output():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[
                 "SELECT NDCKey FROM HRX.dbo.DrugOverrides WITH (NOLOCK); SELECT 1",
                 corrected,
             ],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -4156,8 +4246,8 @@ def test_generate_queries_repairs_unparseable_or_multiple_statement_output():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected]
-    assert call_openai.call_count == 2
-    assert "exactly one parseable T-SQL SELECT" in call_openai.call_args_list[1].args[2]
+    assert call_bedrock.call_count == 2
+    assert "exactly one parseable T-SQL SELECT" in call_bedrock.call_args_list[1].args[2]
 
 
 def test_generate_queries_allows_live_fk_claimdetail_claimpharm_relationships():
@@ -4177,7 +4267,7 @@ def test_generate_queries_allows_live_fk_claimdetail_claimpharm_relationships():
     )
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
-        patch("inrules_data_agent.generator.generate._call_openai", return_value=sql),
+        patch("inrules_data_agent.generator.generate._call_bedrock", return_value=sql),
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -4208,7 +4298,7 @@ def test_generate_queries_allows_live_fk_referral_authservice_relationship():
     )
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
-        patch("inrules_data_agent.generator.generate._call_openai", return_value=sql),
+        patch("inrules_data_agent.generator.generate._call_bedrock", return_value=sql),
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -4235,9 +4325,9 @@ def test_generate_queries_rejects_multiple_select_statements():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=multiple_sql,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -4256,7 +4346,7 @@ def test_generate_queries_rejects_multiple_select_statements():
     result = response.json()["queries"][0]
     assert result["matched"] is False
     assert result["queries"] == []
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_generate_queries_rejects_table_reading_exists_subquery():
@@ -4276,9 +4366,9 @@ def test_generate_queries_rejects_table_reading_exists_subquery():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=nested_sql,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -4299,7 +4389,7 @@ def test_generate_queries_rejects_table_reading_exists_subquery():
     result = response.json()["queries"][0]
     assert result["matched"] is False
     assert result["queries"] == []
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_generate_queries_allows_grounded_correlated_exists_subquery():
@@ -4319,7 +4409,7 @@ def test_generate_queries_allows_grounded_correlated_exists_subquery():
 
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=ddls),
-        patch("inrules_data_agent.generator.generate._call_openai", return_value=nested_sql),
+        patch("inrules_data_agent.generator.generate._call_bedrock", return_value=nested_sql),
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -4346,9 +4436,9 @@ def test_generate_queries_rejects_commented_unknown_table_reference():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             return_value=unknown_sql,
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         response = TestClient(create_app()).post(
             "/generate_queries",
@@ -4367,7 +4457,7 @@ def test_generate_queries_rejects_commented_unknown_table_reference():
     result = response.json()["queries"][0]
     assert result["matched"] is False
     assert result["queries"] == []
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_generate_queries_retries_when_sql_has_raw_request_object_references():
@@ -4380,13 +4470,13 @@ def test_generate_queries_retries_when_sql_has_raw_request_object_references():
     with (
         patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
         patch(
-            "inrules_data_agent.generator.generate._call_openai",
+            "inrules_data_agent.generator.generate._call_bedrock",
             side_effect=[
                 "SELECT SUM(metricqty) FROM plandata_rx_production.dbo.claimpharm WITH (nolock) "
                 "HAVING SUM(metricqty) > HrxRequest.ClaimDetail.ClaimSeg.qtyDispensed_442_E7",
                 corrected_sql,
             ],
-        ) as call_openai,
+        ) as call_bedrock,
     ):
         client = TestClient(create_app())
         response = client.post(
@@ -4406,7 +4496,7 @@ def test_generate_queries_retries_when_sql_has_raw_request_object_references():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == [corrected_sql]
-    assert call_openai.call_count == 2
+    assert call_bedrock.call_count == 2
 
 
 def test_execute_query_returns_results():
@@ -4531,7 +4621,7 @@ def test_execute_query_db_error_returns_500():
 
 def test_cleans_sql_code_fence():
     with patch(
-        "inrules_data_agent.generator.generate._call_openai",
+        "inrules_data_agent.generator.generate._call_bedrock",
         return_value="```sql\nselect count(*) from HRX.dbo.DrugOverrides (nolock)\n```",
     ):
         client = TestClient(create_app())

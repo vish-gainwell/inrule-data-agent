@@ -47,6 +47,7 @@ class GenerateQueriesRequest(BaseModel):
     acceptance_criteria: str | list[str] | None = None
     steps: list[Step]
     generation_mode: str = "draft"
+    jurisdiction: Literal["IL", "MO"] = "IL"
 
 
 class BulkGenerateQueriesRequest(BaseModel):
@@ -76,7 +77,7 @@ def _data_agent_runtime() -> dict[str, str | None]:
         "package_version": _package_version(),
         "build_sha": os.environ.get("DATA_AGENT_BUILD_SHA"),
         "implementation_path": str(Path(__file__).resolve()),
-        "model": os.environ.get("OPENAI_MODEL"),
+        "model": os.environ.get("BEDROCK_MODEL"),
     }
 
 
@@ -186,6 +187,7 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
                     step, request.acceptance_criteria
                 ),
                 draft_mode=draft_mode,
+                jurisdiction=request.jurisdiction,
             )
 
         assembled = result["queries"]
