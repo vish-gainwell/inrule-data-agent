@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
@@ -16,6 +17,11 @@ from sqlglot.errors import ParseError, TokenError
 from sqlglot.expressions.core import Expression
 
 from ..retrieval.qdrant_schema import retrieve_schema_ddls
+from ..semantic_query_hints import (
+    SEMANTIC_HINT_HEADER,
+    log_semantic_hint_decision,
+    select_semantic_hint,
+)
 
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
@@ -96,8 +102,13 @@ Rules:
    - Never add NOLOCK to InMemory logical DTO table references.
    - Add WITH (NOLOCK) after every physical SQL Server table reference.
 4. Runtime inputs are an open-ended DataQuery contract, not a fixed whitelist.
-   For every runtime business value explicitly required by the CURRENT DATA QUERY
-   BUSINESS MEANING, emit a concise PascalCase {{RuntimeInput}} placeholder. Never
+   For every scalar runtime business value explicitly required by the CURRENT DATA QUERY
+   BUSINESS MEANING, emit a concise PascalCase {{RuntimeInput}} placeholder. When the
+   current atomic business meaning explicitly requires multiple values, a list, a collection,
+   or occurrences to be filtered as a set, use a [[PascalCasePluralCollectionInput]] placeholder
+   with set-based SQL such as IN ([[PascalCasePluralCollectionInput]]) or an appropriate
+   collection join. Never use a scalar {{RuntimeInput}} placeholder for a collection, and do
+   not invent a collection unless multiplicity is explicit in the current context. Never
    substitute an example value or use ? parameters. Canonical examples include:
 
    Incoming NDC:      {{ClaimTransaction.Ndc}}
@@ -217,6 +228,10 @@ Rules:
        criteria steps, branches, filters, literals, or tables.
     c. The rule description provides broad business purpose only. It must never
        override the current task or introduce retrieval logic by itself.
+    d. Supplemental semantic context may fill only an omitted, compatible detail.
+       It must never override or replace explicit current meaning, applicable
+       acceptance criteria, description, runtime inputs, outputs, constants, filters,
+       query structure, or selection policy.
     Before returning SQL, verify every projected column and WHERE predicate is
     required by the current business meaning or is an unambiguous clarification
     of a term in that meaning from the acceptance criteria.
@@ -333,11 +348,9 @@ Rules:
     {{DateOfService}} and return the raw MaxDayDose. Do not substitute NDC_Mstr, use the
     transaction-level NDC, or calculate ingredient quantity divided by days supply in SQL;
     those runtime comparisons remain downstream rule behavior.
-      ICD diagnosis-reference shape: when validating a submitted ICD-10 diagnosis against
-    IPA.dbo.DiagCode, compare the first four characters on both sides, for example
-    SUBSTRING(codeid, 1, 4) = SUBSTRING({{DiagnosisCode}}, 1, 4). Do not replace this with
-    exact full-code equality. Apply the prefix function directly to both operands so SQL null
-    behavior is preserved; retain IcdVersion = '0' and the inclusive DOS effective window.
+      ICD diagnosis-reference shape: preserve explicitly supplied source, ICD version, and
+    effective-date requirements. For IPA.dbo.DiagCode reference validation, retain
+    IcdVersion = '0' and the inclusive DOS effective window.
       Pattern and effective-period shape: preserve an explicitly supplied LIKE/contains/
     wildcard comparison; never collapse it to equality. A quoted configuration discriminator
     containing SQL wildcard characters such as % must use LIKE unless the supplied business
@@ -361,19 +374,10 @@ Rules:
       Reusable effective configuration-list shape: query the configuration table directly
     and return its configured values. Do not join physical transaction/history tables merely
     to re-read submitted request occurrences; the downstream rule retains the current
-    occurrence index and submitted count boundary. In particular, the approved Other Payer
-    Reject Code list is SELECT PARAMETER_VALUE FROM HRX.dbo.NDCParameters WHERE
-    PARAMETER_NAME = 'REJECT_CODE' AND {{DateOfService}} BETWEEN EFFDATE AND ENDDATE.
-    The DataQuery returns the active list; downstream occurrence-aware logic compares only
+    occurrence index and submitted count boundary. In particular, query HRX.dbo.NDCParameters
+    directly for the approved Other Payer Reject Code values with PARAMETER_NAME = 'REJECT_CODE'.
+    The DataQuery returns the configured list; downstream occurrence-aware logic compares only
     the submitted reject-code positions allowed by the request's reject count.
-      Effective master validation shape: when current submitted occurrences must be validated
-    against an effective master table, pass the considered submitted values as a collection
-    parameter and return only matching active master values. Never query transaction/history
-    tables to recover those submitted values. For NCPDP reject-code validation, query
-    HRX.dbo.NCPDP_Reject_Codes, filter reject_code with [[SubmittedOtherPayerRejectCodes]],
-    and apply the inclusive DateOfService effdate/termdate window. Payer iteration, submitted
-    reject count, the first-five boundary, blank handling, and invalid-code detection remain
-    downstream rule behavior.
     Reusable compound quantity shape: select SUM(TRY_CONVERT(decimal(29,9),
     COMPOUND.drug_qty)); join NDC_Mstr on COMPOUND.ndc = NDC_Mstr.NDCKey; filter
     COMPOUND.tcn with [[HistoricalTcns]] and NDC_Mstr.GCN_SeqNo with the incoming GCN
@@ -907,17 +911,6 @@ WHERE d.Type = 'PkgBilling_Bypass'
 FROM InMemory.dbo.CONTRACT_TERM ct
 WHERE RTRIM(ct.ContractId) <> ''"""
 
-    if (
-        "hrx.dbo.ncpdp_reject_codes" in tables
-        and re.search(r"\bncpdp\b[^.\n]{0,80}\breject[-_ ]?code", meaning)
-        and re.search(r"\b(?:submitted|current)\b", meaning)
-        and re.search(r"\b(?:valid|master|effective|occurrence)\b", meaning)
-    ):
-        return """SELECT
-    RTRIM(rc.reject_code) AS NcpdpRejectCode
-FROM HRX.dbo.NCPDP_Reject_Codes rc WITH (NOLOCK)
-WHERE rc.reject_code IN ([[SubmittedOtherPayerRejectCodes]])
-  AND {{DateOfService}} BETWEEN rc.effdate AND rc.termdate"""
 
     if (
         "hrx.dbo.ndcmaintdetails" in tables
@@ -1251,17 +1244,44 @@ def _build_user_message(
     else:
         acceptance_text = acceptance_criteria or "Not provided"
 
-    return (
+    context_prefix = (
         "DDL SCHEMAS (InMemory frontier schemas are listed before physical "
         "fallback schemas):\n"
         f"{ddl_context}\n\n"
         "RULE DESCRIPTION (overall objective only; do not import query logic):\n"
         f"{description or 'Not provided'}\n\n"
+    )
+    authoritative_context = (
         "DIRECTLY REFERENCED ACCEPTANCE CRITERIA (supporting context only):\n"
         f"{acceptance_text}\n\n"
         "CURRENT DATA QUERY BUSINESS MEANING (authoritative atomic query task):\n"
         f"{business_meaning}"
     )
+    decision = select_semantic_hint(business_meaning)
+    if decision.missing_detail:
+        boundary = (
+            "Semantic context may fill only an omitted, compatible detail. Explicit current "
+            "details always win, including the current business meaning, directly referenced "
+            "acceptance criteria, rule description, runtime mapping, output, constants, query "
+            "need, filters, query structure, and selection policy. Ignore any conflicting hint "
+            "claim."
+        )
+        message = (
+            f"{context_prefix}{boundary}\n\n{SEMANTIC_HINT_HEADER}\n"
+            f"{decision.missing_detail}\n\n{authoritative_context}"
+        )
+        decision = replace(
+            decision,
+            semantic_hint_injected=True,
+            semantic_context_section="SUPPLEMENTAL SEMANTIC CONTEXT",
+            semantic_injection_position=(
+                "before_acceptance_criteria_and_authoritative_business_meaning"
+            ),
+        )
+    else:
+        message = context_prefix + authoritative_context
+    log_semantic_hint_decision(decision)
+    return message
 
 
 def _call_openai(
@@ -2837,7 +2857,8 @@ def _find_required_business_concept_artifacts(
             normalized_sql,
         ):
             artifacts.append(
-                "NCPDP reject master lookup is not scoped to submitted reject codes"
+                "NCPDP reject master lookup submitted-code scope requires a [[...]] "
+                "collection placeholder"
             )
         if not re.search(
             r"\{\{[^}]*dateofservice[^}]*\}\}\s+between\s+"

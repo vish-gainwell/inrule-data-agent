@@ -38,6 +38,8 @@ Core Edits Query.sql
 /total_tree.txt
 /ClaimEngine_Query_Reuse_Architecture_*.html
 /ClaimEngine_Query_Reuse_Architecture_*.pdf
+/.artifacts/
+/project_artifacts/*_SEMANTIC_HINT_TRACE.jsonl
 
 # ── Secrets / environment ─────────────────────────────────────────────────────
 .env

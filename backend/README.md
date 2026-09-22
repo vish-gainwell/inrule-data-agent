@@ -91,6 +91,13 @@ DATAQUERY_CATALOG_PATH=C:\path\dataquery_reuse_catalog.sqlite3
 Catalog export is an explicit maintenance command. It never runs during API
 startup or for an individual ADO request.
 
+## Semantic query hints
+
+The packaged catalog at `src/inrules_data_agent/semantic_query_hints/concepts.v1.yaml`
+is enabled by default. All requirement-derived required phrases must match the
+authoritative atomic business meaning. Zero or multiple matching concepts, disabled or
+invalid configuration, and an invalid catalog safely omit the supplemental hint.
+
 ## Tests
 
 Install the project and development tools with `uv`:

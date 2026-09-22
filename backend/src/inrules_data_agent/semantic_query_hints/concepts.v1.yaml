@@ -1,0 +1,65 @@
+schema_version: 1
+concepts:
+  - id: reject-code-dos-effective-validity
+    version: "1.1.2"
+    applies_when:
+      required_phrases:
+        - other payer reject code
+        - valid ncpdp reject code
+      provenance:
+        workbook: DataQuery_EVAL_072926.xlsx
+        references: [Edit Review!N42:O42, Rule Steps!K162, Data Queries!H161]
+    semantic_hint:
+      missing_detail: "When validating the reject-code record, also require the date of service to fall inclusively within that record's effective and term dates."
+      provenance:
+        workbook: DataQuery_EVAL_072926.xlsx
+        reference: Data Queries!Q161:R161
+        excerpt: GT Query validates DOS between EFF and Term dates.
+      corroboration:
+        workbook: IL_DataQuery_GroundTruth_08042026.xlsx
+        reference: Sheet1!V160
+  - id: approved-reject-code-dos-validity
+    version: "1.0.0"
+    applies_when:
+      required_phrases:
+        - other payer reject codes
+        - approved
+        - reject code list
+      provenance:
+        workbook: DataQuery_EVAL_072926.xlsx
+        references: [Edit Review!N35:O35, Data Queries!H119, Data Queries!L119]
+    semantic_hint:
+      missing_detail: "Only approved reject-code entries effective on the claim’s date of service are valid."
+      provenance:
+        workbook: DataQuery_EVAL_072926.xlsx
+        reference: Data Queries!Q119:R119
+        excerpt: GT Query validates DOS between EFF and Term dates.
+      corroboration:
+        workbook: IL_DataQuery_GroundTruth_08042026.xlsx
+        references: [Sheet1!P204, Sheet1!V204]
+  - id: icd10-four-character-reference-match
+    version: "1.0.0"
+    applies_when:
+      required_phrases:
+        - diagnosis code
+        - icd-10
+        - matching
+        - reference
+      provenance:
+        evidence_status: ground_truth_backed
+        requires_sme_confirmation: true
+        sources:
+          - workbook: 131_TEST_for_eval_V1_Review Results (2).xlsx
+            references: [Summary!A18, Edit Review - TEST!P92:Q92, Data Qu eries - TEST!I255:J255]
+          - workbook: IL_DataQuery_GroundTruth_08042026.xlsx
+            references: [Sheet1!P8, Sheet1!V8]
+    semantic_hint:
+      missing_detail: "When validating an ICD-10 diagnosis code, match using its first four characters rather than requiring exact full-code equality."
+      provenance:
+        evidence_status: ground_truth_backed
+        requires_sme_confirmation: true
+        sources:
+          - workbook: 131_TEST_for_eval_V1_Review Results (2).xlsx
+            references: [Summary!A18, Data Queries - TEST!I255:J255]
+          - workbook: IL_DataQuery_GroundTruth_08042026.xlsx
+            references: [Sheet1!P8, Sheet1!V8]
