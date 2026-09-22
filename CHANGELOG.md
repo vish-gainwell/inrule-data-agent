@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-04T10:02:47+05:30
+
+### Fixed
+
+- Prevented original-claim queries from dropping acceptance-criteria-defined Rx, NDC, provider, and date-of-service correlations unless a stable `OriginalClaimId` is used.
+
+### Added
+
+- Added Edit 7013 regression coverage and a non-runtime draft semantic model for later SME review.
+
 ## 2026-09-01T18:31:02+05:30
 
 ### Added

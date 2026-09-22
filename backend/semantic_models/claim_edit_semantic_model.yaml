@@ -1,0 +1,40 @@
+name: CLAIM_EDIT_DATA_QUERY_SEMANTICS
+version: 0.1.0
+status: draft_not_runtime
+description: >-
+  Review-only semantic knowledge captured while resolving Data Agent SQL accuracy
+  findings. The Data Agent does not load this file at runtime.
+
+entities:
+  - name: original_claim
+    description: >-
+      A historical claim identified by the complete correlation contract supplied by
+      the applicable acceptance criteria, or by a stable OriginalClaimId produced by
+      an earlier selection.
+    identifiers:
+      - name: original_claim_id
+        semantic_input: OriginalClaimId
+        role: stable_identifier
+    match_contracts:
+      - name: rx_ndc_provider_dos
+        status: draft_for_sme_review
+        match_type: all_of
+        fields:
+          - name: rx_number
+            semantic_input: RxNumber
+          - name: ndc
+            semantic_input: ClaimTransaction.Ndc
+          - name: provider_id
+            semantic_input: ProviderId
+          - name: date_of_service
+            semantic_input: DateOfService
+        provenance:
+          source: acceptance_criteria_and_sme_review
+          reference: Edit 7013 - ORIGINAL CLAIM MATCH INCOMPLETE
+        notes:
+          - >-
+            A downstream lookup may use OriginalClaimId instead of repeating this
+            composite match.
+          - >-
+            Paid and non-reversed semantics are intentionally excluded until reviewed
+            as separate findings.
