@@ -2494,10 +2494,44 @@ def _find_required_business_concept_artifacts(
             ):
                 artifacts.append("memberattribute effective date is not equal to DateOfService")
         if re.search(r"\bconfigured\b", business_meaning, re.IGNORECASE):
+            configured_id_runtime = bool(attribute_aliases) and any(
+                runtime_equals_column(
+                    equality,
+                    attribute_aliases,
+                    {"attributeid", "attributecode"},
+                    r"(?:configured|member)?attributeid$",
+                )
+                for equality in predicate_equalities()
+            )
+            configured_value_required = bool(
+                re.search(
+                    r"\b(?:the\s*value|attribute\s+value|whose value)\b",
+                    business_meaning,
+                    re.IGNORECASE,
+                )
+            )
+            configured_value_runtime = bool(attribute_aliases) and any(
+                runtime_equals_column(
+                    equality,
+                    attribute_aliases,
+                    {"thevalue", "value", "attributevalue"},
+                    r"(?:configured(?:attribute)?|memberattribute|the)value$",
+                )
+                for equality in predicate_equalities()
+            )
             if not parameter_aliases:
-                artifacts.append("configured member-attribute task is missing NDCParameters")
+                if not (
+                    configured_id_runtime
+                    and (
+                        not configured_value_required
+                        or configured_value_runtime
+                    )
+                ):
+                    artifacts.append(
+                        "configured member-attribute task is missing NDCParameters"
+                    )
             elif attribute_aliases:
-                if not any(
+                if not configured_id_runtime and not any(
                     same_predicate_columns(
                         equality,
                         attribute_aliases,
@@ -2508,7 +2542,7 @@ def _find_required_business_concept_artifacts(
                     for equality in predicate_equalities()
                 ):
                     artifacts.append("memberattribute AttributeId is not matched to configured attribute-ID data")
-                if re.search(r"\b(?:the\s*value|attribute\s+value|whose value)\b", business_meaning, re.IGNORECASE) and not any(
+                if configured_value_required and not configured_value_runtime and not any(
                     same_predicate_columns(
                         equality,
                         attribute_aliases,
