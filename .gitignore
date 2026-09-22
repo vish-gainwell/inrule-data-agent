@@ -5,6 +5,9 @@ github-toolkit/
 /DB_Tables/
 /Schema/
 backend/docs/
+!backend/docs/
+backend/docs/*
+!backend/docs/sql_review_finding_matrix.md
 /docs/
 
 # ── Codex planning docs (internal) ───────────────────────────────────────────
