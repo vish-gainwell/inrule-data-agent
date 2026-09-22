@@ -16,6 +16,7 @@ from inrules_data_agent.generator.generate import (
     _column_repair_suggestions,
     _find_atomic_source_guard_artifacts,
     _find_deterministic_selection_artifacts,
+    _find_invalid_sql_artifacts,
     _find_output_name_artifacts,
     _find_required_business_concept_artifacts,
     _find_runtime_column_mapping_artifacts,
@@ -131,12 +132,48 @@ def test_rule_context_is_passed_to_data_query_generation():
         "Return active member rate-code values",
         description="CHIP eligibility rule",
         acceptance_criteria=None,
+        consumer_contract=None,
+        expected_return_fields=None,
         draft_mode=False,
     )
     assert response.json()["description"] == "CHIP eligibility rule"
     assert response.json()["queries"][0]["generation_attempts"] == [
         {"attempt": 1, "outcome": "accepted"}
     ]
+
+
+def test_same_step_consumer_contract_is_passed_to_validation():
+    with patch(
+        "inrules_data_agent.app.generate_query_result_for_step",
+        return_value={
+            "queries": [MOCK_SQL],
+            "failure_category": None,
+            "failure_reason": None,
+        },
+    ) as generate_step:
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "edit_id": "consumer-test",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Count matching records.",
+                    "requires_data_query": True,
+                    "expression": 'GetDataQueryIntFunc(FieldName:"MatchingRecordCount") > 0',
+                    "expected_return_fields": ["MatchingRecordCount"],
+                }],
+            },
+        )
+
+    assert response.status_code == 200
+    generate_step.assert_called_once_with(
+        "Count matching records.",
+        description=None,
+        acceptance_criteria=None,
+        consumer_contract='GetDataQueryIntFunc(FieldName:"MatchingRecordCount") > 0',
+        expected_return_fields=["MatchingRecordCount"],
+        draft_mode=True,
+    )
 
 
 def test_uses_atomic_data_query_reason_when_no_resolved_instruction_exists():
@@ -979,6 +1016,372 @@ def test_date_sensitive_parameter_requires_effective_evaluation_window():
     ]
     assert _find_required_business_concept_artifacts(placeholder_window, meaning) == []
     assert _find_required_business_concept_artifacts(current_date_window, meaning) == []
+
+
+def test_member_attribute_task_requires_application_to_the_member_record():
+    meaning = (
+        "Count the current member's configured member attribute whose AttributeId and "
+        "TheValue match configured values, is active on DateOfService, and has an "
+        "attribute effective date equal to DateOfService."
+    )
+    configuration_only = (
+        "SELECT COUNT(*) AS ParameterCount FROM HRX.dbo.NDCParameters p "
+        "WHERE p.PARAMETER_NAME IN ('AttributeId', 'AttributeValue')"
+    )
+    complete = (
+        "SELECT COUNT(*) AS MemberAttributeCount "
+        "FROM plandata_rx_production.dbo.memberattribute ma "
+        "JOIN HRX.dbo.NDCParameters aid ON ma.AttributeId = aid.PARAMETER_VALUE "
+        "JOIN HRX.dbo.NDCParameters av ON ma.TheValue = av.PARAMETER_VALUE "
+        "WHERE ma.memid = {{MemberId}} "
+        "AND {{DateOfService}} BETWEEN ma.effdate AND ma.termdate "
+        "AND ma.effdate = {{DateOfService}} "
+        "AND {{DateOfService}} BETWEEN aid.EFFDATE AND aid.ENDDATE "
+        "AND {{DateOfService}} BETWEEN av.EFFDATE AND av.ENDDATE"
+    )
+
+    rejected = _find_required_business_concept_artifacts(
+        configuration_only,
+        meaning,
+        consumer_contract='GetDataQueryIntFunc(FieldName:"MemberAttributeCount")',
+    )
+    assert "member-attribute task is missing the memberattribute source" in rejected
+    assert (
+        "SQL output does not match required consumer fields: MemberAttributeCount"
+        in rejected
+    )
+    assert _find_required_business_concept_artifacts(
+        complete,
+        meaning,
+        consumer_contract='GetDataQueryIntFunc(FieldName:"MemberAttributeCount")',
+    ) == []
+
+
+@pytest.mark.parametrize(
+    "window",
+    [
+        "ma.effdate <= {{DateOfService}} AND ma.termdate >= {{DateOfService}}",
+        "{{DateOfService}} >= ma.effdate AND {{DateOfService}} <= ma.termdate",
+        "{{DateOfService}} BETWEEN ma.effdate AND ma.termdate",
+    ],
+    ids=["column-first", "runtime-first", "between"],
+)
+def test_member_attribute_dos_window_accepts_valid_orientation(window):
+    meaning = "Count the current member's member attribute active on DateOfService."
+    sql = (
+        "SELECT COUNT(*) AS MemberAttributeCount "
+        "FROM plandata_rx_production.dbo.memberattribute ma "
+        "WHERE ma.memid = {{MemberId}} AND " + window
+    )
+
+    assert (
+        "memberattribute lookup is missing its DateOfService effective/termination window"
+        not in _find_required_business_concept_artifacts(sql, meaning)
+    )
+
+
+@pytest.mark.parametrize(
+    "window",
+    [
+        "ma.effdate >= {{DateOfService}} AND ma.termdate <= {{DateOfService}}",
+        "ma.effdate <= {{DateOfService}} OR ma.termdate >= {{DateOfService}}",
+    ],
+    ids=["reversed", "disjunctive"],
+)
+def test_member_attribute_dos_window_rejects_invalid_orientation(window):
+    meaning = "Count the current member's member attribute active on DateOfService."
+    sql = (
+        "SELECT COUNT(*) AS MemberAttributeCount "
+        "FROM plandata_rx_production.dbo.memberattribute ma "
+        "WHERE ma.memid = {{MemberId}} AND (" + window + ")"
+    )
+
+    assert (
+        "memberattribute lookup is missing its DateOfService effective/termination window"
+        in _find_required_business_concept_artifacts(sql, meaning)
+    )
+
+
+def test_member_attribute_predicates_must_belong_to_memberattribute():
+    meaning = (
+        "Count the current member's configured member attribute whose AttributeId and "
+        "attribute value match configured values and is active on DateOfService."
+    )
+    wrong_owner = (
+        "SELECT COUNT(*) AS MemberAttributeCount "
+        "FROM plandata_rx_production.dbo.memberattribute ma "
+        "JOIN HRX.dbo.NDCParameters p ON p.PARAMETER_VALUE = p.PARAMETER_TITLE "
+        "WHERE p.MemberId = {{MemberId}} "
+        "AND {{DateOfService}} BETWEEN p.EFFDATE AND p.ENDDATE"
+    )
+
+    artifacts = _find_required_business_concept_artifacts(wrong_owner, meaning)
+    assert "memberattribute lookup is not correlated to the resolved MemberId" in artifacts
+    assert "memberattribute lookup is missing its DateOfService effective/termination window" in artifacts
+    assert "memberattribute AttributeId is not matched to configured attribute-ID data" in artifacts
+    assert "memberattribute value is not matched to configured attribute-value data" in artifacts
+
+
+def test_medical_diagnosis_history_requires_member_list_and_configured_lookback():
+    meaning = (
+        "Count member medical diagnosis history whose diagnosis code is in the Malignant "
+        "Cancer DiagnosisList within configured Cancer_Diagnosis_LookBack_Days of DateOfService."
+    )
+    configuration_only = (
+        "SELECT COUNT(*) AS DiagnosisListCount FROM HRX.dbo.DiagnosisList dl "
+        "WHERE dl.diagnosis_type = 'Malignant Cancer'"
+    )
+    complete = (
+        "SELECT COUNT(*) AS MalignantCancerMedicalDiagnosisHistoryCount "
+        "FROM IPA.dbo.meddiagnosis md "
+        "JOIN HRX.dbo.DiagnosisList dl ON md.diagcode = dl.diagnosis_code "
+        "JOIN HRX.dbo.NDCParameters p ON p.PARAMETER_NAME = "
+        "'Cancer_Diagnosis_LookBack_Days' "
+        "WHERE md.memid = {{MemberId}} "
+        "AND md.DiagnosisDate >= DATEADD(day, -TRY_CONVERT(int, p.PARAMETER_VALUE), "
+        "{{DateOfService}}) AND md.DiagnosisDate <= {{DateOfService}}"
+    )
+
+    rejected = _find_required_business_concept_artifacts(configuration_only, meaning)
+    assert "medical-diagnosis-history task is missing its history source" in rejected
+    assert "medical-diagnosis-history task is missing its configured lookback source" in rejected
+    assert _find_required_business_concept_artifacts(
+        complete,
+        meaning,
+        expected_return_fields=["MalignantCancerMedicalDiagnosisHistoryCount"],
+    ) == []
+
+
+@pytest.mark.parametrize(
+    "date_predicate",
+    [
+        "md.DiagnosisDate >= DATEADD(day, -TRY_CONVERT(int, p.PARAMETER_VALUE), "
+        "{{DateOfService}}) AND md.DiagnosisDate <= {{DateOfService}}",
+        "DATEADD(day, -TRY_CONVERT(int, p.PARAMETER_VALUE), {{DateOfService}}) "
+        "<= md.DiagnosisDate AND {{DateOfService}} >= md.DiagnosisDate",
+        "md.DiagnosisDate BETWEEN DATEADD(day, "
+        "-TRY_CONVERT(int, p.PARAMETER_VALUE), {{DateOfService}}) "
+        "AND {{DateOfService}}",
+    ],
+    ids=["column-first", "operand-reversed", "between"],
+)
+def test_medical_diagnosis_lookback_accepts_retrospective_interval(date_predicate):
+    sql, meaning = _medical_diagnosis_lookback_case(date_predicate)
+
+    assert (
+        "medical diagnosis date does not apply the configured lookback to DateOfService"
+        not in _find_required_business_concept_artifacts(sql, meaning)
+    )
+
+
+@pytest.mark.parametrize(
+    "date_predicate",
+    [
+        "md.DiagnosisDate >= DATEADD(day, TRY_CONVERT(int, p.PARAMETER_VALUE), "
+        "{{DateOfService}}) AND md.DiagnosisDate <= {{DateOfService}}",
+        "md.DiagnosisDate <= DATEADD(day, -TRY_CONVERT(int, p.PARAMETER_VALUE), "
+        "{{DateOfService}}) AND md.DiagnosisDate >= {{DateOfService}}",
+        "md.DiagnosisDate >= DATEADD(day, -TRY_CONVERT(int, p.PARAMETER_VALUE), "
+        "{{DateOfService}})",
+        "md.DiagnosisDate <= {{DateOfService}}",
+        "md.DiagnosisDate >= DATEADD(day, -TRY_CONVERT(int, p.PARAMETER_VALUE), "
+        "{{DateOfService}}) OR md.DiagnosisDate <= {{DateOfService}}",
+    ],
+    ids=[
+        "positive-dateadd",
+        "reversed-inequalities",
+        "missing-upper",
+        "missing-lower",
+        "disjunctive-bounds",
+    ],
+)
+def test_medical_diagnosis_lookback_rejects_invalid_interval(date_predicate):
+    sql, meaning = _medical_diagnosis_lookback_case(date_predicate)
+
+    assert (
+        "medical diagnosis date does not apply the configured lookback to DateOfService"
+        in _find_required_business_concept_artifacts(sql, meaning)
+    )
+
+
+def _medical_diagnosis_lookback_case(date_predicate):
+    meaning = (
+        "Count member medical diagnosis history whose diagnosis code is in the Malignant "
+        "Cancer DiagnosisList within configured Cancer_Diagnosis_LookBack_Days of DateOfService."
+    )
+    sql = (
+        "SELECT COUNT(*) AS MalignantCancerMedicalDiagnosisHistoryCount "
+        "FROM IPA.dbo.meddiagnosis md "
+        "JOIN HRX.dbo.DiagnosisList dl ON md.diagcode = dl.diagnosis_code "
+        "JOIN HRX.dbo.NDCParameters p ON p.PARAMETER_NAME = "
+        "'Cancer_Diagnosis_LookBack_Days' "
+        "WHERE md.memid = {{MemberId}} AND " + date_predicate
+    )
+    return sql, meaning
+
+
+def test_diagnosis_list_display_only_filter_is_atomic_to_diagnosis_value_set():
+    meaning = "Return active Malignant Cancer diagnosis-list codes."
+    criteria = "Use DiagnosisList where Display_Only = 'N'."
+    missing = (
+        "SELECT dl.diagnosis_code AS ItemValue FROM HRX.dbo.DiagnosisList dl "
+        "WHERE dl.diagnosis_type = 'Malignant Cancer'"
+    )
+    complete = missing + " AND dl.Display_Only = 'N'"
+
+    assert _find_required_business_concept_artifacts(
+        missing, meaning, acceptance_criteria=criteria
+    ) == ["DiagnosisList lookup is missing Display_Only = 'N'"]
+    assert _find_required_business_concept_artifacts(
+        complete, meaning, acceptance_criteria=criteria
+    ) == []
+
+
+def test_each_configured_parameter_alias_requires_its_own_dos_window():
+    meaning = (
+        "Count active coverage on DateOfService using configured STANDARD_PLAN and "
+        "PEBC_CoverageCode values."
+    )
+    one_window = (
+        "SELECT COUNT(*) AS CoverageCount FROM HRX.dbo.NDCParameters std "
+        "JOIN HRX.dbo.NDCParameters pebc ON pebc.PARAMETER_NAME = 'PEBC_CoverageCode' "
+        "WHERE std.PARAMETER_NAME = 'STANDARD_PLAN' "
+        "AND {{DateOfService}} BETWEEN std.EFFDATE AND std.ENDDATE"
+    )
+    both_windows = one_window + (
+        " AND {{DateOfService}} BETWEEN pebc.EFFDATE AND pebc.ENDDATE"
+    )
+
+    assert (
+        "NDCParameters alias pebc is missing its DateOfService EFFDATE/ENDDATE window"
+        in _find_required_business_concept_artifacts(one_window, meaning)
+    )
+    assert _find_required_business_concept_artifacts(both_windows, meaning) == []
+
+
+def test_equivalent_drugoverride_identifier_wording_is_enforced():
+    meaning = (
+        "The current drug has an active DrugOverrides match on DateOfService, matched by "
+        "NDC, GcnSeqNo, GCN, HICL_SeqNO, or HIC3."
+    )
+    incomplete = (
+        "SELECT COUNT(*) AS OverrideCount FROM HRX.dbo.DrugOverrides d "
+        "WHERE d.NDCKey = {{NDC}} OR d.GCN_SeqNo = {{GCNSeqNo}} OR d.HIC3 = {{HIC3}}"
+    )
+
+    assert "explicit lookup alternatives are missing: HICL_SeqNo, GCN" in (
+        _find_required_business_concept_artifacts(incomplete, meaning)
+    )
+
+
+def test_same_step_consumer_owns_runtime_arithmetic_but_not_query_outputs():
+    meaning = (
+        "Use unit-dose MEQ quantity multiplied by quantity dispensed and divided by days "
+        "supply, compared with the configured threshold."
+    )
+    sql = (
+        "SELECT m.MEQ AS UnitDoseMeqQuantity, p.DEC_PARAM_VAL AS MeqMaxUnits "
+        "FROM HRX.dbo.MEQ m CROSS JOIN HRX.dbo.NDCParameters p "
+        "WHERE m.GCN_SEQNO = {{GCNSeqNo}} AND p.PARAMETER_NAME = 'MEQ_MAX_UNITS'"
+    )
+    consumer = (
+        'GetDataQueryDecimalFunc(FieldName:"UnitDoseMeqQuantity") * '
+        'ClaimRequest.Quantity / ClaimRequest.DaysSupply >= '
+        'GetDataQueryDecimalFunc(FieldName:"MeqMaxUnits")'
+    )
+
+    artifacts = _find_required_business_concept_artifacts(
+        sql, meaning, consumer_contract=consumer
+    )
+    assert not any("'quantity'" in artifact or "'days supply'" in artifact for artifact in artifacts)
+    wrong_alias = sql.replace("MeqMaxUnits", "MaxUnits")
+    assert "SQL output does not match required consumer fields: MeqMaxUnits" in (
+        _find_required_business_concept_artifacts(
+            wrong_alias, meaning, consumer_contract=consumer
+        )
+    )
+
+
+def test_pharmacy_claim_wording_does_not_imply_provider_scope():
+    sql = "SELECT diagnosis_code AS ItemValue FROM HRX.dbo.DiagnosisList"
+    assert not any(
+        "provider scope" in artifact
+        for artifact in _find_required_business_concept_artifacts(
+            sql, "Return incoming pharmacy claim diagnosis-list values."
+        )
+    )
+
+
+@pytest.mark.parametrize("draft_mode", [False, True], ids=["strict", "draft"])
+@pytest.mark.parametrize(
+    ("meaning", "candidate", "ddl", "consumer", "expected_warning"),
+    [
+        (
+            "Count the current member's configured member attribute active on DateOfService.",
+            "SELECT COUNT(*) AS SpenddownParameterCount FROM HRX.dbo.NDCParameters WITH (NOLOCK)",
+            "CREATE TABLE HRX.dbo.NDCParameters (PARAMETER_NAME varchar(50));",
+            'GetDataQueryIntFunc(FieldName:"SpenddownMemberAttributeCount")',
+            "member-attribute task is missing the memberattribute source",
+        ),
+        (
+            "Count the current member's configured OBRA member attribute active on DateOfService.",
+            "SELECT COUNT(*) AS ObraParameterCount FROM HRX.dbo.NDCParameters WITH (NOLOCK)",
+            "CREATE TABLE HRX.dbo.NDCParameters (PARAMETER_NAME varchar(50));",
+            'GetDataQueryIntFunc(FieldName:"ObraMemberAttributeCount")',
+            "member-attribute task is missing the memberattribute source",
+        ),
+        (
+            "Count member medical diagnosis history in the configured Cancer lookback from DateOfService.",
+            "SELECT COUNT(*) AS MalignantCancerDxListCount FROM HRX.dbo.DiagnosisList WITH (NOLOCK)",
+            "CREATE TABLE HRX.dbo.DiagnosisList (diagnosis_type varchar(50));",
+            'GetDataQueryIntFunc(FieldName:"MalignantCancerMedicalDiagnosisHistoryCount")',
+            "medical-diagnosis-history task is missing its history source",
+        ),
+        (
+            "Count the current member's configured PACE member attribute active on DateOfService.",
+            "SELECT COUNT(*) AS PaceAttributeConfigCount FROM HRX.dbo.NDCParameters WITH (NOLOCK)",
+            "CREATE TABLE HRX.dbo.NDCParameters (PARAMETER_NAME varchar(50));",
+            'GetDataQueryIntFunc(FieldName:"PaceMemberAttributeMatchCount")',
+            "member-attribute task is missing the memberattribute source",
+        ),
+        (
+            "Count active DrugOverrides rows matched by NDC, GcnSeqNo, GCN, HICL_SeqNO, or HIC3.",
+            "SELECT COUNT(*) AS OverrideCount FROM HRX.dbo.DrugOverrides WITH (NOLOCK) "
+            "WHERE NDCKey = {{NDC}} OR GCN_SeqNo = {{GCNSeqNo}} OR HIC3 = {{HIC3}}",
+            "CREATE TABLE [HRX].[dbo].[DrugOverrides] ([NDCKey] varchar(11), "
+            "[GCN_SeqNo] varchar(6), [HIC3] varchar(3));",
+            'GetDataQueryIntFunc(FieldName:"OverrideCount")',
+            "explicit lookup alternatives are missing: HICL_SeqNo, GCN",
+        ),
+    ],
+    ids=[
+        "spenddown-config-only",
+        "obra-config-only",
+        "cancer-config-only",
+        "pace-config-only",
+        "enumerated-drugoverride-incomplete",
+    ],
+)
+def test_generation_never_validates_incomplete_atomic_business_coverage(
+    draft_mode, meaning, candidate, ddl, consumer, expected_warning
+):
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch("inrules_data_agent.generator.generate._call_openai", return_value=candidate),
+    ):
+        result = generate_query_result_for_step(
+            meaning,
+            consumer_contract=consumer,
+            draft_mode=draft_mode,
+        )
+
+    assert result["validation_status"] != "VALIDATED"
+    if draft_mode:
+        assert result["queries"] == [candidate]
+        assert expected_warning in result["review_warnings"]
+    else:
+        assert result["queries"] == []
+        assert result["failure_category"] == "VALIDATION_REJECTED"
 
 
 def test_current_plus_prior_aggregate_excludes_current_claim_id():

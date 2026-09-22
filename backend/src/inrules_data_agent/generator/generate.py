@@ -502,6 +502,8 @@ def generate_query_result_for_step(
     business_meaning: str,
     description: str | None = None,
     acceptance_criteria: str | list[str] | None = None,
+    consumer_contract: str | None = None,
+    expected_return_fields: list[str] | None = None,
     draft_mode: bool = False,
 ) -> dict[str, str | list[str] | None]:
     """Generate SQL and retain the reason when no safe query can be returned.
@@ -732,7 +734,11 @@ def generate_query_result_for_step(
                 invalid_artifacts = _find_invalid_sql_artifacts(sql, ddl_context, business_meaning)
                 invalid_artifacts.extend(
                     _find_required_business_concept_artifacts(
-                        sql, business_meaning, acceptance_criteria
+                        sql,
+                        business_meaning,
+                        acceptance_criteria=acceptance_criteria,
+                        consumer_contract=consumer_contract,
+                        expected_return_fields=expected_return_fields,
                     )
                 )
                 invalid_artifacts.extend(
@@ -1749,6 +1755,14 @@ def _find_historical_tcns_contract_artifacts(
     return []
 
 
+def _acceptance_criteria_text(
+    acceptance_criteria: str | list[str] | None,
+) -> str:
+    if isinstance(acceptance_criteria, list):
+        return "\n".join(acceptance_criteria)
+    return acceptance_criteria or ""
+
+
 def _find_atomic_source_guard_artifacts(
     sql: str,
     business_meaning: str,
@@ -2241,6 +2255,8 @@ def _find_required_business_concept_artifacts(
     sql: str,
     business_meaning: str,
     acceptance_criteria: str | list[str] | None = None,
+    consumer_contract: str | None = None,
+    expected_return_fields: list[str] | None = None,
 ) -> list[str]:
     """Reject candidates that silently omit strongly named atomic constraints."""
     requirements = (
@@ -2256,7 +2272,8 @@ def _find_required_business_concept_artifacts(
         ),
         (r"\b(?:rx\s*number|prescription(?:/service)? reference number)\b", "Rx number", r"\b(?:rxnumber|rx_nbr|associatedprescriptionrefnumber)\b|\{\{[^}]*(?:rx|prescription)[^}]*\}\}"),
         (
-            r"\b(?:same|current|incoming|submitted)\b[^.\n]{0,80}\b(?:provider|pharmacy)\b|"
+            r"\b(?:same|current|incoming|submitted)\b[^.\n]{0,80}\bprovider\b|"
+            r"\b(?:same|current|incoming|submitted)\b[^.\n]{0,80}\bpharmacy\s+(?:id|npi)\b|"
             r"\b(?:provider|pharmacy)\b[^.\n]{0,80}\b(?:rx|prescription)",
             "provider scope",
             r"\b(?:provid|providerid|provider_npi|pharmacynpi)\b|\{\{[^}]*(?:provider|pharmacy)[^}]*\}\}",
@@ -2310,6 +2327,703 @@ def _find_required_business_concept_artifacts(
             sql, business_meaning, acceptance_criteria
         )
     )
+
+    criteria_text = _acceptance_criteria_text(acceptance_criteria)
+    statement, runtime_by_sentinel = _runtime_semantic_statement(sql)
+    tables = list(statement.find_all(exp.Table)) if statement is not None else []
+    aliases_by_table: dict[str, set[str]] = {}
+    for table in tables:
+        aliases_by_table.setdefault(table.name.casefold(), set()).add(
+            table.alias_or_name.casefold()
+        )
+    predicate_root = statement.args.get("where") if statement is not None else None
+
+    def predicate_equalities() -> list[exp.EQ]:
+        if statement is None:
+            return []
+        return [
+            equality
+            for equality in statement.find_all(exp.EQ)
+            if equality.find_ancestor(exp.Where) is not None
+            or equality.find_ancestor(exp.Join) is not None
+        ]
+
+    def column_owned_by(column: exp.Column, aliases: set[str]) -> bool:
+        return bool(column.table and column.table.casefold() in aliases)
+
+    def runtime_equals_column(
+        equality: exp.EQ,
+        aliases: set[str],
+        column_names: set[str],
+        runtime_pattern: str,
+    ) -> bool:
+        for column_side, runtime_side in (
+            (equality.left, equality.right),
+            (equality.right, equality.left),
+        ):
+            columns = _expression_columns(cast(Expression, column_side))
+            runtimes = _expression_runtime_names(
+                cast(Expression, runtime_side), runtime_by_sentinel
+            )
+            if any(
+                column_owned_by(column, aliases)
+                and re.sub(r"[^a-z0-9]", "", column.name.casefold())
+                in column_names
+                for column in columns
+            ) and any(re.search(runtime_pattern, runtime, re.IGNORECASE) for runtime in runtimes):
+                return True
+        return False
+
+    def same_predicate_columns(
+        equality: exp.EQ,
+        left_aliases: set[str],
+        left_names: set[str],
+        right_aliases: set[str],
+        right_names: set[str],
+    ) -> bool:
+        for left, right in ((equality.left, equality.right), (equality.right, equality.left)):
+            left_columns = _expression_columns(cast(Expression, left))
+            right_columns = _expression_columns(cast(Expression, right))
+            if any(
+                column_owned_by(column, left_aliases)
+                and re.sub(r"[^a-z0-9]", "", column.name.casefold()) in left_names
+                for column in left_columns
+            ) and any(
+                column_owned_by(column, right_aliases)
+                and re.sub(r"[^a-z0-9]", "", column.name.casefold()) in right_names
+                for column in right_columns
+            ):
+                return True
+        return False
+
+    def expression_has_owned_column(
+        expression: Expression, aliases: set[str], column_names: set[str]
+    ) -> bool:
+        return any(
+            column_owned_by(column, aliases)
+            and re.sub(r"[^a-z0-9]", "", column.name.casefold()) in column_names
+            for column in _expression_columns(expression)
+        )
+
+    def expression_has_runtime(expression: Expression, runtime_pattern: str) -> bool:
+        return any(
+            re.search(runtime_pattern, runtime, re.IGNORECASE)
+            for runtime in _expression_runtime_names(expression, runtime_by_sentinel)
+        )
+
+    def is_required_predicate(expression: Expression) -> bool:
+        return expression.find_ancestor(exp.Or, exp.Not) is None
+
+    def has_dos_window(
+        aliases: set[str], start_names: set[str], end_names: set[str]
+    ) -> bool:
+        if not isinstance(predicate_root, Expression):
+            return False
+        dos_pattern = r"(?:dateofservice|\bdos\b)"
+        for between in predicate_root.find_all(exp.Between):
+            if (
+                is_required_predicate(between)
+                and expression_has_runtime(cast(Expression, between.this), dos_pattern)
+                and expression_has_owned_column(
+                    cast(Expression, between.args["low"]), aliases, start_names
+                )
+                and expression_has_owned_column(
+                    cast(Expression, between.args["high"]), aliases, end_names
+                )
+            ):
+                return True
+        start_bound = end_bound = False
+        for comparison in predicate_root.find_all(exp.LTE, exp.GTE):
+            if not is_required_predicate(comparison):
+                continue
+            left = cast(Expression, comparison.left)
+            right = cast(Expression, comparison.right)
+            if isinstance(comparison, exp.LTE):
+                start_bound |= expression_has_owned_column(
+                    left, aliases, start_names
+                ) and expression_has_runtime(right, dos_pattern)
+                end_bound |= expression_has_runtime(
+                    left, dos_pattern
+                ) and expression_has_owned_column(right, aliases, end_names)
+            else:
+                start_bound |= expression_has_runtime(
+                    left, dos_pattern
+                ) and expression_has_owned_column(right, aliases, start_names)
+                end_bound |= expression_has_owned_column(
+                    left, aliases, end_names
+                ) and expression_has_runtime(right, dos_pattern)
+        return start_bound and end_bound
+
+    member_attribute_task = bool(
+        re.search(r"\bmember\s*attribute\b|\bmemberattribute\b", business_meaning, re.IGNORECASE)
+    )
+    if member_attribute_task:
+        attribute_aliases = aliases_by_table.get("memberattribute", set())
+        parameter_aliases = aliases_by_table.get("ndcparameters", set())
+        if not attribute_aliases:
+            artifacts.append("member-attribute task is missing the memberattribute source")
+        else:
+            if not any(
+                runtime_equals_column(
+                    equality,
+                    attribute_aliases,
+                    {"memberid", "memid"},
+                    r"^(?!.*cardholder)memberid$",
+                )
+                for equality in predicate_equalities()
+            ):
+                artifacts.append("memberattribute lookup is not correlated to the resolved MemberId")
+            if not has_dos_window(
+                attribute_aliases,
+                {"effdate", "effectivedate"},
+                {"termdate", "terminationdate", "enddate"},
+            ):
+                artifacts.append("memberattribute lookup is missing its DateOfService effective/termination window")
+            if re.search(
+                r"\battribute\s+effective\s+date\b[^.\n]{0,80}\b(?:same|equal)",
+                business_meaning,
+                re.IGNORECASE,
+            ) and not any(
+                runtime_equals_column(
+                    equality,
+                    attribute_aliases,
+                    {"effdate", "effectivedate"},
+                    r"dateofservice|\bdos\b",
+                )
+                for equality in predicate_equalities()
+            ):
+                artifacts.append("memberattribute effective date is not equal to DateOfService")
+        if re.search(r"\bconfigured\b", business_meaning, re.IGNORECASE):
+            if not parameter_aliases:
+                artifacts.append("configured member-attribute task is missing NDCParameters")
+            elif attribute_aliases:
+                if not any(
+                    same_predicate_columns(
+                        equality,
+                        attribute_aliases,
+                        {"attributeid", "attributecode"},
+                        parameter_aliases,
+                        {"parametervalue", "parametertitle"},
+                    )
+                    for equality in predicate_equalities()
+                ):
+                    artifacts.append("memberattribute AttributeId is not matched to configured attribute-ID data")
+                if re.search(r"\b(?:the\s*value|attribute\s+value|whose value)\b", business_meaning, re.IGNORECASE) and not any(
+                    same_predicate_columns(
+                        equality,
+                        attribute_aliases,
+                        {"thevalue", "value", "attributevalue"},
+                        parameter_aliases,
+                        {"parametervalue", "parametertitle"},
+                    )
+                    for equality in predicate_equalities()
+                ):
+                    artifacts.append("memberattribute value is not matched to configured attribute-value data")
+
+    medical_history_task = bool(re.search(
+        r"\bmedical\s+diagnosis\s+history\b|\bmeddiagnosis\b",
+        business_meaning,
+        re.IGNORECASE,
+    ))
+    if medical_history_task:
+        medical_aliases = set().union(
+            aliases_by_table.get("meddiagnosis", set()),
+            aliases_by_table.get("medicaldiagnosis", set()),
+        )
+        diagnosis_aliases = aliases_by_table.get("diagnosislist", set())
+        parameter_aliases = aliases_by_table.get("ndcparameters", set())
+        if not medical_aliases:
+            artifacts.append("medical-diagnosis-history task is missing its history source")
+        else:
+            if not any(
+                runtime_equals_column(
+                    equality,
+                    medical_aliases,
+                    {"memberid", "memid"},
+                    r"^(?!.*cardholder)memberid$",
+                )
+                for equality in predicate_equalities()
+            ):
+                artifacts.append("medical diagnosis history is not correlated to the resolved MemberId")
+            if not diagnosis_aliases or not any(
+                same_predicate_columns(
+                    equality,
+                    medical_aliases,
+                    {"diagnosiscode", "diagcode"},
+                    diagnosis_aliases,
+                    {"diagnosiscode", "diagcode"},
+                )
+                for equality in predicate_equalities()
+            ):
+                artifacts.append("medical diagnosis history is not matched to DiagnosisList diagnosis values")
+            diagnosis_date_names = {"diagnosisdate", "diagdate"}
+            parameter_value_names = {"parametervalue", "decparamval"}
+            dos_pattern = r"dateofservice|\bdos\b"
+
+            def is_diagnosis_date(expression: Expression) -> bool:
+                return expression_has_owned_column(
+                    expression, medical_aliases, diagnosis_date_names
+                )
+
+            def is_configured_lookback(expression: Expression) -> bool:
+                if not isinstance(expression, exp.DateAdd):
+                    return False
+                unit = expression.args.get("unit")
+                offset = expression.args.get("expression")
+                base = expression.args.get("this")
+                return (
+                    isinstance(unit, Expression)
+                    and str(unit.this).casefold() == "day"
+                    and isinstance(offset, exp.Neg)
+                    and expression_has_owned_column(
+                        cast(Expression, offset.this),
+                        parameter_aliases,
+                        parameter_value_names,
+                    )
+                    and isinstance(base, Expression)
+                    and expression_has_runtime(base, dos_pattern)
+                )
+
+            lower_bound = upper_bound = False
+            lookback_between = False
+            if isinstance(predicate_root, Expression) and parameter_aliases:
+                for between in predicate_root.find_all(exp.Between):
+                    lookback_between |= (
+                        is_required_predicate(between)
+                        and is_diagnosis_date(cast(Expression, between.this))
+                        and is_configured_lookback(
+                            cast(Expression, between.args["low"])
+                        )
+                        and expression_has_runtime(
+                            cast(Expression, between.args["high"]), dos_pattern
+                        )
+                    )
+                for comparison in predicate_root.find_all(
+                    exp.LT, exp.LTE, exp.GT, exp.GTE
+                ):
+                    if not is_required_predicate(comparison):
+                        continue
+                    left = cast(Expression, comparison.left)
+                    right = cast(Expression, comparison.right)
+                    if isinstance(comparison, (exp.GT, exp.GTE)):
+                        lower_bound |= is_diagnosis_date(
+                            left
+                        ) and is_configured_lookback(right)
+                        upper_bound |= expression_has_runtime(
+                            left, dos_pattern
+                        ) and is_diagnosis_date(right)
+                    else:
+                        lower_bound |= is_configured_lookback(
+                            left
+                        ) and is_diagnosis_date(right)
+                        upper_bound |= is_diagnosis_date(
+                            left
+                        ) and expression_has_runtime(right, dos_pattern)
+            if not (lookback_between or (lower_bound and upper_bound)):
+                artifacts.append("medical diagnosis date does not apply the configured lookback to DateOfService")
+        if not parameter_aliases:
+            artifacts.append("medical-diagnosis-history task is missing its configured lookback source")
+
+    if (
+        re.search(r"\bdiagnosis[ -]?list\b", business_meaning, re.IGNORECASE)
+        and re.search(r"\bdisplay_only\s*=\s*['\"]?n['\"]?", criteria_text, re.IGNORECASE)
+    ):
+        diagnosis_aliases = aliases_by_table.get("diagnosislist", set())
+        display_only_found = any(
+            any(
+                column_owned_by(column, diagnosis_aliases)
+                and re.sub(r"[^a-z0-9]", "", column.name.casefold()) == "displayonly"
+                for column in _expression_columns(equality)
+            )
+            and any(
+                isinstance(side, exp.Literal)
+                and str(side.this).strip().casefold() == "n"
+                for side in (equality.left, equality.right)
+            )
+            for equality in predicate_equalities()
+        )
+        if not display_only_found:
+            artifacts.append("DiagnosisList lookup is missing Display_Only = 'N'")
+
+    parameter_aliases = aliases_by_table.get("ndcparameters", set())
+    if (
+        len(parameter_aliases) > 1
+        and re.search(r"\bconfigured\b", business_meaning, re.IGNORECASE)
+        and re.search(r"\b(?:date of service|dos|active)\b", business_meaning, re.IGNORECASE)
+    ):
+        for alias in sorted(parameter_aliases):
+            if not has_dos_window({alias}, {"effdate"}, {"enddate"}):
+                artifacts.append(
+                    f"NDCParameters alias {alias} is missing its DateOfService EFFDATE/ENDDATE window"
+                )
+
+    consumer_fields = re.findall(
+        r"FieldName\s*:\s*[\\\"]+([A-Za-z][A-Za-z0-9]*)",
+        consumer_contract or "",
+        re.IGNORECASE,
+    )
+    required_return_fields: list[str] = []
+    for field in [*(expected_return_fields or []), *consumer_fields]:
+        if field not in required_return_fields:
+            required_return_fields.append(field)
+    if isinstance(statement, exp.Select) and required_return_fields:
+        projected_fields = {
+            str(projection.alias_or_name).casefold()
+            for projection in statement.expressions
+            if projection.alias_or_name
+        }
+        missing_fields = [
+            field for field in required_return_fields
+            if field.casefold() not in projected_fields
+        ]
+        if missing_fields:
+            artifacts.append(
+                "SQL output does not match required consumer fields: "
+                + ", ".join(missing_fields)
+            )
+
+    alternative_sources = [business_meaning]
+    if re.search(r"\bdrugoverrides\b", criteria_text, re.IGNORECASE):
+        alternative_sources.append(criteria_text)
+    explicit_alternatives = next(
+        (
+            match
+            for source in alternative_sources
+            if (
+                match := re.search(
+                    r"\b(?:any allowed identifier\s*:|(?:matched?|matching|verify)\s+"
+                    r"(?:the current drug\s+)?(?:to\s+drugoverrides\s+)?(?:by|on))\s*"
+                    r"(?P<names>[^.\n]+)",
+                    source,
+                    re.IGNORECASE,
+                )
+            )
+        ),
+        None,
+    )
+    if explicit_alternatives and re.search(r"\bdrugoverrides\b", sql, re.IGNORECASE):
+        names = explicit_alternatives.group("names")
+        identifier_specs = (
+            ("NDC", {"ndckey", "ndc"}, lambda runtime: "ndc" in runtime),
+            (
+                "GCNSeqNo",
+                {"gcnseqno"},
+                lambda runtime: "gcnseqno" in runtime,
+            ),
+            ("HIC3", {"hic3"}, lambda runtime: "hic3" in runtime),
+            (
+                "HICL_SeqNo",
+                {"hiclseqno"},
+                lambda runtime: "hiclseqno" in runtime or runtime.endswith("hicl"),
+            ),
+            (
+                "GCN",
+                {"gcn"},
+                lambda runtime: "gcnseqno" not in runtime
+                and bool(re.search(r"gcn(?:code)?$", runtime)),
+            ),
+        )
+        statement, runtime_by_sentinel = _runtime_semantic_statement(sql)
+        matched_identifiers: set[str] = set()
+        wrong_owner_identifiers: set[str] = set()
+        matched_equalities: dict[str, list[exp.EQ]] = {
+            name: [] for name, _, _ in identifier_specs
+        }
+        if statement is not None:
+            tables = list(statement.find_all(exp.Table))
+            drug_override_aliases = {
+                table.alias_or_name.casefold()
+                for table in tables
+                if table.name.casefold() == "drugoverrides"
+            }
+            unqualified_owner_is_unambiguous = (
+                len(tables) == 1
+                and tables[0].name.casefold() == "drugoverrides"
+            )
+            for equality in statement.find_all(exp.EQ):
+                if (
+                    equality.find_ancestor(exp.Where) is None
+                    and equality.find_ancestor(exp.Join) is None
+                ):
+                    continue
+                comparisons = (
+                    (equality.left, equality.right),
+                    (equality.right, equality.left),
+                )
+                for column_side, runtime_side in comparisons:
+                    columns = _expression_columns(cast(Expression, column_side))
+                    runtimes = _expression_runtime_names(
+                        cast(Expression, runtime_side), runtime_by_sentinel
+                    )
+                    for column in columns:
+                        column_name = re.sub(
+                            r"[^a-z0-9]", "", column.name.casefold()
+                        )
+                        for runtime_name in runtimes:
+                            runtime_name = re.sub(
+                                r"[^a-z0-9]", "", runtime_name.casefold()
+                            )
+                            for name, column_names, runtime_matches in identifier_specs:
+                                if (
+                                    column_name in column_names
+                                    and runtime_matches(runtime_name)
+                                ):
+                                    owned_by_drug_overrides = (
+                                        column.table.casefold()
+                                        in drug_override_aliases
+                                        if column.table
+                                        else unqualified_owner_is_unambiguous
+                                    )
+                                    if not owned_by_drug_overrides:
+                                        wrong_owner_identifiers.add(name)
+                                        continue
+                                    matched_identifiers.add(name)
+                                    matched_equalities[name].append(equality)
+        required_identifiers = [
+            name
+            for name, _, _ in identifier_specs
+            if re.search(
+                rf"(?<![a-z0-9_]){re.escape(name)}(?![a-z0-9_])",
+                names,
+                re.IGNORECASE,
+            )
+        ]
+        missing = [
+            name for name in required_identifiers if name not in matched_identifiers
+        ]
+        missing_wrong_owner = [
+            name for name in missing if name in wrong_owner_identifiers
+        ]
+        missing_absent = [
+            name for name in missing if name not in wrong_owner_identifiers
+        ]
+        if missing_absent:
+            artifacts.append(
+                "explicit lookup alternatives are missing: "
+                + ", ".join(missing_absent)
+            )
+        if missing_wrong_owner:
+            artifacts.append(
+                "explicit lookup alternatives are missing DrugOverrides predicates: "
+                + ", ".join(missing_wrong_owner)
+            )
+        if not missing:
+            or_expressions = list(statement.find_all(exp.Or)) if statement else []
+
+            def reaches_or_without_and(
+                equality: exp.EQ, alternative_root: exp.Or
+            ) -> bool:
+                ancestor = equality.parent
+                while ancestor is not None and ancestor is not alternative_root:
+                    if isinstance(ancestor, exp.And):
+                        return False
+                    ancestor = ancestor.parent
+                return ancestor is alternative_root
+
+            has_complete_alternative_expression = any(
+                all(
+                    any(
+                        reaches_or_without_and(equality, alternative_root)
+                        for equality in matched_equalities[name]
+                    )
+                    for name in required_identifiers
+                )
+                for alternative_root in or_expressions
+            )
+            if not has_complete_alternative_expression:
+                if or_expressions:
+                    artifacts.append(
+                        "explicit lookup identifiers do not share one OR alternative expression: "
+                        + ", ".join(required_identifiers)
+                    )
+                else:
+                    artifacts.append(
+                        "explicit lookup identifiers are not OR-connected alternatives: "
+                        + ", ".join(required_identifiers)
+                    )
+
+    named_parameter_configuration = re.search(
+        r"\bndcparameters\s+(?P<name>[a-z0-9_%]+)\s+configuration\b",
+        business_meaning,
+        re.IGNORECASE,
+    )
+    if named_parameter_configuration:
+        configuration_name = named_parameter_configuration.group("name")
+        if re.search(
+            rf"\bparameter_value\b\s*=\s*'{re.escape(configuration_name)}'",
+            sql,
+            re.IGNORECASE,
+        ) and not re.search(
+            rf"\bparameter_name\b\s*=\s*'{re.escape(configuration_name)}'",
+            sql,
+            re.IGNORECASE,
+        ):
+            artifacts.append(
+                "named NDCParameters configuration must filter PARAMETER_NAME = "
+                f"'{configuration_name}'"
+            )
+
+    if re.search(
+        r"\bconfigured DEA default days\b", business_meaning, re.IGNORECASE
+    ):
+        statement = _parse_generated_select(sql)
+        has_parameter_source = statement is not None and any(
+            table.name.casefold() == "ndcparameters"
+            for table in statement.find_all(exp.Table)
+        )
+        if not has_parameter_source:
+            artifacts.append(
+                "configured DEA default days require an NDCParameters configuration source"
+            )
+        else:
+            tables = list(statement.find_all(exp.Table))
+            parameter_aliases = {
+                table.alias_or_name.casefold()
+                for table in tables
+                if table.name.casefold() == "ndcparameters"
+            }
+            script_age_projections = [
+                projection
+                for projection in statement.expressions
+                if re.search(
+                    r"(?:scriptage|deadefaultdays)",
+                    re.sub(r"[^a-z0-9]", "", projection.alias.casefold()),
+                )
+            ]
+            uses_parameter_value = any(
+                column.name.casefold() == "parameter_value"
+                and (
+                    column.table.casefold() in parameter_aliases
+                    if column.table
+                    else len(tables) == 1
+                )
+                for projection in script_age_projections
+                for column in _expression_columns(projection)
+            )
+            if not uses_parameter_value:
+                artifacts.append(
+                    "configured DEA default days require NDCParameters.PARAMETER_VALUE "
+                    "in the script-age output calculation"
+                )
+            else:
+                ndc_master_aliases = {
+                    table.alias_or_name.casefold()
+                    for table in tables
+                    if table.name.casefold() == "ndc_mstr"
+                }
+
+                def uses_parameter_value_from_configuration(
+                    expression: Expression,
+                ) -> bool:
+                    return any(
+                        column.name.casefold() == "parameter_value"
+                        and (
+                            column.table.casefold() in parameter_aliases
+                            if column.table
+                            else len(tables) == 1
+                        )
+                        for column in _expression_columns(expression)
+                    )
+
+                def is_supported_max_script_days_branch(branch: Expression) -> bool:
+                    condition = branch.args.get("this")
+                    result_expression = branch.args.get("true")
+                    if not isinstance(condition, Expression) or not isinstance(
+                        result_expression, Expression
+                    ):
+                        return False
+                    result_columns = _expression_columns(result_expression)
+                    returns_only_max_script_days = bool(result_columns) and all(
+                        column.name.casefold() == "maxscriptdays"
+                        and (
+                            column.table.casefold() in ndc_master_aliases
+                            if column.table
+                            else len(tables) == 1
+                        )
+                        for column in result_columns
+                    )
+                    comparisons = (
+                        [condition]
+                        if isinstance(condition, exp.NEQ)
+                        else list(condition.find_all(exp.NEQ))
+                    )
+
+                    def reaches_condition_without_or(
+                        comparison: exp.NEQ,
+                    ) -> bool:
+                        ancestor = comparison.parent
+                        while ancestor is not None:
+                            if isinstance(ancestor, exp.Or):
+                                return False
+                            if ancestor is condition:
+                                return True
+                            ancestor = ancestor.parent
+                        return comparison is condition
+
+                    explicitly_nonzero = any(
+                        reaches_condition_without_or(comparison)
+                        and (
+                            (
+                                isinstance(comparison.left, exp.Literal)
+                                and str(comparison.left.this).strip() == "0"
+                                and any(
+                                    column.name.casefold() == "maxscriptdays"
+                                    for column in _expression_columns(comparison.right)
+                                )
+                            )
+                            or (
+                                isinstance(comparison.right, exp.Literal)
+                                and str(comparison.right.this).strip() == "0"
+                                and any(
+                                    column.name.casefold() == "maxscriptdays"
+                                    for column in _expression_columns(comparison.left)
+                                )
+                            )
+                        )
+                        for comparison in comparisons
+                    )
+                    return returns_only_max_script_days and explicitly_nonzero
+
+                invalid_default_result = False
+                for projection in script_age_projections:
+                    for case_expression in projection.find_all(exp.Case):
+                        branches = case_expression.args.get("ifs") or ()
+                        for branch in branches:
+                            result_expression = branch.args.get("true")
+                            if not isinstance(result_expression, Expression):
+                                invalid_default_result = True
+                                break
+                            if uses_parameter_value_from_configuration(
+                                result_expression
+                            ) or is_supported_max_script_days_branch(branch):
+                                continue
+                            invalid_default_result = True
+                            break
+                        default_expression = case_expression.args.get("default")
+                        if (
+                            not invalid_default_result
+                            and isinstance(default_expression, Expression)
+                            and not uses_parameter_value_from_configuration(
+                                default_expression
+                            )
+                        ):
+                            invalid_default_result = True
+                        if invalid_default_result:
+                            break
+                    if invalid_default_result:
+                        break
+                if invalid_default_result:
+                    artifacts.append(
+                        "configured DEA/default result branch does not derive from "
+                        "NDCParameters.PARAMETER_VALUE"
+                    )
+
+    if (
+        re.search(r"\bpayable provider affiliation\b", business_meaning, re.IGNORECASE)
+        and re.search(r"\bpayflag\s*<>\s*0\b", criteria_text, re.IGNORECASE)
+        and not re.search(r"\bpayflag\s*(?:<>|!=)\s*0\b", sql, re.IGNORECASE)
+    ):
+        artifacts.append("explicit PayFlag <> 0 requirement is absent from the SQL")
 
     quantity_prescribed_fact = bool(re.search(
         r"\bquantity\s+prescribed\b|\b460[-_ ]?et\b",
@@ -2439,7 +3153,14 @@ def _find_required_business_concept_artifacts(
         if compound_max_day_dose_source and label == "quantity":
             continue
         search_sql = where_sql if label == "provider scope" else normalized_sql
-        if not re.search(sql_pattern, search_sql, re.IGNORECASE):
+        consumer_owns_concept = bool(
+            consumer_contract
+            and label in {"quantity", "days supply"}
+            and re.search(sql_pattern, consumer_contract, re.IGNORECASE)
+        )
+        if not consumer_owns_concept and not re.search(
+            sql_pattern, search_sql, re.IGNORECASE
+        ):
             artifacts.append(f"required business concept '{label}' is absent from the SQL")
     if re.search(r"\bndc\s*maint(?:enance)?\s*details\b|\bndcmaintdetails\b", business_meaning, re.IGNORECASE) and not re.search(
         r"\bndcmaintdetails\b", normalized_sql, re.IGNORECASE
@@ -3540,9 +4261,13 @@ def _find_ungrounded_subqueries(statement: Expression) -> list[str]:
                 correlated = True
             else:
                 unreviewed = True
-        if unreviewed or not correlated:
+        if unreviewed:
             artifacts.append(
-                f"subquery on {nested_tables[0].sql()} is not correlated through a reviewed key"
+                f"subquery on {nested_tables[0].sql()} uses a correlation outside reviewed join keys"
+            )
+        elif not correlated:
+            artifacts.append(
+                f"subquery on {nested_tables[0].sql()} is not correlated to its outer query"
             )
     return artifacts
 
@@ -3634,6 +4359,7 @@ def _runtime_semantic_statement(
 
     sanitized = re.sub(r"'?\{\{([^}]+)\}\}'?", replace, sql)
     sanitized = _NOLOCK_HINT_RE.sub("WITH (NOLOCK)", sanitized)
+    sanitized = re.sub(r"\bWITH\s+WITH\s+\(", "WITH (", sanitized, flags=re.IGNORECASE)
     try:
         statements = sqlglot.parse(sanitized, read="tsql")
     except (ParseError, TokenError, ValueError):
@@ -3694,6 +4420,46 @@ def _find_invalid_sql_artifacts(
         artifacts.append("unparseable T-SQL")
         return artifacts
     tables = list(statement.find_all(exp.Table))
+
+    from_clause = statement.args.get("from_")
+    derived_source = from_clause.this if isinstance(from_clause, exp.From) else None
+    if isinstance(derived_source, exp.Values) and derived_source.alias:
+        derived_alias = derived_source.alias_or_name.lower()
+        introduced_aliases = {derived_alias}
+        for join in statement.args.get("joins") or ():
+            on_expression = join.args.get("on")
+            if not isinstance(on_expression, Expression):
+                continue
+            target_alias = join.this.alias_or_name.lower()
+            referenced_aliases = {
+                column.table.lower()
+                for column in on_expression.find_all(exp.Column)
+                if column.table
+            }
+            if (
+                target_alias not in referenced_aliases
+                or not introduced_aliases.intersection(referenced_aliases)
+            ):
+                artifacts.append(
+                    f"JOIN predicate does not connect {target_alias} "
+                    "to a previously introduced source"
+                )
+            if (
+                str(join.side).upper() == "LEFT"
+                and re.search(r"\bno effective\b", business_meaning, re.IGNORECASE)
+                and isinstance(join.this, exp.Table)
+            ):
+                target_alias = join.this.alias_or_name
+                where_sql = statement.args.get("where").sql() if statement.args.get("where") else ""
+                if re.search(
+                    rf"\bNOT\s+{re.escape(target_alias)}\.[a-z0-9_]+\s+IS\s+NULL\b",
+                    where_sql,
+                    re.IGNORECASE,
+                ):
+                    artifacts.append(
+                        "LEFT JOIN no-match branch is removed by a null-rejecting WHERE predicate"
+                    )
+            introduced_aliases.add(target_alias)
     if not tables:
         artifacts.append("SELECT has no table reference")
         return artifacts

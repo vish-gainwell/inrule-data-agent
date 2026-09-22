@@ -179,11 +179,19 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
             }
             inconclusive_steps.append(step.step_number)
         else:
+            expected_return_fields = extras.get("expected_return_fields")
             result = generate_query_result_for_step(
                 query_task,
                 description=request.description,
                 acceptance_criteria=_acceptance_criteria_for_step(
                     step, request.acceptance_criteria
+                ),
+                consumer_contract=extras.get("consumer_contract")
+                or extras.get("expression"),
+                expected_return_fields=(
+                    expected_return_fields
+                    if isinstance(expected_return_fields, list)
+                    else None
                 ),
                 draft_mode=draft_mode,
             )
