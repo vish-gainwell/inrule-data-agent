@@ -2554,11 +2554,18 @@ def _find_required_business_concept_artifacts(
                 ):
                     artifacts.append("memberattribute value is not matched to configured attribute-value data")
 
-    medical_history_task = bool(re.search(
-        r"\bmedical\s+diagnosis\s+history\b|\bmeddiagnosis\b",
-        business_meaning,
-        re.IGNORECASE,
-    ))
+    medical_history_task = bool(
+        re.search(
+            r"\bmedical\s+diagnosis\s+history\b|\bmeddiagnosis\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+        and re.search(
+            r"\b[a-z0-9]+(?:_[a-z0-9]+)*_lookback_days\b",
+            business_meaning,
+            re.IGNORECASE,
+        )
+    )
     if medical_history_task:
         medical_aliases = set().union(
             aliases_by_table.get("meddiagnosis", set()),

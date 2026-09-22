@@ -1335,7 +1335,7 @@ def test_pharmacy_claim_wording_does_not_imply_provider_scope():
             "SELECT COUNT(*) AS MalignantCancerDxListCount FROM HRX.dbo.DiagnosisList WITH (NOLOCK)",
             "CREATE TABLE HRX.dbo.DiagnosisList (diagnosis_type varchar(50));",
             'GetDataQueryIntFunc(FieldName:"MalignantCancerMedicalDiagnosisHistoryCount")',
-            "medical-diagnosis-history task is missing its history source",
+            "member diagnosis-history lookup has no supported diagnosis-history source",
         ),
         (
             "Count the current member's configured PACE member attribute active on DateOfService.",
