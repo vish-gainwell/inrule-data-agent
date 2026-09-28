@@ -12,6 +12,7 @@ import httpx
 import sqlglot
 from dotenv import load_dotenv
 from openai import OpenAI
+from openai.providers import bedrock
 from sqlglot import exp
 from sqlglot.errors import ParseError, TokenError
 from sqlglot.expressions.core import Expression
@@ -348,9 +349,11 @@ Rules:
     {{DateOfService}} and return the raw MaxDayDose. Do not substitute NDC_Mstr, use the
     transaction-level NDC, or calculate ingredient quantity divided by days supply in SQL;
     those runtime comparisons remain downstream rule behavior.
-      ICD diagnosis-reference shape: preserve explicitly supplied source, ICD version, and
-    effective-date requirements. For IPA.dbo.DiagCode reference validation, retain
-    IcdVersion = '0' and the inclusive DOS effective window.
+      ICD diagnosis-reference shape: when validating a submitted ICD-10 diagnosis against
+    IPA.dbo.DiagCode, compare the first four characters on both sides, for example
+    SUBSTRING(codeid, 1, 4) = SUBSTRING({{DiagnosisCode}}, 1, 4). Do not replace this with
+    exact full-code equality. Apply the prefix function directly to both operands so SQL null
+    behavior is preserved; retain IcdVersion = '0' and the inclusive DOS effective window.
       Pattern and effective-period shape: preserve an explicitly supplied LIKE/contains/
     wildcard comparison; never collapse it to equality. A quoted configuration discriminator
     containing SQL wildcard characters such as % must use LIKE unless the supplied business
@@ -374,10 +377,19 @@ Rules:
       Reusable effective configuration-list shape: query the configuration table directly
     and return its configured values. Do not join physical transaction/history tables merely
     to re-read submitted request occurrences; the downstream rule retains the current
-    occurrence index and submitted count boundary. In particular, query HRX.dbo.NDCParameters
-    directly for the approved Other Payer Reject Code values with PARAMETER_NAME = 'REJECT_CODE'.
-    The DataQuery returns the configured list; downstream occurrence-aware logic compares only
+    occurrence index and submitted count boundary. In particular, the approved Other Payer
+    Reject Code list is SELECT PARAMETER_VALUE FROM HRX.dbo.NDCParameters WHERE
+    PARAMETER_NAME = 'REJECT_CODE' AND {{DateOfService}} BETWEEN EFFDATE AND ENDDATE.
+    The DataQuery returns the active list; downstream occurrence-aware logic compares only
     the submitted reject-code positions allowed by the request's reject count.
+      Effective master validation shape: when current submitted occurrences must be validated
+    against an effective master table, pass the considered submitted values as a collection
+    parameter and return only matching active master values. Never query transaction/history
+    tables to recover those submitted values. For NCPDP reject-code validation, query
+    HRX.dbo.NCPDP_Reject_Codes, filter reject_code with [[SubmittedOtherPayerRejectCodes]],
+    and apply the inclusive DateOfService effdate/termdate window. Payer iteration, submitted
+    reject count, the first-five boundary, blank handling, and invalid-code detection remain
+    downstream rule behavior.
     Reusable compound quantity shape: select SUM(TRY_CONVERT(decimal(29,9),
     COMPOUND.drug_qty)); join NDC_Mstr on COMPOUND.ndc = NDC_Mstr.NDCKey; filter
     COMPOUND.tcn with [[HistoricalTcns]] and NDC_Mstr.GCN_SeqNo with the incoming GCN
@@ -507,6 +519,7 @@ def generate_query_result_for_step(
     description: str | None = None,
     acceptance_criteria: str | list[str] | None = None,
     draft_mode: bool = False,
+    jurisdiction: str = "IL",
 ) -> dict[str, str | list[str] | None]:
     """Generate SQL and retain the reason when no safe query can be returned.
 
@@ -581,13 +594,14 @@ def generate_query_result_for_step(
             if source == "deterministic_pattern":
                 sql = deterministic_candidate
             else:
-                sql = _call_openai(
+                sql = _call_configured_provider(
                     business_meaning,
                     ddl_context,
                     repair_feedback,
                     description=description,
                     acceptance_criteria=acceptance_criteria,
                     draft_mode=draft_mode,
+                    jurisdiction=jurisdiction,
                 )
             if not sql:
                 record_attempt(
@@ -911,6 +925,17 @@ WHERE d.Type = 'PkgBilling_Bypass'
 FROM InMemory.dbo.CONTRACT_TERM ct
 WHERE RTRIM(ct.ContractId) <> ''"""
 
+    if (
+        "hrx.dbo.ncpdp_reject_codes" in tables
+        and re.search(r"\bncpdp\b[^.\n]{0,80}\breject[-_ ]?code", meaning)
+        and re.search(r"\b(?:submitted|current)\b", meaning)
+        and re.search(r"\b(?:valid|master|effective|occurrence)\b", meaning)
+    ):
+        return """SELECT
+    RTRIM(rc.reject_code) AS NcpdpRejectCode
+FROM HRX.dbo.NCPDP_Reject_Codes rc WITH (NOLOCK)
+WHERE rc.reject_code IN ([[SubmittedOtherPayerRejectCodes]])
+  AND {{DateOfService}} BETWEEN rc.effdate AND rc.termdate"""
 
     if (
         "hrx.dbo.ndcmaintdetails" in tables
@@ -1284,7 +1309,123 @@ def _build_user_message(
     return message
 
 
-def _call_openai(
+_SUPPORTED_ENVIRONMENTS = frozenset({"LOCAL", "SIT", "UAT", "PROD"})
+
+
+def _configured_environment() -> str:
+    raw_environment = os.environ.get("ENVIRONMENT")
+    environment = str(raw_environment or "").strip().upper()
+    if not environment:
+        raise EnvironmentError(
+            "ENVIRONMENT is required and must be one of: LOCAL, SIT, UAT, PROD"
+        )
+    if environment not in _SUPPORTED_ENVIRONMENTS:
+        raise EnvironmentError(
+            f"Unsupported ENVIRONMENT {raw_environment!r}; expected one of: "
+            "LOCAL, SIT, UAT, PROD"
+        )
+    return environment
+
+
+def provider_runtime_metadata() -> dict[str, str | None]:
+    """Return non-secret provider configuration details for runtime metadata."""
+    try:
+        environment = _configured_environment()
+        if environment == "LOCAL" and os.environ.get("KUBERNETES_SERVICE_HOST"):
+            raise EnvironmentError(
+                "ENVIRONMENT=LOCAL is not allowed inside Kubernetes"
+            )
+        provider = "openai_legacy" if environment == "LOCAL" else "bedrock"
+        return {
+            "environment": environment,
+            "provider": provider,
+            "configuration_error": None,
+        }
+    except EnvironmentError as exc:
+        raw_environment = os.environ.get("ENVIRONMENT")
+        return {
+            "environment": str(raw_environment).strip().upper() if raw_environment else None,
+            "provider": None,
+            "configuration_error": str(exc),
+        }
+
+
+def _call_configured_provider(
+    business_meaning: str,
+    ddl_context: str,
+    repair_feedback: str | None = None,
+    description: str | None = None,
+    acceptance_criteria: str | list[str] | None = None,
+    draft_mode: bool = False,
+    jurisdiction: str = "IL",
+) -> str | None:
+    environment = _configured_environment()
+    state = str(jurisdiction or "").strip().upper()
+
+    if environment == "LOCAL":
+        if os.environ.get("KUBERNETES_SERVICE_HOST"):
+            raise EnvironmentError(
+                "ENVIRONMENT=LOCAL is not allowed inside Kubernetes"
+            )
+        if state != "IL":
+            raise EnvironmentError(
+                "ENVIRONMENT=LOCAL supports IL query generation only"
+            )
+        return _call_openai_legacy(
+            business_meaning,
+            ddl_context,
+            repair_feedback,
+            description=description,
+            acceptance_criteria=acceptance_criteria,
+            draft_mode=draft_mode,
+        )
+
+    return _call_bedrock(
+        business_meaning,
+        ddl_context,
+        repair_feedback,
+        description=description,
+        acceptance_criteria=acceptance_criteria,
+        draft_mode=draft_mode,
+        jurisdiction=state,
+    )
+
+
+def _call_bedrock(
+    business_meaning: str,
+    ddl_context: str,
+    repair_feedback: str | None = None,
+    description: str | None = None,
+    acceptance_criteria: str | list[str] | None = None,
+    draft_mode: bool = False,
+    jurisdiction: str = "IL",
+) -> str | None:
+    state = str(jurisdiction or "").strip().upper()
+    project = os.environ.get(f"BEDROCK_PROJECT_{state}")
+    if state not in {"IL", "MO"} or not project:
+        raise EnvironmentError(f"BEDROCK_PROJECT_{state} is not configured")
+
+    model = os.environ.get("BEDROCK_MODEL", "openai.gpt-5.5")
+    region = os.environ.get("BEDROCK_REGION", "us-east-1")
+    timeout_seconds = float(os.environ.get("OPENAI_TIMEOUT_SECONDS", "180"))
+    client = OpenAI(
+        provider=bedrock(region=region, api_key=None),
+        project=project,
+        timeout=timeout_seconds,
+    )
+    return _complete_query_request(
+        client,
+        model,
+        business_meaning,
+        ddl_context,
+        repair_feedback=repair_feedback,
+        description=description,
+        acceptance_criteria=acceptance_criteria,
+        draft_mode=draft_mode,
+    )
+
+
+def _call_openai_legacy(
     business_meaning: str,
     ddl_context: str,
     repair_feedback: str | None = None,
@@ -1298,7 +1439,11 @@ def _call_openai(
         return None
 
     model = os.environ.get("OPENAI_MODEL", "gpt-5.6-luna")
-    base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENAI_API_BASE")
+    base_url = (
+        os.environ.get("OPENAI_BASE_URL")
+        or os.environ.get("OPENAI_API_BASE")
+        or "https://us.api.openai.com/v1"
+    )
     verify_ssl = os.environ.get("OPENAI_VERIFY_SSL", "false").lower() in {"1", "true", "yes"}
     timeout_seconds = float(os.environ.get("OPENAI_TIMEOUT_SECONDS", "180"))
     http_client = httpx.Client(verify=verify_ssl, timeout=timeout_seconds)
@@ -1306,6 +1451,28 @@ def _call_openai(
     if base_url:
         client_kwargs["base_url"] = base_url
     client = OpenAI(**client_kwargs)
+    return _complete_query_request(
+        client,
+        model,
+        business_meaning,
+        ddl_context,
+        repair_feedback=repair_feedback,
+        description=description,
+        acceptance_criteria=acceptance_criteria,
+        draft_mode=draft_mode,
+    )
+
+
+def _complete_query_request(
+    client: OpenAI,
+    model: str,
+    business_meaning: str,
+    ddl_context: str,
+    repair_feedback: str | None = None,
+    description: str | None = None,
+    acceptance_criteria: str | list[str] | None = None,
+    draft_mode: bool = False,
+) -> str | None:
     user_message = _build_user_message(
         business_meaning,
         ddl_context,
@@ -1337,7 +1504,7 @@ def _call_openai(
         "messages": messages,
         "response_format": {"type": "json_object"},
     }
-    if model.lower().startswith(("gpt-5", "o1", "o3", "o4")):
+    if model.lower().startswith(("gpt-5", "openai.gpt-5", "o1", "o3", "o4")):
         request_kwargs["max_completion_tokens"] = 4000
     else:
         request_kwargs["temperature"] = 0
@@ -2857,8 +3024,7 @@ def _find_required_business_concept_artifacts(
             normalized_sql,
         ):
             artifacts.append(
-                "NCPDP reject master lookup submitted-code scope requires a [[...]] "
-                "collection placeholder"
+                "NCPDP reject master lookup is not scoped to submitted reject codes"
             )
         if not re.search(
             r"\{\{[^}]*dateofservice[^}]*\}\}\s+between\s+"

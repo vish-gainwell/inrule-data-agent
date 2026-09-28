@@ -42,7 +42,7 @@ flowchart TD
     E --> G[semantic_query_hints selects from YAML]
     G -- Disabled, zero, multiple, or invalid --> H[Prompt without supplemental context]
     G -- Exactly one match --> I[Inject missing detail only]
-    H --> J[Same Luna model call]
+    H --> J[Bedrock-first provider-neutral model request]
     I --> J
     J --> K[Unchanged grounding and business validation]
     K -- Rejected --> L[Normal repair and retry or draft review]
@@ -56,8 +56,8 @@ flowchart TD
 1. **Request models and endpoint — `backend/src/inrules_data_agent/app.py`.** `Step`
    carries the per-step `business_meaning`, `requires_data_query`, and optional result
    shape. `GenerateQueriesRequest` carries the Edit ID, overall description, acceptance
-   criteria, steps, and generation mode. POST `/generate_queries` passes the validated
-   request to `build_generate_queries_response`.
+   criteria, steps, generation mode, and IL/MO jurisdiction. POST `/generate_queries`
+   passes the validated request to `build_generate_queries_response`.
 
 2. **Atomic task and referenced AC — `app.py`.** For each required step,
    `_query_task_for_step` chooses the routed atomic retrieval instruction when one exists,
@@ -79,8 +79,8 @@ flowchart TD
    append keyword-selected live schema definitions. `retrieve_schema_ddls` itself does
    not perform that packaged fallback.
 
-   DDL grounding means relevant schema definitions are supplied to Luna and later used
-   to check whether generated tables and columns exist. It is schema evidence, not final
+   DDL grounding means relevant schema definitions are supplied to the configured model
+   through the selected provider and later used to check whether generated tables and columns exist. It is schema evidence, not final
    business approval: it does not prove that outputs, predicates, relationships,
    effective windows, or other business behavior are correct.
 
@@ -118,10 +118,15 @@ flowchart TD
    joins, query shape, or row-selection policy. `_build_user_message` then calls
    `log_semantic_hint_decision` with selection and injection metadata.
 
-7. **Luna call — `generate.py` `_call_openai`.** `_call_openai` combines the shared system
-   prompt with the assembled user message and any normal repair feedback, then calls the
-   configured model using the structured `query_text` JSON contract. Semantic hints do
-   not create a separate model path or alter the prompt hierarchy.
+7. **Provider-neutral completion — `generate.py` `_complete_query_request`.** The required,
+   case-insensitive `ENVIRONMENT` setting selects one provider route. `SIT`, `UAT`, and
+   `PROD` use Bedrock, with the request jurisdiction selecting the configured IL or MO
+   project through `_call_bedrock`. `LOCAL` uses `_call_openai_legacy` for IL only and is
+   rejected inside Kubernetes; missing or unsupported environments and local MO requests
+   fail closed. Both provider routes call `_complete_query_request`, which combines the
+   shared system prompt with the assembled user message and any normal repair feedback,
+   then uses the structured `query_text` JSON contract. Semantic hints do not create a
+   separate provider path or alter the prompt hierarchy.
 
 8. **Validation and retries — `generate.py` `generate_query_result_for_step`.** Each
    candidate passes safe-SELECT parsing, table and column grounding, SQL-artifact checks,
@@ -145,7 +150,7 @@ flowchart TD
 | File | Presenter focus |
 |---|---|
 | `backend/src/inrules_data_agent/app.py` | `Step`, `GenerateQueriesRequest`, POST `/generate_queries`, task/AC selection, reuse, response |
-| `backend/src/inrules_data_agent/generator/generate.py` | generation loop, `select_ddls`, prompt assembly, Luna call, validators, repair feedback |
+| `backend/src/inrules_data_agent/generator/generate.py` | generation loop, `select_ddls`, provider-neutral prompt assembly, environment-based Bedrock/local routing, validators, repair feedback |
 | `backend/src/inrules_data_agent/retrieval/qdrant_schema.py` | optional `retrieve_schema_ddls`; packaged fallback remains in `select_ddls` |
 | `backend/src/inrules_data_agent/semantic_query_hints/__init__.py` | configuration, YAML loading, normalization, exact matching, decision logging |
 | `backend/src/inrules_data_agent/semantic_query_hints/concepts.v1.yaml` | local applicability/provenance and the only prompt-eligible field, `missing_detail` |
@@ -158,8 +163,8 @@ business meaning, grounded DDL, model configuration, retry limits, and validator
 while changing only whether semantic-hint selection and injection are enabled. That supports
 the narrow claim that the hint was the sole intentional input difference.
 
-Luna remains nondeterministic. Formatting, aliases, retry count, and even broader output
-choices can differ for reasons unrelated to the hint. A comparison must therefore report
+Model generation remains nondeterministic. Formatting, aliases, retry count, and even
+broader output choices can differ for reasons unrelated to the hint. A comparison must therefore report
 all attempts and assess source, output contract, and broad query structure. If the runs are
 not comparable, or if unchanged validators lead both runs to the same final contract, the
 experiment must not be presented as proof that the hint caused a particular SQL difference.
@@ -190,12 +195,13 @@ to occur contiguously in the normalized authoritative business meaning. Thus
 selector does not infer synonyms, reordered phrase tokens, or alternative patterns. No
 alternative-pattern framework is implemented.
 
-The duplicated global first-four-character/exact-equality business rule was removed from
-`SYSTEM_PROMPT`. The independent ICD validator remains in place, as do the global IPA
-source, ICD version, and inclusive effective-date requirements. Validator knowledge can
-cause final no-hint and hint SQL to converge after retries, so first model attempts remain
-relevant evaluation evidence. They still do not prove that any individual difference was
-caused by the hint.
+The existing global first-four-character/exact-equality instruction remains in
+`SYSTEM_PROMPT`, together with the independent ICD validator and the global IPA source,
+ICD version, and inclusive effective-date requirements. The semantic hint is complementary:
+it must not become the only source of behavior already guaranteed by the baseline prompt.
+Prompt and validator knowledge can cause final no-hint and hint SQL to converge after
+retries, so first model attempts remain relevant evaluation evidence. They still do not
+prove that any individual difference was caused by the hint.
 
 ## Prompt boundary
 
@@ -204,8 +210,8 @@ meaning, applicable acceptance criteria, and description always win. A hint cann
 replace explicit runtime mapping, output, constants, query need, filters, query
 structure, or selection policy.
 
-Only `missing_detail` is sent to Luna. Applicability and provenance remain in YAML and
-are not placed in the prompt.
+Only `missing_detail` is sent to the configured model. Applicability and provenance remain
+in YAML and are not placed in the prompt.
 
 ## Configuration and logging
 
