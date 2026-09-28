@@ -1309,7 +1309,7 @@ def _build_user_message(
     return message
 
 
-_SUPPORTED_ENVIRONMENTS = frozenset({"LOCAL", "SIT", "UAT", "PROD"})
+_SUPPORTED_ENVIRONMENTS = frozenset({"LOCAL", "DEV", "SIT", "UAT", "PROD"})
 
 
 def _configured_environment() -> str:
@@ -1317,12 +1317,12 @@ def _configured_environment() -> str:
     environment = str(raw_environment or "").strip().upper()
     if not environment:
         raise EnvironmentError(
-            "ENVIRONMENT is required and must be one of: LOCAL, SIT, UAT, PROD"
+            "ENVIRONMENT is required and must be one of: LOCAL, DEV, SIT, UAT, PROD"
         )
     if environment not in _SUPPORTED_ENVIRONMENTS:
         raise EnvironmentError(
             f"Unsupported ENVIRONMENT {raw_environment!r}; expected one of: "
-            "LOCAL, SIT, UAT, PROD"
+            "LOCAL, DEV, SIT, UAT, PROD"
         )
     return environment
 

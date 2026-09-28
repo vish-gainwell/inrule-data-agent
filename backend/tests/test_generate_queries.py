@@ -96,7 +96,7 @@ def test_bedrock_query_call_uses_jurisdiction_project(
     assert captured["model"] == "openai.gpt-5.5"
 
 
-@pytest.mark.parametrize("environment", ["SIT", "uat", "Prod"])
+@pytest.mark.parametrize("environment", ["dev", "SIT", "uat", "Prod"])
 def test_deployed_environments_route_to_bedrock(monkeypatch, environment):
     monkeypatch.setenv("ENVIRONMENT", environment)
     monkeypatch.setattr(generate_module, "_call_bedrock", lambda *args, **kwargs: MOCK_SQL)
@@ -129,7 +129,7 @@ def test_local_il_routes_to_openai_legacy(monkeypatch):
 
 @pytest.mark.parametrize(
     ("environment", "message"),
-    [(None, "ENVIRONMENT is required"), ("dev", "Unsupported ENVIRONMENT")],
+    [(None, "ENVIRONMENT is required"), ("qa", "Unsupported ENVIRONMENT")],
 )
 def test_missing_or_invalid_environment_fails_closed(monkeypatch, environment, message):
     if environment is None:
@@ -233,6 +233,18 @@ def test_health_identifies_the_loaded_data_agent_implementation():
     assert body["data_agent_runtime"]["environment"] == "SIT"
     assert body["data_agent_runtime"]["provider"] == "bedrock"
     assert body["data_agent_runtime"]["configuration_error"] is None
+
+
+def test_dev_runtime_metadata_reports_bedrock_provider(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "dev")
+
+    metadata = generate_module.provider_runtime_metadata()
+
+    assert metadata == {
+        "environment": "DEV",
+        "provider": "bedrock",
+        "configuration_error": None,
+    }
 
 
 def test_health_reports_invalid_provider_configuration_without_hiding_health(monkeypatch):

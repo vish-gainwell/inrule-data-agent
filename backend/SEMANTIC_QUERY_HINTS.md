@@ -119,8 +119,8 @@ flowchart TD
    `log_semantic_hint_decision` with selection and injection metadata.
 
 7. **Provider-neutral completion — `generate.py` `_complete_query_request`.** The required,
-   case-insensitive `ENVIRONMENT` setting selects one provider route. `SIT`, `UAT`, and
-   `PROD` use Bedrock, with the request jurisdiction selecting the configured IL or MO
+   case-insensitive `ENVIRONMENT` setting selects one provider route. `DEV`, `SIT`, `UAT`,
+   and `PROD` use Bedrock, with the request jurisdiction selecting the configured IL or MO
    project through `_call_bedrock`. `LOCAL` uses `_call_openai_legacy` for IL only and is
    rejected inside Kubernetes; missing or unsupported environments and local MO requests
    fail closed. Both provider routes call `_complete_query_request`, which combines the
