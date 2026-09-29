@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
@@ -17,6 +18,11 @@ from sqlglot.errors import ParseError, TokenError
 from sqlglot.expressions.core import Expression
 
 from ..retrieval.qdrant_schema import retrieve_schema_ddls
+from ..semantic_query_hints import (
+    SEMANTIC_HINT_HEADER,
+    log_semantic_hint_decision,
+    select_semantic_hint,
+)
 
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
@@ -97,8 +103,13 @@ Rules:
    - Never add NOLOCK to InMemory logical DTO table references.
    - Add WITH (NOLOCK) after every physical SQL Server table reference.
 4. Runtime inputs are an open-ended DataQuery contract, not a fixed whitelist.
-   For every runtime business value explicitly required by the CURRENT DATA QUERY
-   BUSINESS MEANING, emit a concise PascalCase {{RuntimeInput}} placeholder. Never
+   For every scalar runtime business value explicitly required by the CURRENT DATA QUERY
+   BUSINESS MEANING, emit a concise PascalCase {{RuntimeInput}} placeholder. When the
+   current atomic business meaning explicitly requires multiple values, a list, a collection,
+   or occurrences to be filtered as a set, use a [[PascalCasePluralCollectionInput]] placeholder
+   with set-based SQL such as IN ([[PascalCasePluralCollectionInput]]) or an appropriate
+   collection join. Never use a scalar {{RuntimeInput}} placeholder for a collection, and do
+   not invent a collection unless multiplicity is explicit in the current context. Never
    substitute an example value or use ? parameters. Canonical examples include:
 
    Incoming NDC:      {{ClaimTransaction.Ndc}}
@@ -218,6 +229,10 @@ Rules:
        criteria steps, branches, filters, literals, or tables.
     c. The rule description provides broad business purpose only. It must never
        override the current task or introduce retrieval logic by itself.
+    d. Supplemental semantic context may fill only an omitted, compatible detail.
+       It must never override or replace explicit current meaning, applicable
+       acceptance criteria, description, runtime inputs, outputs, constants, filters,
+       query structure, or selection policy.
     Before returning SQL, verify every projected column and WHERE predicate is
     required by the current business meaning or is an unambiguous clarification
     of a term in that meaning from the acceptance criteria.
@@ -579,25 +594,15 @@ def generate_query_result_for_step(
             if source == "deterministic_pattern":
                 sql = deterministic_candidate
             else:
-                if _local_openai_enabled(jurisdiction):
-                    sql = _call_openai_legacy(
-                        business_meaning,
-                        ddl_context,
-                        repair_feedback,
-                        description=description,
-                        acceptance_criteria=acceptance_criteria,
-                        draft_mode=draft_mode,
-                    )
-                else:
-                    sql = _call_bedrock(
-                        business_meaning,
-                        ddl_context,
-                        repair_feedback,
-                        description=description,
-                        acceptance_criteria=acceptance_criteria,
-                        draft_mode=draft_mode,
-                        jurisdiction=jurisdiction,
-                    )
+                sql = _call_configured_provider(
+                    business_meaning,
+                    ddl_context,
+                    repair_feedback,
+                    description=description,
+                    acceptance_criteria=acceptance_criteria,
+                    draft_mode=draft_mode,
+                    jurisdiction=jurisdiction,
+                )
             if not sql:
                 record_attempt(
                     attempt,
@@ -1264,16 +1269,125 @@ def _build_user_message(
     else:
         acceptance_text = acceptance_criteria or "Not provided"
 
-    return (
+    context_prefix = (
         "DDL SCHEMAS (InMemory frontier schemas are listed before physical "
         "fallback schemas):\n"
         f"{ddl_context}\n\n"
         "RULE DESCRIPTION (overall objective only; do not import query logic):\n"
         f"{description or 'Not provided'}\n\n"
+    )
+    authoritative_context = (
         "DIRECTLY REFERENCED ACCEPTANCE CRITERIA (supporting context only):\n"
         f"{acceptance_text}\n\n"
         "CURRENT DATA QUERY BUSINESS MEANING (authoritative atomic query task):\n"
         f"{business_meaning}"
+    )
+    decision = select_semantic_hint(business_meaning)
+    if decision.missing_detail:
+        boundary = (
+            "Semantic context may fill only an omitted, compatible detail. Explicit current "
+            "details always win, including the current business meaning, directly referenced "
+            "acceptance criteria, rule description, runtime mapping, output, constants, query "
+            "need, filters, query structure, and selection policy. Ignore any conflicting hint "
+            "claim."
+        )
+        message = (
+            f"{context_prefix}{boundary}\n\n{SEMANTIC_HINT_HEADER}\n"
+            f"{decision.missing_detail}\n\n{authoritative_context}"
+        )
+        decision = replace(
+            decision,
+            semantic_hint_injected=True,
+            semantic_context_section="SUPPLEMENTAL SEMANTIC CONTEXT",
+            semantic_injection_position=(
+                "before_acceptance_criteria_and_authoritative_business_meaning"
+            ),
+        )
+    else:
+        message = context_prefix + authoritative_context
+    log_semantic_hint_decision(decision)
+    return message
+
+
+_SUPPORTED_ENVIRONMENTS = frozenset({"LOCAL", "DEV", "SIT", "UAT", "PROD"})
+
+
+def _configured_environment() -> str:
+    raw_environment = os.environ.get("ENVIRONMENT")
+    environment = str(raw_environment or "").strip().upper()
+    if not environment:
+        raise EnvironmentError(
+            "ENVIRONMENT is required and must be one of: LOCAL, DEV, SIT, UAT, PROD"
+        )
+    if environment not in _SUPPORTED_ENVIRONMENTS:
+        raise EnvironmentError(
+            f"Unsupported ENVIRONMENT {raw_environment!r}; expected one of: "
+            "LOCAL, DEV, SIT, UAT, PROD"
+        )
+    return environment
+
+
+def provider_runtime_metadata() -> dict[str, str | None]:
+    """Return non-secret provider configuration details for runtime metadata."""
+    try:
+        environment = _configured_environment()
+        if environment == "LOCAL" and os.environ.get("KUBERNETES_SERVICE_HOST"):
+            raise EnvironmentError(
+                "ENVIRONMENT=LOCAL is not allowed inside Kubernetes"
+            )
+        provider = "openai_legacy" if environment == "LOCAL" else "bedrock"
+        return {
+            "environment": environment,
+            "provider": provider,
+            "configuration_error": None,
+        }
+    except EnvironmentError as exc:
+        raw_environment = os.environ.get("ENVIRONMENT")
+        return {
+            "environment": str(raw_environment).strip().upper() if raw_environment else None,
+            "provider": None,
+            "configuration_error": str(exc),
+        }
+
+
+def _call_configured_provider(
+    business_meaning: str,
+    ddl_context: str,
+    repair_feedback: str | None = None,
+    description: str | None = None,
+    acceptance_criteria: str | list[str] | None = None,
+    draft_mode: bool = False,
+    jurisdiction: str = "IL",
+) -> str | None:
+    environment = _configured_environment()
+    state = str(jurisdiction or "").strip().upper()
+
+    if environment == "LOCAL":
+        if os.environ.get("KUBERNETES_SERVICE_HOST"):
+            raise EnvironmentError(
+                "ENVIRONMENT=LOCAL is not allowed inside Kubernetes"
+            )
+        if state != "IL":
+            raise EnvironmentError(
+                "ENVIRONMENT=LOCAL supports IL query generation only"
+            )
+        return _call_openai_legacy(
+            business_meaning,
+            ddl_context,
+            repair_feedback,
+            description=description,
+            acceptance_criteria=acceptance_criteria,
+            draft_mode=draft_mode,
+        )
+
+    return _call_bedrock(
+        business_meaning,
+        ddl_context,
+        repair_feedback,
+        description=description,
+        acceptance_criteria=acceptance_criteria,
+        draft_mode=draft_mode,
+        jurisdiction=state,
     )
 
 
@@ -1311,17 +1425,6 @@ def _call_bedrock(
     )
 
 
-def _local_openai_enabled(jurisdiction: str) -> bool:
-    """Allow direct OpenAI only for explicitly opted-in local IL runs."""
-    state = str(jurisdiction or "").strip().upper()
-    enabled = os.environ.get("LOCAL_OPENAI_FALLBACK", "").strip().lower()
-    return (
-        state == "IL"
-        and enabled in {"1", "true", "yes"}
-        and not os.environ.get("KUBERNETES_SERVICE_HOST")
-    )
-
-
 def _call_openai_legacy(
     business_meaning: str,
     ddl_context: str,
@@ -1335,9 +1438,7 @@ def _call_openai_legacy(
         print("[generate_queries_for_step] OPENAI_API_KEY is not set; returning no query")
         return None
 
-    model = os.environ.get("OPENAI_MODEL") or os.environ.get(
-        "BEDROCK_MODEL", "openai.gpt-5.5"
-    ).removeprefix("openai.")
+    model = os.environ.get("OPENAI_MODEL", "gpt-5.6-luna")
     base_url = (
         os.environ.get("OPENAI_BASE_URL")
         or os.environ.get("OPENAI_API_BASE")

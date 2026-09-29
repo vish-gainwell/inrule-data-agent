@@ -1,5 +1,7 @@
+import json
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from inrules_data_agent.generator import generate as generate_module
@@ -34,7 +36,33 @@ from inrules_data_agent.generator.generate import (
 MOCK_SQL = "select count(*) from HRX.dbo.DrugOverrides (nolock) where Type = '3013_Opioid'"
 
 
-def test_bedrock_query_call_uses_jurisdiction_project(monkeypatch):
+def _configure_mock_completion_provider(monkeypatch, client):
+    def complete(
+        business_meaning,
+        ddl_context,
+        repair_feedback=None,
+        **kwargs,
+    ):
+        kwargs.pop("jurisdiction", None)
+        return generate_module._complete_query_request(
+            client,
+            "gpt-5.6-luna",
+            business_meaning,
+            ddl_context,
+            repair_feedback=repair_feedback,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(generate_module, "_call_configured_provider", complete)
+
+
+@pytest.mark.parametrize(
+    ("jurisdiction", "expected_project"),
+    [("IL", "project-il"), ("MO", "project-mo")],
+)
+def test_bedrock_query_call_uses_jurisdiction_project(
+    monkeypatch, jurisdiction, expected_project
+):
     captured = {}
 
     monkeypatch.setenv("BEDROCK_PROJECT_IL", "project-il")
@@ -58,28 +86,80 @@ def test_bedrock_query_call_uses_jurisdiction_project(monkeypatch):
         and MOCK_SQL,
     )
 
-    result = generate_module._call_bedrock("Load a value", "DDL", jurisdiction="MO")
+    result = generate_module._call_bedrock(
+        "Load a value", "DDL", jurisdiction=jurisdiction
+    )
 
     assert result == MOCK_SQL
     assert captured["provider"] == {"region": "us-east-1", "api_key": None}
-    assert captured["client"]["project"] == "project-mo"
+    assert captured["client"]["project"] == expected_project
     assert captured["model"] == "openai.gpt-5.5"
 
 
-def test_local_openai_fallback_is_il_only_and_not_available_in_kubernetes(monkeypatch):
-    monkeypatch.setenv("LOCAL_OPENAI_FALLBACK", "true")
-    monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+@pytest.mark.parametrize("environment", ["dev", "SIT", "uat", "Prod"])
+def test_deployed_environments_route_to_bedrock(monkeypatch, environment):
+    monkeypatch.setenv("ENVIRONMENT", environment)
+    monkeypatch.setattr(generate_module, "_call_bedrock", lambda *args, **kwargs: MOCK_SQL)
+    call_openai = MagicMock()
+    monkeypatch.setattr(generate_module, "_call_openai_legacy", call_openai)
 
-    assert generate_module._local_openai_enabled("IL")
-    assert not generate_module._local_openai_enabled("MO")
+    result = generate_module._call_configured_provider(
+        "Load a value", "DDL", jurisdiction="MO"
+    )
 
+    assert result == MOCK_SQL
+    call_openai.assert_not_called()
+
+
+def test_local_il_routes_to_openai_legacy(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    monkeypatch.setattr(
+        generate_module, "_call_openai_legacy", lambda *args, **kwargs: MOCK_SQL
+    )
+    call_bedrock = MagicMock()
+    monkeypatch.setattr(generate_module, "_call_bedrock", call_bedrock)
+
+    result = generate_module._call_configured_provider(
+        "Load a value", "DDL", jurisdiction="IL"
+    )
+
+    assert result == MOCK_SQL
+    call_bedrock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("environment", "message"),
+    [(None, "ENVIRONMENT is required"), ("qa", "Unsupported ENVIRONMENT")],
+)
+def test_missing_or_invalid_environment_fails_closed(monkeypatch, environment, message):
+    if environment is None:
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+    else:
+        monkeypatch.setenv("ENVIRONMENT", environment)
+
+    with pytest.raises(EnvironmentError, match=message):
+        generate_module._call_configured_provider("Load a value", "DDL")
+
+
+def test_local_inside_kubernetes_fails_closed(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "LOCAL")
     monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
-    assert not generate_module._local_openai_enabled("IL")
+
+    with pytest.raises(EnvironmentError, match="LOCAL is not allowed inside Kubernetes"):
+        generate_module._call_configured_provider("Load a value", "DDL")
 
 
-def test_local_il_query_generation_uses_openai_fallback(monkeypatch):
-    monkeypatch.setenv("LOCAL_OPENAI_FALLBACK", "true")
-    monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+def test_local_mo_fails_closed(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "LOCAL")
+
+    with pytest.raises(EnvironmentError, match="supports IL query generation only"):
+        generate_module._call_configured_provider(
+            "Load a value", "DDL", jurisdiction="MO"
+        )
+
+
+def test_local_il_query_generation_uses_openai_legacy(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "LOCAL")
 
     with (
         patch(
@@ -150,6 +230,31 @@ def test_health_identifies_the_loaded_data_agent_implementation():
         "inrules_data_agent/app.py"
     )
     assert "model" in body["data_agent_runtime"]
+    assert body["data_agent_runtime"]["environment"] == "SIT"
+    assert body["data_agent_runtime"]["provider"] == "bedrock"
+    assert body["data_agent_runtime"]["configuration_error"] is None
+
+
+def test_dev_runtime_metadata_reports_bedrock_provider(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "dev")
+
+    metadata = generate_module.provider_runtime_metadata()
+
+    assert metadata == {
+        "environment": "DEV",
+        "provider": "bedrock",
+        "configuration_error": None,
+    }
+
+
+def test_health_reports_invalid_provider_configuration_without_hiding_health(monkeypatch):
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    body = TestClient(create_app()).get("/health").json()
+
+    assert body["status"] == "ok"
+    assert body["data_agent_runtime"]["environment"] is None
+    assert body["data_agent_runtime"]["provider"] is None
+    assert "ENVIRONMENT is required" in body["data_agent_runtime"]["configuration_error"]
 
 
 def test_requires_data_query_filter_skips_false_steps():
@@ -1686,6 +1791,46 @@ def test_reject_code_configuration_list_stays_effective_and_occurrence_independe
     assert _find_required_business_concept_artifacts(corrected, meaning) == []
 
 
+def test_approved_reject_code_hint_preserves_dev_prompt_safeguards():
+    meaning = (
+        "For the COB reject-code scope evaluated by the reject-count gate, none of the "
+        "submitted Other Payer Reject Codes is in the approved NDCParameters Reject_Code list."
+    )
+    user_message = _build_user_message(
+        meaning,
+        (
+            "CREATE TABLE [HRX].[dbo].[NDCParameters] ("
+            "[PARAMETER_NAME] nvarchar(50), [PARAMETER_VALUE] nvarchar(100), "
+            "[EFFDATE] datetime, [ENDDATE] datetime);"
+        ),
+        description="Invalid Other Payer Reject Code.",
+        acceptance_criteria=(
+            "At least one submitted code must be found among the configured approved values."
+        ),
+    )
+
+    prompt = " ".join(SYSTEM_PROMPT.split())
+    assert (
+        "PARAMETER_NAME = 'REJECT_CODE' AND {{DateOfService}} BETWEEN EFFDATE AND ENDDATE"
+        in prompt
+    )
+    hint = "Only approved reject-code entries effective on the claim’s date of service are valid."
+    assert hint in user_message
+    assert user_message.index("SUPPLEMENTAL SEMANTIC CONTEXT") < user_message.index(
+        "DIRECTLY REFERENCED ACCEPTANCE CRITERIA"
+    ) < user_message.index("CURRENT DATA QUERY BUSINESS MEANING")
+    supplemental = user_message[
+        user_message.index("SUPPLEMENTAL SEMANTIC CONTEXT") : user_message.index(
+            "DIRECTLY REFERENCED ACCEPTANCE CRITERIA"
+        )
+    ]
+    assert "NDCParameters" not in supplemental
+    assert "PARAMETER_VALUE" not in supplemental
+    assert "DateOfService" not in supplemental
+    assert "COUNT" not in supplemental
+    assert "7258" not in supplemental
+
+
 def test_ncpdp_reject_master_validation_uses_submitted_effective_codes():
     meaning = (
         "Validate each submitted Other Payer Reject Code occurrence against the effective "
@@ -1709,6 +1854,12 @@ def test_ncpdp_reject_master_validation_uses_submitted_effective_codes():
     assert "NCPDP reject master lookup does not return reject_code values" in artifacts
     assert "NCPDP reject master lookup is not scoped to submitted reject codes" in artifacts
     assert "NCPDP reject master lookup is missing its DOS effective window" in artifacts
+    scalar_placeholder = corrected.replace(
+        "[[SubmittedOtherPayerRejectCodes]]", "{{SubmittedOtherPayerRejectCodes}}"
+    )
+    assert _find_required_business_concept_artifacts(scalar_placeholder, meaning) == [
+        "NCPDP reject master lookup is not scoped to submitted reject codes"
+    ]
     assert _find_required_business_concept_artifacts(corrected, meaning) == []
 
 
@@ -1738,6 +1889,57 @@ def test_generation_uses_effective_ncpdp_master_for_submitted_reject_occurrences
     assert "edi_pharm_universal" not in query
     assert "COUNT(" not in query
     call_bedrock.assert_not_called()
+
+
+def test_ncpdp_semantic_hint_reaches_shared_completion_boundary(monkeypatch):
+    ddl = (
+        "CREATE TABLE [HRX].[dbo].[NCPDP_Reject_Codes] ("
+        "[PK_INT] int, [reject_code] varchar(3), [reject_desc] varchar(100), "
+        "[effdate] smalldatetime, [termdate] smalldatetime);"
+    )
+    meaning = (
+        "For the current prescription, inspect each submitted Other Payer Reject Code "
+        "occurrence and determine whether any considered code is not a valid NCPDP reject "
+        "code in the master list."
+    )
+    generated = (
+        "SELECT RTRIM(rc.reject_code) AS NcpdpRejectCode "
+        "FROM HRX.dbo.NCPDP_Reject_Codes rc WITH (NOLOCK) "
+        "WHERE rc.reject_code IN ([[SubmittedOtherPayerRejectCodes]]) "
+        "AND {{DateOfService}} BETWEEN rc.effdate AND rc.termdate"
+    )
+    response = MagicMock()
+    response.choices[0].message.content = json.dumps({"query_text": generated})
+    client = MagicMock()
+    client.chat.completions.create.return_value = response
+    _configure_mock_completion_provider(monkeypatch, client)
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._grounded_business_pattern_candidate",
+            return_value=None,
+        ),
+    ):
+        result = generate_query_result_for_step(meaning)
+
+    assert result["queries"] == [generated]
+    messages = client.chat.completions.create.call_args.kwargs["messages"]
+    user_message = messages[1]["content"]
+    assert "SUPPLEMENTAL SEMANTIC CONTEXT" in user_message
+    assert (
+        "When validating the reject-code record, also require the date of service to fall "
+        "inclusively within that record's effective and term dates."
+    ) in user_message
+
+
+def test_unrelated_prompt_omits_semantic_hint():
+    message = _build_user_message(
+        "Return Id from KnownTable.",
+        "CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int);",
+    )
+
+    assert "SUPPLEMENTAL SEMANTIC CONTEXT" not in message
 
 
 def test_quantity_prescribed_requires_distinct_source_fact():
@@ -1869,6 +2071,76 @@ def test_icd10_diagnosis_reference_requires_four_character_match():
         "ICD-10 diagnosis lookup does not compare the first four code characters on both sides"
     ]
     assert _find_required_business_concept_artifacts(prefix_match, meaning) == []
+
+
+def test_icd10_semantic_hint_shared_completion_accepts_four_character_count_contract(
+    monkeypatch,
+):
+    meaning = (
+        "At least one submitted diagnosis code occurrence has no matching active ICD-10 "
+        "diagnosis-code reference row for the claim date of service."
+    )
+    ddl = (
+        "CREATE TABLE [IPA].[dbo].[DiagCode] ("
+        "[codeid] char(8) NOT NULL, [IcdVersion] char(1) NOT NULL, "
+        "[effdate] smalldatetime NOT NULL, [termdate] smalldatetime NOT NULL);"
+    )
+    generated = (
+        "SELECT COUNT(*) AS DiagnosisCodeReferenceCount "
+        "FROM IPA.dbo.DiagCode d WITH (NOLOCK) "
+        "WHERE SUBSTRING(d.codeid, 1, 4) = SUBSTRING({{DiagnosisCode}}, 1, 4) "
+        "AND d.IcdVersion = '0' "
+        "AND {{DateOfService}} BETWEEN d.effdate AND d.termdate"
+    )
+    response = MagicMock()
+    response.choices[0].message.content = json.dumps({"query_text": generated})
+    client = MagicMock()
+    client.chat.completions.create.return_value = response
+    _configure_mock_completion_provider(monkeypatch, client)
+
+    global_instruction = (
+        "compare the first four characters on both sides, for example "
+        "SUBSTRING(codeid, 1, 4) = SUBSTRING({{DiagnosisCode}}, 1, 4)"
+    )
+    assert global_instruction in " ".join(SYSTEM_PROMPT.split())
+    assert "retain IcdVersion = '0' and the inclusive DOS effective window" in " ".join(
+        SYSTEM_PROMPT.split()
+    )
+
+    with (
+        patch("inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]),
+        patch(
+            "inrules_data_agent.generator.generate._grounded_business_pattern_candidate",
+            return_value=None,
+        ),
+    ):
+        result = generate_query_result_for_step(
+            meaning,
+            description="Missing or invalid diagnosis.",
+            acceptance_criteria=(
+                "The diagnosis code must be found in IPA.dbo.DiagCode for ICD version 0 "
+                "and the claim date of service must be within the effective date window."
+            ),
+        )
+
+    assert result["queries"] == [generated]
+    assert result["validation_status"] == "VALIDATED"
+    assert result["generation_attempts"] == [
+        {
+            "attempt": 1,
+            "source": "model",
+            "outcome": "accepted",
+            "failure_category": None,
+            "failure_reason": None,
+            "candidate_query_text": generated,
+        }
+    ]
+    user_message = client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+    assert (
+        "When validating an ICD-10 diagnosis code, match using its first four characters "
+        "rather than requiring exact full-code equality."
+    ) in user_message
+    assert "COUNT(*) AS DiagnosisCodeReferenceCount" in result["queries"][0]
 
 
 def test_reviewed_drug_override_type_rejects_edit_prefixed_literal():
@@ -2397,6 +2669,61 @@ def test_prompt_allows_any_explicit_runtime_input_to_become_a_query_param():
     assert "Rx Number:         {{RxNumber}}" in SYSTEM_PROMPT
     assert "{{AssociatedPrescriptionRefNumber}}" in SYSTEM_PROMPT
     assert "never a reason to reject an otherwise table-and-column-grounded query" in SYSTEM_PROMPT
+
+
+def test_prompt_distinguishes_generic_scalar_and_collection_runtime_inputs():
+    runtime_contract = SYSTEM_PROMPT.split(
+        "4. Runtime inputs are an open-ended DataQuery contract", 1
+    )[1].split("Canonical examples include:", 1)[0]
+    runtime_contract = " ".join(runtime_contract.split())
+
+    assert "scalar runtime business value" in runtime_contract
+    assert "{{RuntimeInput}}" in runtime_contract
+    assert "[[PascalCasePluralCollectionInput]]" in runtime_contract
+    assert "IN ([[PascalCasePluralCollectionInput]])" in runtime_contract
+    assert "Never use a scalar {{RuntimeInput}} placeholder for a collection" in runtime_contract
+    assert "do not invent a collection unless multiplicity is explicit" in runtime_contract
+    assert not any(
+        term in runtime_contract.casefold()
+        for term in ("ncpdp", "reject code", "edit")
+    )
+
+
+def test_model_path_preserves_explicit_collection_and_scalar_runtime_shapes(monkeypatch):
+    ddl = "CREATE TABLE [HRX].[dbo].[KnownTable] ([Id] int);"
+    collection_sql = (
+        "SELECT k.Id FROM HRX.dbo.KnownTable k WITH (NOLOCK) "
+        "WHERE k.Id IN ([[SubmittedItemIds]])"
+    )
+    scalar_sql = (
+        "SELECT k.Id FROM HRX.dbo.KnownTable k WITH (NOLOCK) "
+        "WHERE k.Id = {{ItemId}}"
+    )
+    responses = []
+    for query in (collection_sql, scalar_sql):
+        response = MagicMock()
+        response.choices[0].message.content = json.dumps({"query_text": query})
+        responses.append(response)
+    client = MagicMock()
+    client.chat.completions.create.side_effect = responses
+    _configure_mock_completion_provider(monkeypatch, client)
+
+    with patch(
+        "inrules_data_agent.generator.generate.select_ddls", return_value=[ddl]
+    ):
+        collection_result = generate_query_result_for_step(
+            "Return KnownTable Id values filtered to the submitted list of item IDs."
+        )
+        scalar_result = generate_query_result_for_step(
+            "Return the KnownTable Id value matching the current item ID."
+        )
+
+    assert collection_result["queries"] == [collection_sql]
+    assert collection_result["validation_status"] == "VALIDATED"
+    assert scalar_result["queries"] == [scalar_sql]
+    assert scalar_result["validation_status"] == "VALIDATED"
+    assert "[[" not in scalar_result["queries"][0]
+    assert client.chat.completions.create.call_count == 2
 
 
 def test_runtime_column_semantics_reject_unrelated_identifier_mapping():

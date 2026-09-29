@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .generator.generate import generate_query_result_for_step
+from .generator.generate import generate_query_result_for_step, provider_runtime_metadata
 from .retrieval.querytext_shadow import (
     find_reuse_match,
     load_reuse_corpus,
@@ -73,11 +73,19 @@ def _package_version() -> str:
 def _data_agent_runtime() -> dict[str, str | None]:
     """Identify the implementation that handled a request without exposing secrets."""
 
+    provider_metadata = provider_runtime_metadata()
+    provider = provider_metadata["provider"]
+    model = (
+        os.environ.get("OPENAI_MODEL")
+        if provider == "openai_legacy"
+        else os.environ.get("BEDROCK_MODEL")
+    )
     return {
         "package_version": _package_version(),
         "build_sha": os.environ.get("DATA_AGENT_BUILD_SHA"),
         "implementation_path": str(Path(__file__).resolve()),
-        "model": os.environ.get("BEDROCK_MODEL"),
+        "model": model,
+        **provider_metadata,
     }
 
 
