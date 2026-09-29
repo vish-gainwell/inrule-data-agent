@@ -45,6 +45,52 @@ uv run uvicorn inrules_data_agent.app:app --app-dir src --reload
 
 Health check: `GET /health`
 
+## Query generation providers
+
+`ENVIRONMENT` is required and matched case-insensitively. It selects the query-generation
+provider; request jurisdiction selects the Bedrock project where applicable.
+
+| `ENVIRONMENT` | Provider | Jurisdictions | Runtime restriction |
+| --- | --- | --- | --- |
+| `LOCAL` | OpenAI-compatible | IL only | Prohibited in Kubernetes |
+| `DEV` | Bedrock | IL and MO | Deployed environments only |
+| `SIT` | Bedrock | IL and MO | Deployed environments only |
+| `UAT` | Bedrock | IL and MO | Deployed environments only |
+| `PROD` | Bedrock | IL and MO | Deployed environments only |
+
+For `LOCAL`, set `OPENAI_API_KEY`. `OPENAI_MODEL`, `OPENAI_BASE_URL` (or the legacy
+`OPENAI_API_BASE`), `OPENAI_TIMEOUT_SECONDS`, and `OPENAI_VERIFY_SSL` may override their
+built-in defaults. LOCAL requests fail closed for MO and whenever
+`KUBERNETES_SERVICE_HOST` indicates Kubernetes.
+
+For Bedrock environments, set `BEDROCK_PROJECT_IL` for IL requests and
+`BEDROCK_PROJECT_MO` for MO requests; each jurisdiction requires its own project.
+`BEDROCK_MODEL` and `BEDROCK_REGION` select the model and AWS region, with defaults of
+`openai.gpt-5.5` and `us-east-1`. Missing or unsupported `ENVIRONMENT` values fail closed,
+as does a request whose jurisdiction-specific Bedrock project is not configured.
+
+Example local configuration (placeholder values only):
+
+```dotenv
+ENVIRONMENT=LOCAL
+OPENAI_API_KEY=your-local-api-key
+OPENAI_MODEL=your-openai-compatible-model
+OPENAI_BASE_URL=https://your-openai-compatible-endpoint.example/v1
+```
+
+Example deployed configuration (placeholder values only):
+
+```dotenv
+ENVIRONMENT=DEV
+BEDROCK_MODEL=your-bedrock-model
+BEDROCK_REGION=your-aws-region
+BEDROCK_PROJECT_IL=your-il-project-id
+BEDROCK_PROJECT_MO=your-mo-project-id
+```
+
+Provider calls are mocked in unit tests; a live SIT or UAT smoke test is still required
+before relying on deployed provider connectivity.
+
 ## Architecture reference
 
 The Claim Edit lifecycle architecture is included below for GitHub and documentation readers:
@@ -90,6 +136,13 @@ DATAQUERY_CATALOG_PATH=C:\path\dataquery_reuse_catalog.sqlite3
 
 Catalog export is an explicit maintenance command. It never runs during API
 startup or for an individual ADO request.
+
+## Semantic query hints
+
+The packaged catalog at `src/inrules_data_agent/semantic_query_hints/concepts.v1.yaml`
+is enabled by default. All requirement-derived required phrases must match the
+authoritative atomic business meaning. Zero or multiple matching concepts, disabled or
+invalid configuration, and an invalid catalog safely omit the supplemental hint.
 
 ## Tests
 
