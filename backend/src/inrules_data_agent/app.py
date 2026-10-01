@@ -10,11 +10,16 @@ from pathlib import Path
 from typing import Any, Literal
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from .data_query_intents import (
+    DataQueryIntent as DataQueryIntentRecord,
+    ReviewStatus,
+    load_intent_catalog,
+)
 from .generator.generate import generate_query_result_for_step, provider_runtime_metadata
 from .retrieval.querytext_shadow import (
     find_reuse_match,
@@ -60,6 +65,28 @@ class ExecuteQueryRequest(BaseModel):
     params: dict[str, str] = Field(default_factory=dict)
 
 
+class DataQueryIntentUsage(BaseModel):
+    curated_assignment_count: int
+    distinct_rule_count: int
+
+
+class DataQueryIntentItem(BaseModel):
+    data_query_name: str
+    query_intent_summary: str
+    review_status: ReviewStatus
+    usage: DataQueryIntentUsage
+
+
+class DataQueryIntentListResponse(BaseModel):
+    schema_version: int
+    total: int
+    items: list[DataQueryIntentItem]
+
+
+_DEFAULT_CORS_ALLOWED_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+)
 _CRITERION_REF_RE = re.compile(r"(?:acceptance\s+criteria|AC)?\s*(\d+)", re.IGNORECASE)
 
 
@@ -68,6 +95,33 @@ def _package_version() -> str:
         return version("inrules-data-agent")
     except PackageNotFoundError:
         return "unpackaged"
+
+
+def _cors_allowed_origins() -> list[str]:
+    configured = os.environ.get("CORS_ALLOWED_ORIGINS")
+    if configured is None:
+        return list(_DEFAULT_CORS_ALLOWED_ORIGINS)
+    origins = list(
+        dict.fromkeys(token.strip() for token in configured.split(",") if token.strip())
+    )
+    if "*" in origins:
+        raise ValueError(
+            "CORS_ALLOWED_ORIGINS cannot contain '*' while credentials are enabled"
+        )
+    return origins
+
+
+def _intent_item(record: DataQueryIntentRecord) -> DataQueryIntentItem:
+    return DataQueryIntentItem(
+        data_query_name=record.data_query_name,
+        query_intent_summary=record.query_intent_summary,
+        review_status=record.review_status,
+        usage=DataQueryIntentUsage(
+            curated_assignment_count=record.usage.curated_assignment_count,
+            distinct_rule_count=record.usage.distinct_rule_count,
+        ),
+
+    )
 
 
 def _data_agent_runtime() -> dict[str, str | None]:
@@ -384,7 +438,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="InRule Data Agent", version=_package_version())
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=_cors_allowed_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -393,6 +447,37 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, Any]:
         return {"status": "ok", "data_agent_runtime": _data_agent_runtime()}
+
+    @app.get(
+        "/data-query-intents",
+        response_model=DataQueryIntentListResponse,
+    )
+    def data_query_intents(
+        status: ReviewStatus | None = None,
+    ) -> DataQueryIntentListResponse:
+        catalog = load_intent_catalog()
+        records = (
+            catalog.items
+            if status is None
+            else tuple(item for item in catalog.items if item.review_status == status)
+        )
+        items = [_intent_item(record) for record in records]
+        return DataQueryIntentListResponse(
+            schema_version=catalog.schema_version,
+            total=len(items),
+            items=items,
+        )
+
+    @app.get(
+        "/data-query-intents/{data_query_name}",
+        response_model=DataQueryIntentItem,
+    )
+    def data_query_intent(data_query_name: str) -> DataQueryIntentItem:
+        catalog = load_intent_catalog()
+        for record in catalog.items:
+            if record.data_query_name == data_query_name:
+                return _intent_item(record)
+        raise HTTPException(status_code=404, detail="Data Query intent not found")
 
     @app.post("/generate_queries")
     def generate_queries(request: GenerateQueriesRequest) -> dict[str, Any]:

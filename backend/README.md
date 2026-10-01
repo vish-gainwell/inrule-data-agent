@@ -137,6 +137,43 @@ DATAQUERY_CATALOG_PATH=C:\path\dataquery_reuse_catalog.sqlite3
 Catalog export is an explicit maintenance command. It never runs during API
 startup or for an individual ADO request.
 
+## Data Query intent review API
+
+The read-only review catalog is available through these endpoints:
+
+- `GET /data-query-intents` returns `{schema_version, total, items}`. Add
+  `?status=pending`, `approved`, `needs_changes`, or `rejected` to filter items.
+- `GET /data-query-intents/{data_query_name}` returns one item, or `404` when the
+  exact Data Query name is not present.
+
+Each item uses this contract:
+
+```json
+{
+  "data_query_name": "NDCParams_ValueByNameAndDOS",
+  "query_intent_summary": "Retrieve the configured parameter value for the requested parameter name that is effective on the date of service.",
+  "review_status": "pending",
+  "usage": {"curated_assignment_count": 21, "distinct_rule_count": 9}
+}
+```
+
+The team reviews and approves the `query_intent_summary` statement. `pending` means
+no review decision has been made, `approved` means accepted, `needs_changes` means
+revision is required, and `rejected` means not accepted. The `status` query parameter
+filters the `review_status` field. The QueryText hash used to bind an internal catalog
+statement to its exact QueryText version is not exposed by the API.
+
+```bash
+curl "http://localhost:8000/data-query-intents?status=pending"
+curl "http://localhost:8000/data-query-intents/NDCParams_ValueByNameAndDOS"
+```
+
+This catalog is review metadata only. It does not expose raw SQL and has no effect on
+query generation, semantic hints, or reuse decisions. To allow browser clients from
+other origins, set `CORS_ALLOWED_ORIGINS` to a comma-separated list of explicit origins.
+The localhost frontend origins remain the default; `*` is rejected because credentials
+are enabled.
+
 ## Semantic query hints
 
 The packaged catalog at `src/inrules_data_agent/semantic_query_hints/concepts.v1.yaml`
