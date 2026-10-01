@@ -1,0 +1,44 @@
+schema_version: 1
+items:
+  - data_query_name: NDCParams_ValueByNameAndDOS
+    query_intent_summary: Retrieve the configured parameter value for the requested parameter name that is effective on the date of service.
+    review_status: pending
+    usage:
+      curated_assignment_count: 21
+      distinct_rule_count: 9
+    query_text_sha256: 068af474e0a3f8873140f9415fe2230c2bbb218ca8e67657f1216dd976d196ed
+  - data_query_name: NdcparametersByParameter_nameEnddate_1_1
+    query_intent_summary: Retrieve the configured parameter value for the requested parameter name that is effective on the date of service.
+    review_status: pending
+    usage:
+      curated_assignment_count: 13
+      distinct_rule_count: 10
+    query_text_sha256: a37ba43432e29aa05dd831db7fb03e2abcea06b6bf48daed3fb739aca19f62a9
+  - data_query_name: NdcparametersByParameter_nameEnddate_1_2
+    query_intent_summary: Retrieve the configured parameter value for the requested parameter name that is effective on the date of service.
+    review_status: pending
+    usage:
+      curated_assignment_count: 12
+      distinct_rule_count: 7
+    query_text_sha256: 25efed50177868f3b7deb78024e85860359b8ea65a9c05cdabfff76aa4db8e96
+  - data_query_name: NdcparametersByParameter_nameEnddate_66
+    query_intent_summary: Retrieve the configured parameter value for the requested parameter name that is effective on the date of service.
+    review_status: pending
+    usage:
+      curated_assignment_count: 12
+      distinct_rule_count: 6
+    query_text_sha256: 5480c82429aa1ea141c61eaf095bf06bbde41eb467f464d996214629e53bd359
+  - data_query_name: DrugoverridesByTypeTermdate_75
+    query_intent_summary: Count effective-dated drug-override records in the requested list type that match the claim drug by NDC, GCN sequence number, or HIC3.
+    review_status: pending
+    usage:
+      curated_assignment_count: 8
+      distinct_rule_count: 7
+    query_text_sha256: 64667b5f4ea4f66b2d28ce9b2c3b9f89e7ca4e987a132b0e48af10788a60c687
+  - data_query_name: ProviderattributeByProvidAttributeidTermdate_268
+    query_intent_summary: Retrieve the requested provider attribute value for the provider when the attribute is effective on the date of service.
+    review_status: pending
+    usage:
+      curated_assignment_count: 6
+      distinct_rule_count: 6
+    query_text_sha256: 06e358df463ce779bbcaa472f9f10a3f25af5c3a55d5e2d882f1baf69bf491c0
