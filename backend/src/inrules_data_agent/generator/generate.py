@@ -1288,7 +1288,7 @@ def _call_bedrock(
 ) -> str | None:
     state = str(jurisdiction or "").strip().upper()
     project = os.environ.get(f"BEDROCK_PROJECT_{state}")
-    if state not in {"IL", "MO"} or not project:
+    if state not in {"IL", "MO", "LA"} or not project:
         raise EnvironmentError(f"BEDROCK_PROJECT_{state} is not configured")
 
     model = os.environ.get("BEDROCK_MODEL", "openai.gpt-5.5")

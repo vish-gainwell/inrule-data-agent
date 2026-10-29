@@ -38,7 +38,7 @@ def test_bedrock_query_call_uses_jurisdiction_project(monkeypatch):
     captured = {}
 
     monkeypatch.setenv("BEDROCK_PROJECT_IL", "project-il")
-    monkeypatch.setenv("BEDROCK_PROJECT_MO", "project-mo")
+    monkeypatch.setenv("BEDROCK_PROJECT_LA", "project-il")
     monkeypatch.setenv("BEDROCK_REGION", "us-east-1")
     monkeypatch.setenv("BEDROCK_MODEL", "openai.gpt-5.5")
     monkeypatch.setattr(
@@ -58,11 +58,11 @@ def test_bedrock_query_call_uses_jurisdiction_project(monkeypatch):
         and MOCK_SQL,
     )
 
-    result = generate_module._call_bedrock("Load a value", "DDL", jurisdiction="MO")
+    result = generate_module._call_bedrock("Load a value", "DDL", jurisdiction="LA")
 
     assert result == MOCK_SQL
     assert captured["provider"] == {"region": "us-east-1", "api_key": None}
-    assert captured["client"]["project"] == "project-mo"
+    assert captured["client"]["project"] == "project-il"
     assert captured["model"] == "openai.gpt-5.5"
 
 

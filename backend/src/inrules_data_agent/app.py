@@ -47,7 +47,7 @@ class GenerateQueriesRequest(BaseModel):
     acceptance_criteria: str | list[str] | None = None
     steps: list[Step]
     generation_mode: str = "draft"
-    jurisdiction: Literal["IL", "MO"] = "IL"
+    jurisdiction: Literal["IL", "MO", "LA"] = "IL"
 
 
 class BulkGenerateQueriesRequest(BaseModel):
