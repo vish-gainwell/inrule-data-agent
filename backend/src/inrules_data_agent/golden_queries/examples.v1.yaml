@@ -1,0 +1,1481 @@
+schema_version: 1
+source:
+  workbook: Existing Data Query Intent Review v20261009.xlsx
+  sha256: 9ad90339aca46ba4114b8f801ff0ba1459941d8059eb4cd83c3c2cecd9c8b2e4
+  sheet: Review Results
+  filter: Is Intent Summary Correct? = Yes
+  selected_rows: 60
+entries:
+- id: dq-review-005
+  color_group: null
+  variants:
+  - name: DrugoverridesByTermdate_108
+    row: 5
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves an override identifier for an effective rebate-type drug override matching the supplied NDC
+      or GCN sequence number and excluding the configured type pattern.
+    query_text: select {{:output}} from DrugOverrides (nolock) where (NDCKey = '{{:Ndckey}}' or GCN_SeqNo = '{{:GcnSeqno}}')
+      and [Type] like '%Rebate%' and [Type] not like '{{:Not}}' and '{{:fcDateOfService}}' between EffDate and TermDate
+    comments: Override ID not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B5
+      Generic Query Template (QueryText): D5
+      Draft Intent Summary: E5
+      Is Intent Summary Correct?: F5
+      reviewer: A5
+      Additional Comments: G5
+      Suggested Changes: H5
+    tables:
+    - drugoverrides
+    eligible: true
+    issue: null
+- id: dq-review-006
+  color_group: solid:theme:6:0.7999816888943144
+  variants:
+  - name: NdcparametersByParameter_nameEnddate_1_1
+    row: 6
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves the requested configured parameter value for a parameter name that is effective on the date
+      of service.
+    query_text: select {{:output}} from NDCParameters (nolock) where parameter_name = '{{:ParameterName}}' and '{{:fcDateOfService}}'
+      between EffDate and EndDate
+    comments: ''
+    suggested_changes: ''
+    source_cells:
+      Name: B6
+      Generic Query Template (QueryText): D6
+      Draft Intent Summary: E6
+      Is Intent Summary Correct?: F6
+      reviewer: A6
+      Additional Comments: G6
+      Suggested Changes: H6
+    tables:
+    - ndcparameters
+    eligible: true
+    issue: null
+  - name: NdcparametersByParameter_nameEnddate_66
+    row: 8
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves the configured parameter value for the requested parameter name that is effective on the date
+      of service.
+    query_text: select {{:output}} from NDCParameters (nolock) where parameter_name = '{{:ParameterName}}' and ('{{:fcDateOfService}}'
+      between EffDate and EndDate)
+    comments: ''
+    suggested_changes: ''
+    source_cells:
+      Name: B8
+      Generic Query Template (QueryText): D8
+      Draft Intent Summary: E8
+      Is Intent Summary Correct?: F8
+      reviewer: A8
+      Additional Comments: G8
+      Suggested Changes: H8
+    tables:
+    - ndcparameters
+    eligible: true
+    issue: null
+  - name: NdcparametersByEnddate_40
+    row: 18
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves the configured parameter value for the supplied parameter name that is effective on the date
+      of service.
+    query_text: select {{:output}} from NDCParameters (nolock) where (PARAMETER_NAME = '{{:ParameterName}}' and
+      '{{:fcDateOfService}}' between effdate and enddate)
+    comments: ''
+    suggested_changes: ''
+    source_cells:
+      Name: B18
+      Generic Query Template (QueryText): D18
+      Draft Intent Summary: E18
+      Is Intent Summary Correct?: F18
+      reviewer: A18
+      Additional Comments: G18
+      Suggested Changes: H18
+    tables:
+    - ndcparameters
+    eligible: true
+    issue: null
+  - name: NdcparametersByParameter_nameEnddate_7
+    row: 49
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the configured parameter value for the requested parameter name that is effective on the adjudication
+      date.
+    query_text: select {{:output}} from NDCParameters (nolock) where parameter_name = '{{:ParameterName}}' and ('{{:fdtAdjudDate}}'
+      between EFFDATE and ENDDATE)
+    comments: Reversal Days parameter not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B49
+      Generic Query Template (QueryText): D49
+      Draft Intent Summary: E49
+      Is Intent Summary Correct?: F49
+      reviewer: A49
+      Additional Comments: G49
+      Suggested Changes: H49
+    tables:
+    - ndcparameters
+    eligible: true
+    issue: null
+  - name: NdcparametersByParameter_nameEnddate_1_2
+    row: 51
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the requested configured parameter value for a parameter name when the date of service falls
+      within its effective and end dates.
+    query_text: select {{:output}} from NDCParameters (nolock) where parameter_name = '{{:ParameterName}}' and '{{:Dateofservice}}'
+      between EffDate and EndDate
+    comments: structurally similar to NDCParams_ValueByNameAndDOS
+    suggested_changes: ''
+    source_cells:
+      Name: B51
+      Generic Query Template (QueryText): D51
+      Draft Intent Summary: E51
+      Is Intent Summary Correct?: F51
+      reviewer: A51
+      Additional Comments: G51
+      Suggested Changes: H51
+    tables:
+    - ndcparameters
+    eligible: true
+    issue: null
+  - name: NDCParams_ValueByNameAndDOS
+    row: 55
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the requested NDC parameter value for a configured parameter name when the date of service
+      falls within its effective and end dates.
+    query_text: select {{:output}} from ndcparameters (nolock) where parameter_name = '{{:ParamName}}' and '{{:DateOfService}}'
+      between effdate and enddate
+    comments: structurally similar to NdcparametersByParameter_nameEnddate_1_2
+    suggested_changes: ''
+    source_cells:
+      Name: B55
+      Generic Query Template (QueryText): D55
+      Draft Intent Summary: E55
+      Is Intent Summary Correct?: F55
+      reviewer: A55
+      Additional Comments: G55
+      Suggested Changes: H55
+    tables:
+    - ndcparameters
+    eligible: true
+    issue: null
+- id: dq-review-007
+  color_group: null
+  variants:
+  - name: DrugoverridesByTermdate_57
+    row: 7
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves an override identifier for a rebate-type drug override matching the supplied NDC or GCN sequence
+      number that is effective on the date of service.
+    query_text: select {{:output}} from DrugOverrides (nolock) where (NDCKey = '{{:Ndckey}}' or GCN_SeqNo = '{{:GcnSeqno}}')
+      and [Type] like '%Rebate%' and '{{:fcDateOfService}}' between EffDate and TermDate
+    comments: Override ID not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B7
+      Generic Query Template (QueryText): D7
+      Draft Intent Summary: E7
+      Is Intent Summary Correct?: F7
+      reviewer: A7
+      Additional Comments: G7
+      Suggested Changes: H7
+    tables:
+    - drugoverrides
+    eligible: true
+    issue: null
+- id: dq-review-009
+  color_group: null
+  variants:
+  - name: DrugOverridesByTypeAndDrugsAndDOS_1
+    row: 9
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Counts drug override records whose type is in the configured list or contains Partial, match the drug's
+      NDC, GCN sequence, HICL sequence, GCN, or HIC3, and are effective on the date of service.
+    query_text: select {{:output}} from DrugOverrides (nolock) where (Type in ([[:Types]]) or Type like '%Partial%')
+      and (NDCKey = '{{:Ndc}}' or GCN_SeqNo = '{{:GcnSeqNo}}' or HICL_SeqNo = '{{:HiclSeqNo}}' or GCN = '{{:Gcn}}'
+      or HIC3 = '{{:Hic3}}') and '{{:DateOfService}}' between effDate and termDate
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B9
+      Generic Query Template (QueryText): D9
+      Draft Intent Summary: E9
+      Is Intent Summary Correct?: F9
+      reviewer: A9
+      Additional Comments: G9
+      Suggested Changes: H9
+    tables:
+    - drugoverrides
+    eligible: true
+    issue: null
+- id: dq-review-010
+  color_group: null
+  variants:
+  - name: ProviderattributeByProvidAttributeidTermdate_268
+    row: 10
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves the requested attribute value for a provider and attribute identifier that is effective on
+      the date of service.
+    query_text: select {{:output}} from providerattribute (nolock) where provid = '{{:Provid}}' and attributeid
+      = '{{:Attributeid}}' and '{{:Dateofservice}}' between effdate and termdate
+    comments: ''
+    suggested_changes: ''
+    source_cells:
+      Name: B10
+      Generic Query Template (QueryText): D10
+      Draft Intent Summary: E10
+      Is Intent Summary Correct?: F10
+      reviewer: A10
+      Additional Comments: G10
+      Suggested Changes: H10
+    tables:
+    - providerattribute
+    eligible: true
+    issue: null
+- id: dq-review-011
+  color_group: null
+  variants:
+  - name: DrugoverridesByTermdate_191
+    row: 11
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves GCN sequence numbers from FluVaccine drug overrides effective on the date of service.
+    query_text: select {{:output}} from DrugOverrides (nolock) where [Type] like '%FluVaccine%' and '{{:fcDateOfService}}'
+      between EffDate and TermDate
+    comments: GSN not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B11
+      Generic Query Template (QueryText): D11
+      Draft Intent Summary: E11
+      Is Intent Summary Correct?: F11
+      reviewer: A11
+      Additional Comments: G11
+      Suggested Changes: H11
+    tables:
+    - drugoverrides
+    eligible: true
+    issue: null
+- id: dq-review-013
+  color_group: solid:theme:8:0.7999816888943144
+  variants:
+  - name: DrugoverridesByTypeTermdate_75
+    row: 13
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Counts drug override records of the configured type that match the drug's NDC, GCN sequence number,
+      or HIC3 and are effective on the date of service.
+    query_text: select {{:output}} from drugoverrides (nolock) where type = '{{:Type}}' and (ndckey = '{{:Ndckey}}'
+      or GCN_SeqNo = '{{:GcnSeqno}}' or HIC3 = '{{:Hic3}}') and '{{:fcDateOfService}}' between effdate and termdate
+    comments: 'Count not specified by QueryText
+
+      Similar to DrugoverridesByTypeTermdate_90 except uses "=" instead of "like"'
+    suggested_changes: ''
+    source_cells:
+      Name: B13
+      Generic Query Template (QueryText): D13
+      Draft Intent Summary: E13
+      Is Intent Summary Correct?: F13
+      reviewer: A13
+      Additional Comments: G13
+      Suggested Changes: H13
+    tables:
+    - drugoverrides
+    eligible: true
+    issue: null
+  - name: DrugoverridesByTypeTermdate_232
+    row: 28
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Counts effective drug-override records of the requested type matching the claim drug by NDC, GCN sequence
+      number, or HIC3 on the date of service.
+    query_text: select {{:output}} from DRUGOVERRIDES (nolock) where type = '{{:Type}}' and (NDCKey = '{{:Ndckey}}'
+      or GCN_SeqNo = '{{:GcnSeqno}}' or HIC3 = '{{:Hic3}}') and ('{{:fcDateOfService}}' between EffDate and TermDate)
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B28
+      Generic Query Template (QueryText): D28
+      Draft Intent Summary: E28
+      Is Intent Summary Correct?: F28
+      reviewer: A28
+      Additional Comments: G28
+      Suggested Changes: H28
+    tables:
+    - drugoverrides
+    eligible: true
+    issue: null
+  - name: DrugOverrides_ByTypeAndDrugAndDOS3
+    row: 66
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Counts effective drug-override records of the configured type that match the requested drug by NDC,
+      GCN sequence number, or HIC3 on the date of service.
+    query_text: select {{:output}} from DrugOverrides (nolock) where Type = '{{:DrugOverrideType}}' and (NDCKey
+      = '{{:Ndc}}' or GCN_SeqNo = '{{:GcnSeqNo}}' or HIC3 = '{{:Hic3}}') and '{{:DateOfService}}' between effdate
+      and termdate
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B66
+      Generic Query Template (QueryText): D66
+      Draft Intent Summary: E66
+      Is Intent Summary Correct?: F66
+      reviewer: A66
+      Additional Comments: G66
+      Suggested Changes: H66
+    tables:
+    - drugoverrides
+    eligible: true
+    issue: null
+- id: dq-review-015
+  color_group: null
+  variants:
+  - name: DrugoverridesByTypeTermdate_242
+    row: 15
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the requested drug identifier from drug overrides of the specified type that are effective
+      on the date of service.
+    query_text: select {{:output}} from drugoverrides (nolock) where type = '{{:Type}}' and '{{:fcDateOfService}}'
+      between EffDate and TermDate
+    comments: Drug identifier not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B15
+      Generic Query Template (QueryText): D15
+      Draft Intent Summary: E15
+      Is Intent Summary Correct?: F15
+      reviewer: A15
+      Additional Comments: G15
+      Suggested Changes: H15
+    tables:
+    - drugoverrides
+    eligible: true
+    issue: null
+- id: dq-review-017
+  color_group: null
+  variants:
+  - name: DrugOverridesByTypeAndDrugsAndDOS
+    row: 17
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Counts effective drug overrides matching the requested override type and any supplied NDC, GCN sequence,
+      HICL sequence, GCN, or HIC3 identifier on the date of service.
+    query_text: select {{:output}} from DrugOverrides (nolock) where Type like '{{:DrugOverrideType}}' and (NDCKey
+      = '{{:Ndc}}' or GCN_SeqNo = '{{:GcnSeqNo}}' or HICL_SeqNo = '{{:HiclSeqNo}}' or GCN = '{{:Gcn}}' or HIC3 =
+      '{{:Hic3}}') and '{{:DateOfService}}' between effdate and termdate
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B17
+      Generic Query Template (QueryText): D17
+      Draft Intent Summary: E17
+      Is Intent Summary Correct?: F17
+      reviewer: A17
+      Additional Comments: G17
+      Suggested Changes: H17
+    tables:
+    - drugoverrides
+    eligible: true
+    issue: null
+- id: dq-review-019
+  color_group: null
+  variants:
+  - name: DrugoverridesByTypeTermdate_90
+    row: 19
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Counts drug override records matching the configured type pattern and the drug's NDC, GCN sequence number,
+      or HIC3 that are effective on the date of service.
+    query_text: select {{:output}} from drugoverrides (nolock) where type like '{{:Type}}' and (NDCKey = '{{:Ndckey}}'
+      or GCN_SeqNo = '{{:GcnSeqno}}' or HIC3 = '{{:Hic3}}') and '{{:fcDateOfService}}' between EffDate and TermDate
+    comments: 'Count not specified by QueryText
+
+      Similar to DrugoverridesByTypeTermdate_75 except uses "like" instead of "="'
+    suggested_changes: ''
+    source_cells:
+      Name: B19
+      Generic Query Template (QueryText): D19
+      Draft Intent Summary: E19
+      Is Intent Summary Correct?: F19
+      reviewer: A19
+      Additional Comments: G19
+      Suggested Changes: H19
+    tables:
+    - drugoverrides
+    eligible: true
+    issue: null
+- id: dq-review-021
+  color_group: null
+  variants:
+  - name: EnrollkeysBy_115
+    row: 21
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves member identifiers for the carrier member ID, ordered by segment type descending, term date
+      descending, and effective date ascending.
+    query_text: select {{:output}} from enrollkeys (nolock) where (carriermemid = '{{:Carriermemid}}') order by
+      segtype desc, termdate desc, effdate asc
+    comments: Member ID not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B21
+      Generic Query Template (QueryText): D21
+      Draft Intent Summary: E21
+      Is Intent Summary Correct?: F21
+      reviewer: A21
+      Additional Comments: G21
+      Suggested Changes: H21
+    tables:
+    - enrollkeys
+    eligible: true
+    issue: null
+- id: dq-review-026
+  color_group: null
+  variants:
+  - name: NdcIsInDrugCoverageByPlanId
+    row: 26
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Counts effective drug coverage records for compound ingredient NDCs under the member's benefit plan
+      identifiers on the date of service.
+    query_text: select {{:output}} from drugcoverage (nolock) where PlanId in ([[:PlanId]]) and NDCKey IN ([[:Ndc]])
+      and '{{:DateOfService}}' between effdate and termdate
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B26
+      Generic Query Template (QueryText): D26
+      Draft Intent Summary: E26
+      Is Intent Summary Correct?: F26
+      reviewer: A26
+      Additional Comments: G26
+      Suggested Changes: H26
+    tables:
+    - drugcoverage
+    eligible: true
+    issue: null
+- id: dq-review-027
+  color_group: null
+  variants:
+  - name: EnrollkeysByEnrollid_116
+    row: 27
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the requested member or enrollment identifier for records matching configured enrollment IDs
+      and carrier member ID, ordered by segment type and enrollment dates.
+    query_text: select {{:output}} from enrollkeys (nolock) where enrollid in ([[:Enrollids]]) where (carriermemid
+      = '{{:Carriermemid}}')) order by segtype desc, termdate desc, effdate asc
+    comments: GT data query has multiple output fields?
+    suggested_changes: ''
+    source_cells:
+      Name: B27
+      Generic Query Template (QueryText): D27
+      Draft Intent Summary: E27
+      Is Intent Summary Correct?: F27
+      reviewer: A27
+      Additional Comments: G27
+      Suggested Changes: H27
+    tables: []
+    eligible: false
+    issue: SQL template is not a parseable single read-only SELECT; source correction required.
+- id: dq-review-029
+  color_group: null
+  variants:
+  - name: EnrollkeysByMemidPlanidSegtypeTermdate_288
+    row: 29
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Counts enrollment records for the supplied member, plan, and segment type that are effective on the
+      date of service.
+    query_text: select {{:output}} from enrollkeys (nolock) where memid = '{{:Memid}}' and PlanId = '{{:Planid}}'
+      and segtype = '{{:Segtype}}' and ('{{:fcDateOfService}}' between effdate and termdate)
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B29
+      Generic Query Template (QueryText): D29
+      Draft Intent Summary: E29
+      Is Intent Summary Correct?: F29
+      reviewer: A29
+      Additional Comments: G29
+      Suggested Changes: H29
+    tables:
+    - enrollkeys
+    eligible: true
+    issue: null
+- id: dq-review-030
+  color_group: null
+  variants:
+  - name: DrugCoverageByNDC
+    row: 30
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Counts effective drug coverage records for the supplied NDC and member plan identifiers on the date
+      of service.
+    query_text: select {{:output}} from DrugCoverage d (nolock) where d.planid in ([[:PlanIds]]) and d.NDCKey= '{{:NdcKey}}'
+      and '{{:DateOfService}}' between d.EFFDATE and d.TERMDATE
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B30
+      Generic Query Template (QueryText): D30
+      Draft Intent Summary: E30
+      Is Intent Summary Correct?: F30
+      reviewer: A30
+      Additional Comments: G30
+      Suggested Changes: H30
+    tables:
+    - drugcoverage
+    eligible: true
+    issue: null
+- id: dq-review-033
+  color_group: null
+  variants:
+  - name: EnrollkeysByMemidSegtypeProgramidTermdate_139
+    row: 33
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Counts enrollment records for the member with segment type EXT and a configured program identifier that
+      are effective on the date of service.
+    query_text: select {{:output}} from enrollkeys (nolock) where memid = '{{:Memid}}' and segtype = '{{:Segtype}}'
+      and programid in ([[:Programids]]) and '{{:fcDateOfService}}' between effdate and termdate
+    comments: Count not specified by QueryText
+    suggested_changes: Counts enrollment records for the member with matching segment-type and a configured program
+      identifier that are effective on the date of service.
+    source_cells:
+      Name: B33
+      Generic Query Template (QueryText): D33
+      Draft Intent Summary: E33
+      Is Intent Summary Correct?: F33
+      reviewer: A33
+      Additional Comments: G33
+      Suggested Changes: H33
+    tables:
+    - enrollkeys
+    eligible: true
+    issue: null
+- id: dq-review-034
+  color_group: null
+  variants:
+  - name: MeqBy_322
+    row: 34
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves all GCN sequence numbers from the MEQ table without additional filters.
+    query_text: select {{:output}} from MEQ (NOLOCK)
+    comments: GSN not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B34
+      Generic Query Template (QueryText): D34
+      Draft Intent Summary: E34
+      Is Intent Summary Correct?: F34
+      reviewer: A34
+      Additional Comments: G34
+      Suggested Changes: H34
+    tables:
+    - meq
+    eligible: true
+    issue: null
+- id: dq-review-035
+  color_group: null
+  variants:
+  - name: EntityByMember_68
+    row: 35
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the first five characters of the member's requested first-name or last-name field by member
+      ID.
+    query_text: select {{:output}} from entity (nolock) inner join member (nolock) on member.entityid = entity.entid
+      where member.memid = '{{:Memberid}}'
+    comments: First 5 char not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B35
+      Generic Query Template (QueryText): D35
+      Draft Intent Summary: E35
+      Is Intent Summary Correct?: F35
+      reviewer: A35
+      Additional Comments: G35
+      Suggested Changes: H35
+    tables:
+    - entity
+    - member
+    eligible: true
+    issue: null
+- id: dq-review-037
+  color_group: null
+  variants:
+  - name: MeqByGcn_seqno_383
+    row: 37
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the MEQ value for the supplied GCN sequence number.
+    query_text: select {{:output}} from MEQ (nolock) where GCN_SEQNO = '{{:GcnSeqno}}'
+    comments: ''
+    suggested_changes: ''
+    source_cells:
+      Name: B37
+      Generic Query Template (QueryText): D37
+      Draft Intent Summary: E37
+      Is Intent Summary Correct?: F37
+      reviewer: A37
+      Additional Comments: G37
+      Suggested Changes: H37
+    tables:
+    - meq
+    eligible: true
+    issue: null
+- id: dq-review-045
+  color_group: null
+  variants:
+  - name: NdcparametersByParameter_nameIsnull_396
+    row: 45
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the configured decimal value, defaulting to 0.00 when null, for the named parameter effective
+      on the date of service, with configured minimum and maximum dates replacing null bounds.
+    query_text: select {{:output}} from NDCParameters (nolock) where parameter_name = '{{:ParameterName}}' and ('{{:Dateofservice}}'
+      between IsNull(EFFDATE,'{{:Cminsmalldate}}') and IsNull(ENDDATE, '{{:Cmaxdate}}'))
+    comments: Decimal Value not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B45
+      Generic Query Template (QueryText): D45
+      Draft Intent Summary: E45
+      Is Intent Summary Correct?: F45
+      reviewer: A45
+      Additional Comments: G45
+      Suggested Changes: H45
+    tables:
+    - ndcparameters
+    eligible: true
+    issue: null
+- id: dq-review-046
+  color_group: null
+  variants:
+  - name: MemberattributeByMemidAttributeid
+    row: 46
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves value for a member and attribute identifier that is effective on the date of service.
+    query_text: select {{:output}} from memberattribute (nolock) where memid = '{{:Memid}}' and attributeid = '{{:AttributeId}}'
+      and '{{:fcDateOfService}}' between effdate and termdate
+    comments: Value not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B46
+      Generic Query Template (QueryText): D46
+      Draft Intent Summary: E46
+      Is Intent Summary Correct?: F46
+      reviewer: A46
+      Additional Comments: G46
+      Suggested Changes: H46
+    tables:
+    - memberattribute
+    eligible: true
+    issue: null
+- id: dq-review-050
+  color_group: null
+  variants:
+  - name: MemberBy_117
+    row: 50
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves the member identifier whose secondary identifier matches the supplied cardholder identifier.
+    query_text: select {{:output}} from member (nolock) where (secondaryid = '{{:Secondaryid}}')
+    comments: Member ID not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B50
+      Generic Query Template (QueryText): D50
+      Draft Intent Summary: E50
+      Is Intent Summary Correct?: F50
+      reviewer: A50
+      Additional Comments: G50
+      Suggested Changes: H50
+    tables:
+    - member
+    eligible: true
+    issue: null
+- id: dq-review-052
+  color_group: null
+  variants:
+  - name: MemberByPassTermdate_44
+    row: 52
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves the value from an effective member-bypass record for the member, Bypass type, and date of
+      service.
+    query_text: select {{:output}} from memberbypass (nolock) where MemID = '{{:Memid}}' and Type = '{{:Type}}'
+      and '{{:fcDateOfService}}' between Effdate and TermDate
+    comments: ''
+    suggested_changes: ''
+    source_cells:
+      Name: B52
+      Generic Query Template (QueryText): D52
+      Draft Intent Summary: E52
+      Is Intent Summary Correct?: F52
+      reviewer: A52
+      Additional Comments: G52
+      Suggested Changes: H52
+    tables:
+    - memberbypass
+    eligible: true
+    issue: null
+- id: dq-review-053
+  color_group: null
+  variants:
+  - name: NdcparametersByParameter_nameParameter_valueEnddate_345
+    row: 53
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the description for the configured provider enrollment status value when it is effective on
+      the date of service.
+    query_text: select {{:output}} from NDCParameters (nolock) where parameter_name = '{{:ParameterName}}' and parameter_value
+      = '{{:ParameterValue}}' and '{{:Dateofservice}}' between effdate and enddate
+    comments: Description not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B53
+      Generic Query Template (QueryText): D53
+      Draft Intent Summary: E53
+      Is Intent Summary Correct?: F53
+      reviewer: A53
+      Additional Comments: G53
+      Suggested Changes: H53
+    tables:
+    - ndcparameters
+    eligible: true
+    issue: null
+- id: dq-review-054
+  color_group: null
+  variants:
+  - name: MemberexclusionBy_315
+    row: 54
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Counts effective member exclusion records matching the member and the requested drug's NDC, GCN sequence
+      number, or HIC3 identifier on the date of service.
+    query_text: select {{:output}} from MemberExclusion (nolock) where (MemID = '{{:Memid}}') and (((Value = '{{:NDCValue}}')
+      and (Type = '{{:NDCType}}')) or ((Value = '{{:GCNSeqNoValue}}') and (Type = '{{:GCNSeqNoType}}')) or ((Value
+      = '{{:HIC3Value}}') and (Type = '{{:HIC3Type}}')) ) and (EffDate <= '{{:Effdate}}') and (TermDate >= '{{:Termdate}}')
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B54
+      Generic Query Template (QueryText): D54
+      Draft Intent Summary: E54
+      Is Intent Summary Correct?: F54
+      reviewer: A54
+      Additional Comments: G54
+      Suggested Changes: H54
+    tables:
+    - memberexclusion
+    eligible: true
+    issue: null
+- id: dq-review-056
+  color_group: null
+  variants:
+  - name: MemberIdByCarrierMemIdHistory_1
+    row: 56
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves member identifiers linked through carrier member ID history for the cardholder ID, ordered
+      by segment type and enrollment dates.
+    query_text: select {{:output}} from enrollkeys (nolock) where enrollid in (select enrollid from carriermemidhistory
+      (nolock) where carriermemid = '{{:CarrierMemId}}') order by segtype desc, termdate desc, effdate asc
+    comments: Member ID not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B56
+      Generic Query Template (QueryText): D56
+      Draft Intent Summary: E56
+      Is Intent Summary Correct?: F56
+      reviewer: A56
+      Additional Comments: G56
+      Suggested Changes: H56
+    tables:
+    - carriermemidhistory
+    - enrollkeys
+    eligible: true
+    issue: null
+- id: dq-review-058
+  color_group: null
+  variants:
+  - name: MemberIdByMember
+    row: 58
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves member identifier whose head-of-house value matches the supplied cardholder identifier.
+    query_text: select {{:output}} from member (nolock) where headofhouse ='{{:HeadOfHouse}}'
+    comments: Member ID not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B58
+      Generic Query Template (QueryText): D58
+      Draft Intent Summary: E58
+      Is Intent Summary Correct?: F58
+      reviewer: A58
+      Additional Comments: G58
+      Suggested Changes: H58
+    tables:
+    - member
+    eligible: true
+    issue: null
+- id: dq-review-059
+  color_group: null
+  variants:
+  - name: NDCParams_ValuesByNamesAndDOS
+    row: 59
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves NDC parameter values for the configured parameter names that are effective on the date of
+      service.
+    query_text: select {{:output}} from ndcparameters (nolock) where parameter_name in ([[:ParamNames]]) and '{{:DateOfService}}'
+      between effdate and enddate
+    comments: Similar to NDCParams_ValueByNameAndDOS except uses "in" instead of "="
+    suggested_changes: ''
+    source_cells:
+      Name: B59
+      Generic Query Template (QueryText): D59
+      Draft Intent Summary: E59
+      Is Intent Summary Correct?: F59
+      reviewer: A59
+      Additional Comments: G59
+      Suggested Changes: H59
+    tables:
+    - ndcparameters
+    eligible: true
+    issue: null
+- id: dq-review-060
+  color_group: null
+  variants:
+  - name: StatemessagesByProgramId
+    row: 60
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves message IDs for effective state-message records matching the drug and program or ALL, with
+      coverage code and class each matching the supplied value or null.
+    query_text: select {{:output}} from StateMessages (nolock) where (NDCKey = '{{:Ndckey}}' or GCN_SeqNo = '{{:GcnSeqno}}'
+      or HIC3 = '{{:Hic3}}') and (Program_ID in ([[:ProgramId1]]) or Program_ID = '{{:ProgramId2}}') and (CoverageCode_ID
+      = '{{:CoveragecodeId}}' or CoverageCode_ID is null) and (Class_Ind = '{{:ClassInd}}' or Class_Ind is null)
+      and (EffDate <= '{{:Effdate}}') and (TermDate >= '{{:Termdate}}')
+    comments: Message ID not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B60
+      Generic Query Template (QueryText): D60
+      Draft Intent Summary: E60
+      Is Intent Summary Correct?: F60
+      reviewer: A60
+      Additional Comments: G60
+      Suggested Changes: H60
+    tables:
+    - statemessages
+    eligible: true
+    issue: null
+- id: dq-review-062
+  color_group: null
+  variants:
+  - name: DrugCoverageByNDC_NotInPLAN
+    row: 62
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Counts effective drug coverage records for the supplied NDC under plans other than the member's benefit
+      plans on the date of service.
+    query_text: select {{:output}} from DrugCoverage d (nolock) where d.planid not in ([[:PlanIds]]) and d.NDCKey=
+      '{{:NdcKey}}' and '{{:DateOfService}}' between d.EFFDATE and d.TERMDATE
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B62
+      Generic Query Template (QueryText): D62
+      Draft Intent Summary: E62
+      Is Intent Summary Correct?: F62
+      reviewer: A62
+      Additional Comments: G62
+      Suggested Changes: H62
+    tables:
+    - drugcoverage
+    eligible: true
+    issue: null
+- id: dq-review-063
+  color_group: null
+  variants:
+  - name: Pa_gapByR_122
+    row: 63
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the PA gap type for the referral matching the member ID and prior authorization number.
+    query_text: select {{:output}} from PA_Gap pa (nolock) join plandata_rx_production..referral r (nolock) on pa.referralid
+      = r.referralid where r.memid = '{{:Memid}}' and r.authorizationid = '{{:gPriorAuthNumber}}'
+    comments: Pa Type not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B63
+      Generic Query Template (QueryText): D63
+      Draft Intent Summary: E63
+      Is Intent Summary Correct?: F63
+      reviewer: A63
+      Additional Comments: G63
+      Suggested Changes: H63
+    tables:
+    - pa_gap
+    - referral
+    eligible: true
+    issue: null
+- id: dq-review-065
+  color_group: null
+  variants:
+  - name: PA_MasterByPlanIdAndNdcAndDateOfService
+    row: 65
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Counts PA master records for the member plan and NDC that are effective on the date of service.
+    query_text: select {{:output}} from PA_Master (nolock) where planid = '{{:MemberPlanIdInt}}' and NDCKey = '{{:NdcKey}}'
+      and '{{:fcDateOfService}}' between effdate and termdate
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B65
+      Generic Query Template (QueryText): D65
+      Draft Intent Summary: E65
+      Is Intent Summary Correct?: F65
+      reviewer: A65
+      Additional Comments: G65
+      Suggested Changes: H65
+    tables:
+    - pa_master
+    eligible: true
+    issue: null
+- id: dq-review-067
+  color_group: null
+  variants:
+  - name: PlanProvinfoByProvidId
+    row: 67
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the program identifier for the provider record effective on the date of service.
+    query_text: select {{:output}} from planprovinfo (nolock) where provid = '{{:Provid}}' and ('{{:fcDateOfService}}'
+      between effdate and termdate)
+    comments: Provider ID not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B67
+      Generic Query Template (QueryText): D67
+      Draft Intent Summary: E67
+      Is Intent Summary Correct?: F67
+      reviewer: A67
+      Additional Comments: G67
+      Suggested Changes: H67
+    tables:
+    - planprovinfo
+    eligible: true
+    issue: null
+- id: dq-review-068
+  color_group: null
+  variants:
+  - name: DrugoverridesByEffdateTermdate_45
+    row: 68
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves override identifiers for effective Pharmacists_drugs records matching the claim drug by NDC,
+      GCN sequence number, or HIC3 on the date of service.
+    query_text: select {{:output}} from DrugOverrides (nolock) where (NDCKey = '{{:Ndckey}}' or GCN_SeqNo = '{{:GcnSeqno}}'
+      or HIC3 = '{{:Hic3}}') and [Type] = 'Pharmacists_drugs' and EffDate <= '{{:Effdate}}' and TermDate >= '{{:Termdate}}'
+    comments: Override ID not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B68
+      Generic Query Template (QueryText): D68
+      Draft Intent Summary: E68
+      Is Intent Summary Correct?: F68
+      reviewer: A68
+      Additional Comments: G68
+      Suggested Changes: H68
+    tables:
+    - drugoverrides
+    eligible: true
+    issue: null
+- id: dq-review-069
+  color_group: null
+  variants:
+  - name: PrescribrexclusionByEnddate_170
+    row: 69
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the supplied prescriber NPI when a matching prescriber-exclusion record is effective on the
+      date of service.
+    query_text: select {{:output}} from prescribrExclusion (nolock) where (NPI = '{{:Npi}}') and ('{{:fcDateOfService}}'
+      between EffDate and EndDate)
+    comments: Prescriber NPI not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B69
+      Generic Query Template (QueryText): D69
+      Draft Intent Summary: E69
+      Is Intent Summary Correct?: F69
+      reviewer: A69
+      Additional Comments: G69
+      Suggested Changes: H69
+    tables:
+    - prescribrexclusion
+    eligible: true
+    issue: null
+- id: dq-review-070
+  color_group: null
+  variants:
+  - name: ClaimByClaimid_6
+    row: 70
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves the adjudication date for the claim identified by the transaction control number to reverse.
+    query_text: select {{:output}} from claim (nolock) where claimid = '{{:Claimid}}'
+    comments: Adjudication date not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B70
+      Generic Query Template (QueryText): D70
+      Draft Intent Summary: E70
+      Is Intent Summary Correct?: F70
+      reviewer: A70
+      Additional Comments: G70
+      Suggested Changes: H70
+    tables:
+    - claim
+    eligible: true
+    issue: null
+- id: dq-review-071
+  color_group: null
+  variants:
+  - name: ProviderBy_155
+    row: 71
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the provider type for the supplied provider identifier.
+    query_text: select {{:output}} from provider (nolock) where (provid = '{{:Provid}}')
+    comments: Provider type not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B71
+      Generic Query Template (QueryText): D71
+      Draft Intent Summary: E71
+      Is Intent Summary Correct?: F71
+      reviewer: A71
+      Additional Comments: G71
+      Suggested Changes: H71
+    tables:
+    - provider
+    eligible: true
+    issue: null
+- id: dq-review-072
+  color_group: null
+  variants:
+  - name: Ndc_mstrByNdckey_95
+    row: 72
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves the maintenance-drug indicator for the claim NDC.
+    query_text: select {{:output}} from NDC_Mstr (nolock) where NDCKey = '{{:Ndckey}}'
+    comments: Maintenance drug indicator not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B72
+      Generic Query Template (QueryText): D72
+      Draft Intent Summary: E72
+      Is Intent Summary Correct?: F72
+      reviewer: A72
+      Additional Comments: G72
+      Suggested Changes: H72
+    tables:
+    - ndc_mstr
+    eligible: true
+    issue: null
+- id: dq-review-073
+  color_group: null
+  variants:
+  - name: ProviderAttribute_ByAttributeAndValueAndDOS
+    row: 73
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the provider identifier from a provider-attribute record matching the configured attribute
+      ID and value that is effective on the date of service.
+    query_text: select {{:output}} from providerattribute (nolock) where attributeid = '{{:AttributeId}}' and thevalue
+      = '{{:thevalue}}' and '{{:DateOfService}}' between effdate and termdate
+    comments: Provider ID not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B73
+      Generic Query Template (QueryText): D73
+      Draft Intent Summary: E73
+      Is Intent Summary Correct?: F73
+      reviewer: A73
+      Additional Comments: G73
+      Suggested Changes: H73
+    tables:
+    - providerattribute
+    eligible: true
+    issue: null
+- id: dq-review-074
+  color_group: null
+  variants:
+  - name: Ndc_rebate_mstrByEnddate_56
+    row: 74
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves a rebate value from an NDC rebate record matching the supplied NDC and effective on the date
+      of service.
+    query_text: select {{:output}} from NDC_Rebate_Mstr (nolock) where (NDCKey = '{{:Ndckey}}') and '{{:fcDateOfService}}'
+      between EffDate and EndDate
+    comments: Rebate value not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B74
+      Generic Query Template (QueryText): D74
+      Draft Intent Summary: E74
+      Is Intent Summary Correct?: F74
+      reviewer: A74
+      Additional Comments: G74
+      Suggested Changes: H74
+    tables:
+    - ndc_rebate_mstr
+    eligible: true
+    issue: null
+- id: dq-review-075
+  color_group: null
+  variants:
+  - name: ProviderAttribute_ByAttributeProviderAndDOS
+    row: 75
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the requested provider attribute value for the provider and configured attribute identifier
+      when effective on the date of service.
+    query_text: select {{:output}} from providerattribute (nolock) where provid = '{{:ProviderId}}' and attributeid
+      in ([[:AttributeIds]]) and '{{:DateOfService}}' between effdate and termdate
+    comments: ''
+    suggested_changes: ''
+    source_cells:
+      Name: B75
+      Generic Query Template (QueryText): D75
+      Draft Intent Summary: E75
+      Is Intent Summary Correct?: F75
+      reviewer: A75
+      Additional Comments: G75
+      Suggested Changes: H75
+    tables:
+    - providerattribute
+    eligible: true
+    issue: null
+- id: dq-review-077
+  color_group: null
+  variants:
+  - name: ReferralByReferralid_225
+    row: 77
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the referral term date, formatted as MM/DD/YYYY, for the supplied referral identifier.
+    query_text: select {{:output}} from referral (nolock) where referralid = '{{:Referralid}}'
+    comments: Date not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B77
+      Generic Query Template (QueryText): D77
+      Draft Intent Summary: E77
+      Is Intent Summary Correct?: F77
+      reviewer: A77
+      Additional Comments: G77
+      Suggested Changes: H77
+    tables:
+    - referral
+    eligible: true
+    issue: null
+- id: dq-review-079
+  color_group: null
+  variants:
+  - name: ReferralByRRRA_411
+    row: 79
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Counts approved, non-cancelled authorization services for the member that match the drug by NDC prefix,
+      GCN sequence, or approved code and cover the date of service.
+    query_text: select {{:output}} from referral r (nolock) join authservice a (nolock) on r.referralid = a.referralid
+      where (substring(a.codeid, 1,9) = substring('{{:gNdc}}', 1,9) or substring(a.ndcprodname, 2,6) = '{{:fpNdcGcnSeqNo}}'
+      or a.approvedcodeid = '{{:Approvedcodeid}}') and ('{{:fcDateOfService}}' between a.dosdate and r.termdate)
+      and r.memid = '{{:Memid}}' and r.status = '{{:Status}}' and a.status <> 'CANCEL'
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B79
+      Generic Query Template (QueryText): D79
+      Draft Intent Summary: E79
+      Is Intent Summary Correct?: F79
+      reviewer: A79
+      Additional Comments: G79
+      Suggested Changes: H79
+    tables:
+    - authservice
+    - referral
+    eligible: true
+    issue: null
+- id: dq-review-080
+  color_group: null
+  variants:
+  - name: DrugoverridesByTypeTermdateIsnullParameter_nameTypeTermdateIsnull_148
+    row: 80
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Returns a threshold decimal value from effective parameters named by effective drug overrides matching
+      NDC, GCN sequence number, or HIC3, or from the default threshold parameter when none match.
+    query_text: select case (select count(*) from DrugOverrides (nolock) where Type like '%Claim_Threshold_Amount_%'
+      and (NDCKey = '{{:Ndckey}}' or GCN_SeqNo = '{{:GcnSeqno}}' or HIC3 = '{{:Hic3}}') and '{{:fcDateOfService}}'
+      between EffDate and TermDate) when 0 then (select Top 1 DEC_PARAM_VAL from NDCParameters (nolock) where PARAMETER_NAME
+      = 'Claim_Threshold_Amount_1' and '{{:fcDateOfService}}' between IsNull(EFFDATE,'{{:cMinSmallDate}}') and IsNull(ENDDATE,'{{:cMaxDate}}'))
+      else (select Top 1 DEC_PARAM_VAL from NDCParameters (nolock) where PARAMETER_NAME in (select Type from DrugOverrides
+      (nolock) where Type like '%Claim_Threshold_Amount_%' and (NDCKey = '{{:Ndckey}}' or GCN_SeqNo = '{{:GcnSeqno}}'
+      or HIC3 = '{{:Hic3}}') and '{{:fcDateOfService}}' between EffDate and TermDate) and '{{:fcDateOfService}}'
+      between IsNull(EFFDATE,'{{:cMinSmallDate}}') and IsNull(ENDDATE,'{{:cMaxDate}}')) end as 'Threshold'
+    comments: Threshold decimal value not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B80
+      Generic Query Template (QueryText): D80
+      Draft Intent Summary: E80
+      Is Intent Summary Correct?: F80
+      reviewer: A80
+      Additional Comments: G80
+      Suggested Changes: H80
+    tables:
+    - drugoverrides
+    - ndcparameters
+    eligible: true
+    issue: null
+- id: dq-review-081
+  color_group: null
+  variants:
+  - name: StatemessagesByMessageDisposition_486
+    row: 81
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves IDs of effective DENY state messages matching the drug and program or ALL, excluding the supplied
+      message, with coverage and class each matching the supplied value or null.
+    query_text: select {{:output}} from StateMessages (nolock) where (NDCKey = '{{:gNdc}}' or GCN_SeqNo = '{{:fpNdcGcnSeqNo}}'
+      or HIC3 = '{{:fpNdcTherapeuticClass}}') and message <> '{{:fpStateMessage}}' and disposition = 'DENY' and
+      (Program_ID = '{{:fpMemberProgramInt}}' or Program_ID = 'ALL') and (CoverageCode_ID = '{{:fpMemberCoverageCode}}'
+      or CoverageCode_ID is null) and (Class_Ind = '{{:fpNdcDrugClass}}' or Class_Ind is null) and (EffDate <= '{{:fcDateOfService}}')
+      and (TermDate >= '{{:fcDateOfService}}')
+    comments: ID not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B81
+      Generic Query Template (QueryText): D81
+      Draft Intent Summary: E81
+      Is Intent Summary Correct?: F81
+      reviewer: A81
+      Additional Comments: G81
+      Suggested Changes: H81
+    tables:
+    - statemessages
+    eligible: true
+    issue: null
+- id: dq-review-082
+  color_group: null
+  variants:
+  - name: NdcIsInDrugCoverage
+    row: 82
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Counts effective drug coverage records for the supplied compound ingredient NDCs on the date of service.
+    query_text: select {{:output}} from drugcoverage (nolock) where NDCKey IN ([[:Ndc]]) and '{{:DateOfService}}'
+      between effdate and termdate
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B82
+      Generic Query Template (QueryText): D82
+      Draft Intent Summary: E82
+      Is Intent Summary Correct?: F82
+      reviewer: A82
+      Additional Comments: G82
+      Suggested Changes: H82
+    tables:
+    - drugcoverage
+    eligible: true
+    issue: null
+- id: dq-review-083
+  color_group: null
+  variants:
+  - name: StatemessagesBy_343
+    row: 83
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Counts state messages effective on the date of service that match the drug's NDC, GCN sequence, or HIC3
+      identifier.
+    query_text: select {{:output}} from StateMessages (nolock) where (NDCKey = '{{:Ndckey}}' or GCN_SeqNo = '{{:GcnSeqno}}'
+      or HIC3 = '{{:Hic3}}') and (EffDate <= '{{:Effdate}}') and (TermDate >= '{{:Termdate}}')
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B83
+      Generic Query Template (QueryText): D83
+      Draft Intent Summary: E83
+      Is Intent Summary Correct?: F83
+      reviewer: A83
+      Additional Comments: G83
+      Suggested Changes: H83
+    tables:
+    - statemessages
+    eligible: true
+    issue: null
+- id: dq-review-084
+  color_group: null
+  variants:
+  - name: EnrollKeys_ByCarrierMemId
+    row: 84
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves member identifiers from enrollment keys for the cardholder's carrier member ID, ordered by
+      segment type and enrollment dates.
+    query_text: select {{:output}} from enrollkeys (nolock) where carriermemid='{{:CarrierMemId}}' order by segtype
+      desc, termdate desc, effdate asc
+    comments: Member ID not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B84
+      Generic Query Template (QueryText): D84
+      Draft Intent Summary: E84
+      Is Intent Summary Correct?: F84
+      reviewer: A84
+      Additional Comments: G84
+      Suggested Changes: H84
+    tables:
+    - enrollkeys
+    eligible: true
+    issue: null
+- id: dq-review-085
+  color_group: solid:theme:7:0.7999816888943144
+  variants:
+  - name: StatemessagesByMessageid_347
+    row: 85
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the requested message text or brand/generic indicator from the state message identified by
+      the supplied message ID.
+    query_text: select {{:output}} from StateMessages (nolock) where MessageID = '{{:lvStateMessageID}}'
+    comments: Structually similar to StatemessagesByMessageid_421
+    suggested_changes: ''
+    source_cells:
+      Name: B85
+      Generic Query Template (QueryText): D85
+      Draft Intent Summary: E85
+      Is Intent Summary Correct?: F85
+      reviewer: A85
+      Additional Comments: G85
+      Suggested Changes: H85
+    tables:
+    - statemessages
+    eligible: true
+    issue: null
+  - name: StatemessagesByMessageid_421
+    row: 87
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Retrieves the requested message text or brand/generic indicator from the state message identified by
+      the supplied message ID.
+    query_text: select {{:output}} from StateMessages (nolock) where MessageID = '{{:Messageid}}'
+    comments: Structually similar to StatemessagesByMessageid_347
+    suggested_changes: ''
+    source_cells:
+      Name: B87
+      Generic Query Template (QueryText): D87
+      Draft Intent Summary: E87
+      Is Intent Summary Correct?: F87
+      reviewer: A87
+      Additional Comments: G87
+      Suggested Changes: H87
+    tables:
+    - statemessages
+    eligible: true
+    issue: null
+- id: dq-review-086
+  color_group: null
+  variants:
+  - name: NdcIsNotInDrugCoverageByPlanId
+    row: 86
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Counts effective drug coverage records for compound ingredient NDCs under plans other than the member's
+      benefit plans on the date of service.
+    query_text: select {{:output}} from drugcoverage (nolock) where PlanId Not in ([[:PlanId]]) and NDCKey IN ([[:Ndc]])
+      and '{{:DateOfService}}' between effdate and termdate
+    comments: Count not specified by QueryText
+    suggested_changes: ''
+    source_cells:
+      Name: B86
+      Generic Query Template (QueryText): D86
+      Draft Intent Summary: E86
+      Is Intent Summary Correct?: F86
+      reviewer: A86
+      Additional Comments: G86
+      Suggested Changes: H86
+    tables:
+    - drugcoverage
+    eligible: true
+    issue: null
+- id: dq-review-090
+  color_group: null
+  variants:
+  - name: NdcParameters_DeaDays
+    row: 90
+    reviewer: Mike
+    review_decision: 'Yes'
+    intent: Retrieves the configured parameter value whose name is formed from DEA_Days_ and the supplied DEA identifier.
+    query_text: select {{:output}} from ndcparameters (nolock) where parameter_name = 'DEA_Days_{{:DeaInt}}'
+    comments: ''
+    suggested_changes: ''
+    source_cells:
+      Name: B90
+      Generic Query Template (QueryText): D90
+      Draft Intent Summary: E90
+      Is Intent Summary Correct?: F90
+      reviewer: A90
+      Additional Comments: G90
+      Suggested Changes: H90
+    tables:
+    - ndcparameters
+    eligible: true
+    issue: null
+- id: dq-review-091
+  color_group: null
+  variants:
+  - name: select_277
+    row: 91
+    reviewer: Vivian
+    review_decision: 'Yes'
+    intent: Returns the first 10 characters of the supplied prior-authorization term date-time value.
+    query_text: select substring('{{:Patermdatetime}}', 1, 10)
+    comments: ''
+    suggested_changes: ''
+    source_cells:
+      Name: B91
+      Generic Query Template (QueryText): D91
+      Draft Intent Summary: E91
+      Is Intent Summary Correct?: F91
+      reviewer: A91
+      Additional Comments: G91
+      Suggested Changes: H91
+    tables: []
+    eligible: true
+    issue: null

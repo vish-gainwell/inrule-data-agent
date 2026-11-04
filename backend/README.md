@@ -144,6 +144,60 @@ is enabled by default. All requirement-derived required phrases must match the
 authoritative atomic business meaning. Zero or multiple matching concepts, disabled or
 invalid configuration, and an invalid catalog safely omit the supplemental hint.
 
+## Reviewed golden-set query examples
+
+SQL generation includes up to three relevant reviewed intent/SQL-template pairs
+from `src/inrules_data_agent/golden_queries/examples.v1.yaml`. Selection uses the
+current atomic query task and requires the example's source tables in the supplied
+physical DDL. The example section is capped at 10,000 characters and appears before
+the authoritative current task. No Excel file, embeddings, or database connection
+is required to load or select these examples at runtime.
+
+Selection keeps only near-best intent matches (at least 90% of the top score),
+does not substitute weaker examples when the best match lacks DDL, and separates
+explicit adjudication-date requests from date-of-service variants. The configured
+maximum is a limit, not a target number of examples.
+When the current task explicitly names a physical database/schema/table, examples
+from other source tables are excluded even if generic words overlap.
+
+The initial catalog preserves all 60 `Yes` rows from `Review Results` in
+`Existing Data Query Intent Review v20261009.xlsx`. Matching explicit column-D
+colors form three groups of 6, 3 and 2 source queries; the remaining 49 rows stay
+individual, producing 52 entries. Every source name, row, original intent, SQL,
+reviewer comment and suggested change remains traceable. Variants retain their
+own date and parameter bindings; selection includes at most one variant per group.
+The source workbook SHA-256 and cell references are recorded in the YAML.
+
+Review approval is separate from SQL eligibility. `EnrollkeysByEnrollid_116`
+(`Review Results!D27`) contains malformed SQL and is retained with an issue but
+excluded from prompts until its source is corrected. No SQL is silently repaired.
+The other 51 entries are eligible examples when relevant DDL is available.
+
+Examples guide generation only. Current requirements, DDL and consumer contracts
+take precedence, and existing SQL validation and deterministic SQLite reuse checks
+still run. Dynamic `{{:output}}` projections do not establish a count or output
+column. Reviewer comments qualify the intent; an available suggested change is
+used as the example wording while preserving the original wording in the catalog.
+Examples do not approve execution or turn an approximate intent match into an
+exact reuse decision.
+
+Set `GOLDEN_QUERY_EXAMPLES_ENABLED=false` to use generation without golden-set
+examples. Missing/invalid catalogs and invalid flag values omit the examples and
+emit a sanitized decision log. Selection logs contain selected entry IDs and
+context size, not request text, SQL, or credentials.
+
+Regenerate explicitly after reviewing a new source workbook (from `backend/`):
+
+```bash
+uv run python scripts/export_golden_queries.py "../project_artifacts/Existing Data Query Intent Review v20261009.xlsx"
+uv run python -m pytest tests/test_golden_queries.py -q
+```
+
+The exporter only reads the workbook. It filters `Yes`, groups explicit matching
+fills, verifies structural equivalence within color groups, and writes YAML.
+Unfilled rows are never merged automatically. A conflicting colored group stops
+the export. Review generated YAML changes before publishing a new version.
+
 ## Tests
 
 Install the project and development tools with `uv`:
