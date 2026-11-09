@@ -18,6 +18,7 @@ from sqlglot.errors import ParseError, TokenError
 from sqlglot.expressions.core import Expression
 
 from ..retrieval.qdrant_schema import retrieve_schema_ddls
+from ..golden_queries import build_golden_query_context
 from ..semantic_query_hints import (
     SEMANTIC_HINT_HEADER,
     log_semantic_hint_decision,
@@ -1282,6 +1283,9 @@ def _build_user_message(
         "RULE DESCRIPTION (overall objective only; do not import query logic):\n"
         f"{description or 'Not provided'}\n\n"
     )
+    golden_context = build_golden_query_context(business_meaning, ddl_context)
+    if golden_context:
+        context_prefix += golden_context + "\n\n"
     authoritative_context = (
         "DIRECTLY REFERENCED ACCEPTANCE CRITERIA (supporting context only):\n"
         f"{acceptance_text}\n\n"
@@ -2232,14 +2236,18 @@ def _find_atomic_source_guard_artifacts(
                     "correlation on the same source"
                 )
 
+    gcn_sequence_pattern = r"\bgcn[ _-]*(?:seqno|seq(?:uence)?(?:[ _-]*(?:no|number))?)\b"
     specs = (
         ("NDC", r"\bndc(?:key)?\b", r"ndckey", r"(?:claimtransaction)?ndc|incomingndc"),
-        ("GCN SeqNo", r"\bgcn[ _-]*(?:seqno|seq(?:uence)?[ _-]*no)\b", r"gcn_?seqno", r".*gcn.*"),
+        ("GCN SeqNo", gcn_sequence_pattern, r"gcn_?seqno", r".*gcn.*"),
         ("HICL_SeqNO", r"\bhicl[ _-]*seq(?:uence)?[ _-]*no\b", r"hicl_?seqno", r".*hicl.*"),
         ("HIC3", r"\bhic3\b", r"hic3", r".*(?:hic3|therapeuticclass).*")
     )
     identifiers = [item for item in specs if re.search(item[1], task, re.I)]
-    if re.search(r"\bgcn\b(?![ _-]*(?:seqno|seq(?:uence)?[ _-]*no))", task, re.I):
+    # Remove the complete sequence-number phrase before checking for a distinct
+    # bare GCN requirement. A runtime placeholder must not turn one fact into two.
+    task_without_gcn_sequence = re.sub(gcn_sequence_pattern, "", task, flags=re.I)
+    if re.search(r"\bgcn\b", task_without_gcn_sequence, re.I):
         column = r"gcn" if any(item[0] == "GCN SeqNo" for item in identifiers) else r"gcn_?seqno"
         identifiers.insert(2, ("GCN", "", column, r".*gcn.*"))
     explicit = (
@@ -3718,7 +3726,18 @@ def _find_required_business_concept_artifacts(
                     + ", ".join(forbidden)
                 )
 
-    if re.search(r"\bLIKE\b|%[^%]+%|\b(?:contains|wildcard)\b", business_meaning, re.IGNORECASE) and not re.search(
+    # English instructions to avoid an operator are not requirements to use it.
+    # Preserve real SQL NOT LIKE predicates and positive LIKE requirements in
+    # other clauses rather than disabling the check for the entire task.
+    like_requirement_text = re.sub(
+        r"\b(?:do\s+not|don't|never)\s+(?:use|apply)\s+(?:the\s+)?LIKE\b",
+        "", business_meaning, flags=re.I,
+    )
+    like_requirement_text = re.sub(
+        r"(\bexact\s+equality\b[^.\n]{0,60}?)(?:not|instead\s+of|rather\s+than)\s+LIKE\b",
+        r"\1", like_requirement_text, flags=re.I,
+    )
+    if re.search(r"\bLIKE\b|%[^%]+%|\b(?:contains|wildcard)\b", like_requirement_text, re.IGNORECASE) and not re.search(
         r"\bLIKE\b", normalized_sql, re.IGNORECASE
     ):
         artifacts.append("required comparison operator 'LIKE' is absent from the SQL")
