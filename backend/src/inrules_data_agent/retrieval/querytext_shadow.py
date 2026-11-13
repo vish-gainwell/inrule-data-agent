@@ -45,9 +45,11 @@ class DataQueryAssignmentExample:
     priority: int | None
     active: bool | None
     is_data_set: bool | None
+    claim_types: tuple[dict[str, object], ...] = ()
+    dispositions: tuple[dict[str, object], ...] = ()
 
     def as_dict(self) -> dict[str, object | None]:
-        return {
+        result: dict[str, object | None] = {
             "data_package_id": self.data_package_id,
             "data_package_name": self.data_package_name,
             "query_params": self.query_params,
@@ -56,6 +58,11 @@ class DataQueryAssignmentExample:
             "active": self.active,
             "is_data_set": self.is_data_set,
         }
+        if self.claim_types:
+            result["claim_types"] = list(self.claim_types)
+        if self.dispositions:
+            result["dispositions"] = list(self.dispositions)
+        return result
 
 
 @dataclass(frozen=True)
@@ -456,7 +463,131 @@ def _load_reuse_corpus_from_claimengine() -> dict[int, tuple[StoredQueryText, tu
     return {query_id: (query, tuple(examples)) for query_id, (query, examples) in corpus.items()}
 
 
+def _postgresql_groundtruth_dsn() -> str | None:
+    schema = os.environ.get("IL_GROUNDTRUTH_DATABASE_SCHEMA")
+    if not schema:
+        return None
+    url = os.environ.get("CLAIM_EDITS_DATABASE_URL", "")
+    if not url:
+        return None
+    prefix = "postgresql+psycopg2://"
+    if url.startswith(prefix):
+        return "postgresql://" + url[len(prefix):]
+    return url if url.startswith("postgresql://") else None
+
+
+def _load_reuse_corpus_from_postgresql() -> dict[int, tuple[StoredQueryText, tuple[DataQueryAssignmentExample, ...]]]:
+    import psycopg2
+
+    dsn = _postgresql_groundtruth_dsn()
+    if not dsn:
+        raise EnvironmentError("PostgreSQL groundtruth connection not configured")
+    schema = os.environ["IL_GROUNDTRUTH_DATABASE_SCHEMA"]
+    with psycopg2.connect(dsn) as conn:
+        conn.set_session(readonly=True)
+        with conn.cursor() as cur:
+            cur.execute(f'SET search_path TO "{schema}"')
+            cur.execute(
+                """
+                SELECT
+                    dq."DataQueryId", dq."Name", dq."DbId", dq."QueryText",
+                    dp."DataPackageId", dp."DataPackageName",
+                    dpdq."QueryParams", dpdq."ReturnVals", dpdq."Priority",
+                    dpdq."Active", dpdq."IsDataSet"
+                FROM "DataQuery" dq
+                LEFT JOIN "DataPackageDataQuery" dpdq
+                    ON dpdq."DataQuery_Id" = dq."DataQueryId"
+                LEFT JOIN "DataPackage" dp
+                    ON dp."DataPackageId" = dpdq."DataPackage_Id"
+                WHERE LOWER(dq."QueryType") = 'select' AND dq."QueryText" IS NOT NULL
+                ORDER BY dq."DataQueryId", dpdq."Priority"
+                """
+            )
+            rows = cur.fetchall()
+
+            ct_by_dpct: dict[int, list[dict[str, object]]] = {}
+            cur.execute(
+                """
+                SELECT
+                    dpct."Id", dpct."DataPackage_Id", dpct."ClaimType_Id",
+                    dpct."ReturnMessage", dpct."Active"
+                FROM "DataPackageClaimType" dpct
+                ORDER BY dpct."DataPackage_Id", dpct."ClaimType_Id"
+                """
+            )
+            for r in cur.fetchall():
+                ct_by_dpct[int(r[0])] = ct_by_dpct.get(int(r[0]), [])
+                ct_by_dpct.setdefault(int(r[0]), [])
+                # Group by DataPackage_Id for later lookup
+                ct_by_dpct[int(r[0])] = {
+                    "claim_type_id": int(r[0]),
+                    "data_package_id": int(r[1]),
+                    "claim_type": int(r[2]),
+                    "return_message": str(r[3]) if r[3] else None,
+                    "active": bool(r[4]) if r[4] is not None else None,
+                }
+            claim_types_by_dp: dict[int, list[dict[str, object]]] = {}
+            for ct in ct_by_dpct.values():
+                dp_id = ct["data_package_id"]
+                claim_types_by_dp.setdefault(dp_id, []).append(ct)
+
+            disp_by_dpct: dict[int, list[dict[str, object]]] = {}
+            cur.execute(
+                """
+                SELECT
+                    dpd."DataPackageClaimType_Id",
+                    dpd."TransactionType", dpd."Disposition",
+                    dpd."EffDate", dpd."TermDate"
+                FROM "DataPackageDisposition" dpd
+                ORDER BY dpd."DataPackageClaimType_Id", dpd."TransactionType"
+                """
+            )
+            for r in cur.fetchall():
+                dpct_id = int(r[0])
+                disp_by_dpct.setdefault(dpct_id, []).append({
+                    "transaction_type": str(r[1]) if r[1] else None,
+                    "disposition": str(r[2]) if r[2] else None,
+                    "eff_date": str(r[3]) if r[3] else None,
+                    "term_date": str(r[4]) if r[4] else None,
+                })
+
+    if not rows:
+        raise EnvironmentError("PostgreSQL groundtruth contains no DataQuery templates")
+    corpus: dict[int, tuple[StoredQueryText, list[DataQueryAssignmentExample]]] = {}
+    for row in rows:
+        query = StoredQueryText(int(row[0]), str(row[1]), int(row[2]), str(row[3]))
+        if query.data_query_id not in corpus:
+            corpus[query.data_query_id] = (query, [])
+        if row[4] is not None:
+            dp_id = int(row[4])
+            pkg_claim_types = tuple(
+                ct for ct in claim_types_by_dp.get(dp_id, [])
+            )
+            pkg_dispositions: list[dict[str, object]] = []
+            for ct in pkg_claim_types:
+                ct_id = ct["claim_type_id"]
+                pkg_dispositions.extend(disp_by_dpct.get(ct_id, []))
+            corpus[query.data_query_id][1].append(
+                DataQueryAssignmentExample(
+                    dp_id, str(row[5]) if row[5] is not None else None,
+                    str(row[6]) if row[6] is not None else None,
+                    str(row[7]) if row[7] is not None else None,
+                    int(row[8]) if row[8] is not None else None,
+                    bool(row[9]) if row[9] is not None else None,
+                    bool(row[10]) if row[10] is not None else None,
+                    claim_types=tuple(pkg_claim_types),
+                    dispositions=tuple(pkg_dispositions),
+                )
+            )
+    return {query_id: (query, tuple(examples)) for query_id, (query, examples) in corpus.items()}
+
+
 def _with_catalog_fallback(loader, catalog_loader):
+    if _postgresql_groundtruth_dsn():
+        try:
+            return _load_reuse_corpus_from_postgresql()
+        except Exception as exc:
+            print(f"[dataquery_reuse] PostgreSQL groundtruth unavailable; falling back: {exc}")
     path = _catalog_path()
     try:
         return catalog_loader(path)

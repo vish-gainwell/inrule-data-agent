@@ -5533,3 +5533,115 @@ def test_cleans_sql_code_fence():
     result = response.json()["queries"][0]
     assert result["matched"] is True
     assert result["queries"] == ["select count(*) from HRX.dbo.DrugOverrides (nolock)"]
+
+
+# --- Input data query fit assessment API tests ---
+
+
+def test_api_input_data_query_fit_skips_generation():
+    fit_result = {
+        "reuse_decision": "REUSE_INPUT_DATAQUERY",
+        "data_query": {
+            "data_query_id": 42,
+            "data_query_name": "DQ_MedicareAge",
+            "query_text": MOCK_SQL,
+            "query_params": {},
+            "return_vals": [],
+        },
+        "fit_assessment": {
+            "verdict": "FIT",
+            "reason": "Query matches.",
+            "missing_params": [],
+            "original_query": MOCK_SQL,
+        },
+        "queries": [MOCK_SQL],
+        "matched": True,
+    }
+    with (
+        patch(
+            "inrules_data_agent.app.evaluate_input_data_query",
+            return_value=fit_result,
+        ),
+        patch(
+            "inrules_data_agent.app.generate_query_result_for_step",
+        ) as generate_step,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "edit_id": "fit-test",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Return the configured Medicare age threshold.",
+                    "requires_data_query": True,
+                    "input_data_query": {"query_text": MOCK_SQL, "data_query_id": 42},
+                }],
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["step_queries"][0]["reuse_decision"] == "REUSE_INPUT_DATAQUERY"
+    assert body["step_queries"][0]["fit_assessment"]["verdict"] == "FIT"
+    assert body["step_queries"][0]["data_query"]["data_query_id"] == 42
+    assert body["step_queries"][0]["matched"] is True
+    assert body["unmatched_steps"] == []
+    generate_step.assert_not_called()
+
+
+def test_api_input_data_query_not_fit_falls_through_to_generation():
+    with (
+        patch(
+            "inrules_data_agent.app.evaluate_input_data_query",
+            return_value=None,
+        ),
+        patch(
+            "inrules_data_agent.app.generate_query_result_for_step",
+            return_value={
+                "queries": [MOCK_SQL],
+                "failure_category": None,
+                "failure_reason": None,
+            },
+        ) as generate_step,
+    ):
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "edit_id": "not-fit-test",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Count enrollment segments.",
+                    "requires_data_query": True,
+                    "input_data_query": {"query_text": "SELECT 1"},
+                }],
+            },
+        )
+
+    assert response.status_code == 200
+    generate_step.assert_called_once()
+    assert response.json()["step_queries"][0]["queries"] == [MOCK_SQL]
+
+
+def test_api_step_without_input_data_query_uses_current_path():
+    with patch(
+        "inrules_data_agent.app.generate_query_result_for_step",
+        return_value={
+            "queries": [MOCK_SQL],
+            "failure_category": None,
+            "failure_reason": None,
+        },
+    ) as generate_step:
+        response = TestClient(create_app()).post(
+            "/generate_queries",
+            json={
+                "edit_id": "no-input-test",
+                "steps": [{
+                    "step_number": 1,
+                    "business_meaning": "Query DrugOverrides where NDC matches incoming ndc",
+                    "requires_data_query": True,
+                }],
+            },
+        )
+
+    assert response.status_code == 200
+    generate_step.assert_called_once()
