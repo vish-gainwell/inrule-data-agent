@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from .fit_assessment import evaluate_input_data_query
 from .generator.generate import generate_query_result_for_step, provider_runtime_metadata
 from .retrieval.querytext_shadow import (
     find_reuse_match,
@@ -180,6 +181,29 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
 
         extras = step.model_extra or {}
         query_task = _query_task_for_step(step)
+
+        input_result = evaluate_input_data_query(
+            step, query_task, jurisdiction=request.jurisdiction,
+        )
+        if input_result is not None:
+            step_queries.append({
+                "step_number": step.step_number,
+                "business_meaning": step.business_meaning,
+                "query_result_shape": step.query_result_shape,
+                "query_generated": True,
+                "reuse_decision": input_result["reuse_decision"],
+                "data_query": input_result["data_query"],
+                "fit_assessment": input_result["fit_assessment"],
+                "failure_category": None,
+                "failure_reason": None,
+                "validation_status": None,
+                "review_warnings": [],
+                "generation_attempts": [],
+                "queries": input_result["queries"],
+                "matched": True,
+            })
+            continue
+
         if str(extras.get("data_query_decision", "")).lower() == "inconclusive":
             result = {
                 "queries": [],
@@ -243,6 +267,8 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
                 "query_params": selected_contract["proposed_query_params"],
                 "return_vals": selected_contract["proposed_return_vals"],
             }
+            if selected_contract.get("assignment_examples"):
+                data_query["assignment_examples"] = selected_contract["assignment_examples"]
         step_queries.append(
             {
                 "step_number": step.step_number,
