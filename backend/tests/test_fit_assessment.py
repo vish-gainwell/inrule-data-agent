@@ -80,12 +80,11 @@ def test_assess_fit_returns_not_fit():
     assert result["verdict"] == "NOT_FIT"
 
 
-def test_assess_fit_falls_back_to_fit_on_llm_failure():
+def test_assess_fit_returns_none_on_llm_failure():
     with patch("inrules_data_agent.fit_assessment._build_llm_client", side_effect=Exception("LLM unavailable")):
         result = assess_fit("Some business meaning.", MOCK_SQL)
 
-    assert result["verdict"] == "FIT"
-    assert "unavailable" in result["reason"].lower()
+    assert result is None
 
 
 def test_assess_fit_treats_unexpected_verdict_as_not_fit():
@@ -108,7 +107,7 @@ def test_assess_fit_treats_unexpected_verdict_as_not_fit():
 def test_augment_query_returns_augmented_sql():
     mock_client = MagicMock()
     mock_client.chat.completions.create.return_value = _mock_llm_response(
-        {"query_text": AUGMENTED_SQL}
+        {"query_text": AUGMENTED_SQL, "query_params": {"DateOfService": "{{DateOfService}}"}, "return_vals": ["PARAMETER_VALUE"]}
     )
 
     with patch("inrules_data_agent.fit_assessment._build_llm_client", return_value=(mock_client, "test-model")):
@@ -119,7 +118,10 @@ def test_augment_query_returns_augmented_sql():
             MOCK_DDL,
         )
 
-    assert result == AUGMENTED_SQL
+    assert result is not None
+    assert result["query_text"] == AUGMENTED_SQL
+    assert result["query_params"] == {"DateOfService": "{{DateOfService}}"}
+    assert result["return_vals"] == ["PARAMETER_VALUE"]
 
 
 def test_augment_query_returns_none_on_null_response():
@@ -169,11 +171,14 @@ def test_evaluate_fit_returns_reuse_decision():
         input_data_query={"query_text": MOCK_SQL, "data_query_id": 42, "data_query_name": "DQ_MedicareAge"},
     )
 
-    with patch("inrules_data_agent.fit_assessment.assess_fit", return_value={
-        "verdict": "FIT",
-        "reason": "Query matches.",
-        "missing_params": [],
-    }):
+    with (
+        patch("inrules_data_agent.fit_assessment.assess_fit", return_value={
+            "verdict": "FIT",
+            "reason": "Query matches.",
+            "missing_params": [],
+        }),
+        patch("inrules_data_agent.fit_assessment._validate_fit_sql", return_value=("VALIDATED", [])),
+    ):
         result = evaluate_input_data_query(step, "Return the configured Medicare age threshold.")
 
     assert result is not None
@@ -202,7 +207,12 @@ def test_evaluate_partial_fit_augmented():
             "missing_params": ["DateOfService effective window"],
         }),
         patch("inrules_data_agent.fit_assessment.select_ddls", return_value=[MOCK_DDL]),
-        patch("inrules_data_agent.fit_assessment.augment_query", return_value=AUGMENTED_SQL),
+        patch("inrules_data_agent.fit_assessment.augment_query", return_value={
+            "query_text": AUGMENTED_SQL,
+            "query_params": {"DateOfService": "{{DateOfService}}"},
+            "return_vals": ["PARAMETER_VALUE"],
+        }),
+        patch("inrules_data_agent.fit_assessment._validate_fit_sql", return_value=("VALIDATED", [])),
     ):
         result = evaluate_input_data_query(
             step, "Return the active configured parameter for date of service."
@@ -211,6 +221,7 @@ def test_evaluate_partial_fit_augmented():
     assert result is not None
     assert result["reuse_decision"] == "REUSE_INPUT_DATAQUERY_AUGMENTED"
     assert result["data_query"]["query_text"] == AUGMENTED_SQL
+    assert result["data_query"]["query_params"] == {"DateOfService": "{{DateOfService}}"}
     assert result["fit_assessment"]["verdict"] == "PARTIAL_FIT"
     assert result["fit_assessment"]["original_query"] == MOCK_SQL
     assert result["queries"] == [AUGMENTED_SQL]
@@ -285,11 +296,14 @@ def test_evaluate_accepts_string_input_data_query():
         input_data_query=MOCK_SQL,
     )
 
-    with patch("inrules_data_agent.fit_assessment.assess_fit", return_value={
-        "verdict": "FIT",
-        "reason": "Matches.",
-        "missing_params": [],
-    }):
+    with (
+        patch("inrules_data_agent.fit_assessment.assess_fit", return_value={
+            "verdict": "FIT",
+            "reason": "Matches.",
+            "missing_params": [],
+        }),
+        patch("inrules_data_agent.fit_assessment._validate_fit_sql", return_value=("VALIDATED", [])),
+    ):
         result = evaluate_input_data_query(step, "Return the threshold.")
 
     assert result is not None

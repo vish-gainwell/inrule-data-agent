@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 import httpx
@@ -12,6 +13,8 @@ from openai.providers import bedrock
 
 from .generator.generate import (
     _configured_environment,
+    _find_invalid_table_refs,
+    _find_invalid_column_refs,
     _find_invalid_sql_artifacts,
     _find_output_name_artifacts,
     _find_output_shape_artifacts,
@@ -44,7 +47,7 @@ Use ONLY tables and columns that exist in the provided DDL schemas.
 Return JSON with exactly these keys:
 - query_text: The augmented SQL query, or null if augmentation is not possible.
 - query_params: A dictionary of all parameter bindings in the augmented query
-  (parameter name -> description), including both original and newly added ones.
+  (parameter name -> runtime value or source mapping), including both original and newly added ones.
 - return_vals: A list of all output column names in the augmented query's SELECT clause.\
 """
 
@@ -208,6 +211,23 @@ def evaluate_input_data_query(
                 query_text, business_meaning, fit["missing_params"], ddl_context, jurisdiction,
             )
             if augment_result:
+                placeholders = set(
+                    re.findall(r"\{\{:?([^{}]+)\}\}", augment_result["query_text"])
+                )
+                bound_params = {
+                    k.lstrip(":").lower() for k in augment_result["query_params"]
+                }
+                unbound = {
+                    p for p in placeholders
+                    if p.lstrip(":").lower() not in bound_params
+                    and p.lstrip(":").lower() != "output"
+                }
+                if unbound:
+                    print(
+                        f"[fit_assessment] augmented SQL has unbound placeholders: "
+                        f"{', '.join(sorted(unbound))}"
+                    )
+                    return None
                 augmented_dq = dict(input_dq) if isinstance(input_dq, dict) else {}
                 augmented_dq["query_params"] = augment_result["query_params"]
                 augmented_dq["return_vals"] = augment_result["return_vals"]
@@ -226,6 +246,14 @@ def evaluate_input_data_query(
 def _validate_fit_sql(
     sql: str, business_meaning: str, ddl_context: str,
 ) -> tuple[str | None, list[str]]:
+    invalid_tables = _find_invalid_table_refs(sql, ddl_context)
+    if invalid_tables:
+        return "DRAFT_REQUIRES_REVIEW", [f"invalid table ref: {t}" for t in invalid_tables]
+
+    invalid_columns = _find_invalid_column_refs(sql, ddl_context)
+    if invalid_columns:
+        return "DRAFT_REQUIRES_REVIEW", [f"invalid column ref: {c}" for c in invalid_columns]
+
     invalid_artifacts = _find_invalid_sql_artifacts(sql, ddl_context, business_meaning)
     invalid_artifacts.extend(
         _find_required_business_concept_artifacts(sql, business_meaning)
