@@ -297,6 +297,17 @@ def test_api_returns_reuse_decision_with_query_params(monkeypatch):
         "query_text": "select {{:output}} from ndcparameters (nolock) where parameter_name = '{{:ParamName}}'",
         "query_params": {"ParamName": "Medicare_Age_Years"},
         "return_vals": ["PARAMETER_VALUE"],
+        "assignment_examples": [
+            {
+                "data_package_id": 200,
+                "data_package_name": "Edit 7200",
+                "query_params": "ParamName=7200_LookBack_Days",
+                "return_vals": "PARAMETER_VALUE",
+                "priority": 1,
+                "active": True,
+                "is_data_set": True,
+            },
+        ],
     }
     assert "reuse_matches" not in result
     assert "proposed_new_data_queries" not in result
