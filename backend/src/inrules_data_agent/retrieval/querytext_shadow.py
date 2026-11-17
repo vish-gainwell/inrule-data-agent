@@ -578,10 +578,16 @@ def _load_reuse_corpus_from_postgresql() -> dict[int, tuple[StoredQueryText, tup
     return {query_id: (query, tuple(examples)) for query_id, (query, examples) in corpus.items()}
 
 
-def _with_catalog_fallback(loader, catalog_loader):
+def _load_querytext_rows_from_postgresql() -> tuple[StoredQueryText, ...]:
+    corpus = _load_reuse_corpus_from_postgresql()
+    return tuple(query for query, _ in corpus.values())
+
+
+def _with_catalog_fallback(loader, catalog_loader, postgresql_loader=None):
     if _postgresql_groundtruth_dsn():
+        pg_loader = postgresql_loader or _load_reuse_corpus_from_postgresql
         try:
-            return _load_reuse_corpus_from_postgresql()
+            return pg_loader()
         except Exception as exc:
             print(f"[dataquery_reuse] PostgreSQL groundtruth unavailable; falling back: {exc}")
     path = _catalog_path()
@@ -598,6 +604,7 @@ def load_querytext_rows() -> tuple[StoredQueryText, ...]:
     return _with_catalog_fallback(
         _load_querytext_rows_from_claimengine,
         _load_catalog_querytext_rows,
+        postgresql_loader=_load_querytext_rows_from_postgresql,
     )
 
 

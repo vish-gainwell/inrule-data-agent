@@ -10,7 +10,15 @@ import httpx
 from openai import OpenAI
 from openai.providers import bedrock
 
-from .generator.generate import _configured_environment, select_ddls
+from .generator.generate import (
+    _configured_environment,
+    _find_invalid_sql_artifacts,
+    _find_output_name_artifacts,
+    _find_output_shape_artifacts,
+    _find_required_business_concept_artifacts,
+    _find_deterministic_selection_artifacts,
+    select_ddls,
+)
 
 _FIT_SYSTEM_PROMPT = """\
 You are a SQL fitness assessor for a pharmacy claims processing system.
@@ -33,22 +41,28 @@ return the augmented query that adds the missing parameters while preserving the
 original query structure and intent.
 Use ONLY tables and columns that exist in the provided DDL schemas.
 
-Return JSON with exactly one key:
-- query_text: The augmented SQL query, or null if augmentation is not possible.\
+Return JSON with exactly these keys:
+- query_text: The augmented SQL query, or null if augmentation is not possible.
+- query_params: A dictionary of all parameter bindings in the augmented query
+  (parameter name -> description), including both original and newly added ones.
+- return_vals: A list of all output column names in the augmented query's SELECT clause.\
 """
-
-_FALLBACK_FIT = {
-    "verdict": "FIT",
-    "reason": "Fit assessment unavailable; accepting production-approved query.",
-    "missing_params": [],
-}
 
 
 def _build_llm_client(jurisdiction: str = "IL") -> tuple[OpenAI, str]:
     environment = _configured_environment()
+    state = str(jurisdiction or "").strip().upper()
     timeout_seconds = float(os.environ.get("OPENAI_TIMEOUT_SECONDS", "180"))
 
     if environment == "LOCAL":
+        if os.environ.get("KUBERNETES_SERVICE_HOST"):
+            raise EnvironmentError(
+                "ENVIRONMENT=LOCAL is not allowed inside Kubernetes"
+            )
+        if state != "IL":
+            raise EnvironmentError(
+                "ENVIRONMENT=LOCAL supports IL query generation only"
+            )
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise EnvironmentError("OPENAI_API_KEY is not set")
@@ -67,7 +81,6 @@ def _build_llm_client(jurisdiction: str = "IL") -> tuple[OpenAI, str]:
             client_kwargs["base_url"] = base_url
         return OpenAI(**client_kwargs), model
 
-    state = str(jurisdiction or "").strip().upper()
     project = os.environ.get(f"BEDROCK_PROJECT_{state}")
     if state not in {"IL", "MO"} or not project:
         raise EnvironmentError(f"BEDROCK_PROJECT_{state} is not configured")
@@ -105,7 +118,7 @@ def assess_fit(
     business_meaning: str,
     query_text: str,
     jurisdiction: str = "IL",
-) -> dict:
+) -> dict | None:
     try:
         client, model = _build_llm_client(jurisdiction)
         user_message = (
@@ -122,8 +135,8 @@ def assess_fit(
             "missing_params": list(result.get("missing_params", [])),
         }
     except Exception as exc:
-        print(f"[fit_assessment] LLM call failed; accepting input query: {exc}")
-        return dict(_FALLBACK_FIT)
+        print(f"[fit_assessment] LLM call failed; falling through to generation: {exc}")
+        return None
 
 
 def augment_query(
@@ -132,7 +145,7 @@ def augment_query(
     missing_params: list[str],
     ddl_context: str,
     jurisdiction: str = "IL",
-) -> str | None:
+) -> dict | None:
     try:
         client, model = _build_llm_client(jurisdiction)
         user_message = (
@@ -146,7 +159,11 @@ def augment_query(
         augmented = result.get("query_text")
         if not augmented or not str(augmented).strip().upper().startswith("SELECT"):
             return None
-        return str(augmented).strip()
+        return {
+            "query_text": str(augmented).strip(),
+            "query_params": result.get("query_params", {}),
+            "return_vals": result.get("return_vals", []),
+        }
     except Exception as exc:
         print(f"[fit_assessment] augmentation failed: {exc}")
         return None
@@ -169,6 +186,8 @@ def evaluate_input_data_query(
         return None
 
     fit = assess_fit(business_meaning, query_text, jurisdiction)
+    if fit is None:
+        return None
     original_query = query_text
 
     if fit["verdict"] == "FIT":
@@ -178,25 +197,47 @@ def evaluate_input_data_query(
             fit_assessment=fit,
             original_query=original_query,
             input_dq=input_dq,
+            business_meaning=business_meaning,
         )
 
     if fit["verdict"] == "PARTIAL_FIT":
         ddl_statements = select_ddls(business_meaning)
         ddl_context = "\n".join(ddl_statements) if ddl_statements else ""
         if ddl_context:
-            augmented = augment_query(
+            augment_result = augment_query(
                 query_text, business_meaning, fit["missing_params"], ddl_context, jurisdiction,
             )
-            if augmented:
+            if augment_result:
+                augmented_dq = dict(input_dq) if isinstance(input_dq, dict) else {}
+                augmented_dq["query_params"] = augment_result["query_params"]
+                augmented_dq["return_vals"] = augment_result["return_vals"]
                 return _build_result(
                     reuse_decision="REUSE_INPUT_DATAQUERY_AUGMENTED",
-                    query_text=augmented,
+                    query_text=augment_result["query_text"],
                     fit_assessment=fit,
                     original_query=original_query,
-                    input_dq=input_dq,
+                    input_dq=augmented_dq,
+                    business_meaning=business_meaning,
                 )
 
     return None
+
+
+def _validate_fit_sql(
+    sql: str, business_meaning: str, ddl_context: str,
+) -> tuple[str | None, list[str]]:
+    invalid_artifacts = _find_invalid_sql_artifacts(sql, ddl_context, business_meaning)
+    invalid_artifacts.extend(
+        _find_required_business_concept_artifacts(sql, business_meaning)
+    )
+    invalid_artifacts.extend(
+        _find_deterministic_selection_artifacts(sql, business_meaning, ddl_context)
+    )
+    invalid_artifacts.extend(_find_output_shape_artifacts(sql, business_meaning))
+    invalid_artifacts.extend(_find_output_name_artifacts(sql))
+    if not invalid_artifacts:
+        return "VALIDATED", []
+    return "DRAFT_REQUIRES_REVIEW", invalid_artifacts
 
 
 def _build_result(
@@ -206,7 +247,20 @@ def _build_result(
     fit_assessment: dict,
     original_query: str,
     input_dq: Any,
-) -> dict:
+    business_meaning: str,
+) -> dict | None:
+    ddl_statements = select_ddls(business_meaning)
+    ddl_context = "\n".join(ddl_statements) if ddl_statements else ""
+    validation_status, review_warnings = _validate_fit_sql(
+        query_text, business_meaning, ddl_context,
+    )
+    if validation_status != "VALIDATED":
+        print(
+            f"[fit_assessment] input SQL failed validation: "
+            f"{', '.join(review_warnings)}"
+        )
+        return None
+
     data_query_id = input_dq.get("data_query_id") if isinstance(input_dq, dict) else None
     data_query_name = input_dq.get("data_query_name") if isinstance(input_dq, dict) else None
     query_params = input_dq.get("query_params", {}) if isinstance(input_dq, dict) else {}
@@ -226,6 +280,8 @@ def _build_result(
             "missing_params": fit_assessment["missing_params"],
             "original_query": original_query,
         },
+        "validation_status": validation_status,
+        "review_warnings": review_warnings,
         "queries": [query_text],
         "matched": True,
     }

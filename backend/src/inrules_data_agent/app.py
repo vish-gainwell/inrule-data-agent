@@ -182,6 +182,35 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
         extras = step.model_extra or {}
         query_task = _query_task_for_step(step)
 
+        if str(extras.get("data_query_decision", "")).lower() == "inconclusive":
+            result = {
+                "queries": [],
+                "failure_category": "INCONCLUSIVE_INPUT",
+                "failure_reason": "The analyzer marked this data-query decision as inconclusive.",
+            }
+            inconclusive_steps.append(step.step_number)
+            assembled = result["queries"]
+            matched = False
+            unmatched_steps.append(step.step_number)
+            step_queries.append(
+                {
+                    "step_number": step.step_number,
+                    "business_meaning": step.business_meaning,
+                    "query_result_shape": step.query_result_shape,
+                    "query_generated": False,
+                    "reuse_decision": "REQUIRED_QUERY_NOT_GENERATED",
+                    "data_query": None,
+                    "failure_category": result["failure_category"],
+                    "failure_reason": result["failure_reason"],
+                    "validation_status": None,
+                    "review_warnings": [],
+                    "generation_attempts": [],
+                    "queries": [],
+                    "matched": False,
+                }
+            )
+            continue
+
         input_result = evaluate_input_data_query(
             step, query_task, jurisdiction=request.jurisdiction,
         )
@@ -196,39 +225,31 @@ def build_generate_queries_response(request: GenerateQueriesRequest) -> dict[str
                 "fit_assessment": input_result["fit_assessment"],
                 "failure_category": None,
                 "failure_reason": None,
-                "validation_status": None,
-                "review_warnings": [],
+                "validation_status": input_result.get("validation_status"),
+                "review_warnings": input_result.get("review_warnings", []),
                 "generation_attempts": [],
                 "queries": input_result["queries"],
                 "matched": True,
             })
             continue
 
-        if str(extras.get("data_query_decision", "")).lower() == "inconclusive":
-            result = {
-                "queries": [],
-                "failure_category": "INCONCLUSIVE_INPUT",
-                "failure_reason": "The analyzer marked this data-query decision as inconclusive.",
-            }
-            inconclusive_steps.append(step.step_number)
-        else:
-            expected_return_fields = extras.get("expected_return_fields")
-            result = generate_query_result_for_step(
-                query_task,
-                description=request.description,
-                acceptance_criteria=_acceptance_criteria_for_step(
-                    step, request.acceptance_criteria
-                ),
-                consumer_contract=extras.get("consumer_contract")
-                or extras.get("expression"),
-                expected_return_fields=(
-                    expected_return_fields
-                    if isinstance(expected_return_fields, list)
-                    else None
-                ),
-                draft_mode=draft_mode,
-                jurisdiction=request.jurisdiction,
-            )
+        expected_return_fields = extras.get("expected_return_fields")
+        result = generate_query_result_for_step(
+            query_task,
+            description=request.description,
+            acceptance_criteria=_acceptance_criteria_for_step(
+                step, request.acceptance_criteria
+            ),
+            consumer_contract=extras.get("consumer_contract")
+            or extras.get("expression"),
+            expected_return_fields=(
+                expected_return_fields
+                if isinstance(expected_return_fields, list)
+                else None
+            ),
+            draft_mode=draft_mode,
+            jurisdiction=request.jurisdiction,
+        )
 
         assembled = result["queries"]
         matched = bool(assembled)
