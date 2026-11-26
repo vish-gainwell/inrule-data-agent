@@ -171,14 +171,11 @@ def test_evaluate_fit_returns_reuse_decision():
         input_data_query={"query_text": MOCK_SQL, "data_query_id": 42, "data_query_name": "DQ_MedicareAge"},
     )
 
-    with (
-        patch("inrules_data_agent.fit_assessment.assess_fit", return_value={
-            "verdict": "FIT",
-            "reason": "Query matches.",
-            "missing_params": [],
-        }),
-        patch("inrules_data_agent.fit_assessment._validate_fit_sql", return_value=("VALIDATED", [])),
-    ):
+    with patch("inrules_data_agent.fit_assessment.assess_fit", return_value={
+        "verdict": "FIT",
+        "reason": "Query matches.",
+        "missing_params": [],
+    }):
         result = evaluate_input_data_query(step, "Return the configured Medicare age threshold.")
 
     assert result is not None
@@ -190,6 +187,8 @@ def test_evaluate_fit_returns_reuse_decision():
     assert result["fit_assessment"]["original_query"] == MOCK_SQL
     assert result["queries"] == [MOCK_SQL]
     assert result["matched"] is True
+    assert result["validation_status"] == "PRODUCTION_APPROVED"
+    assert result["review_warnings"] == []
 
 
 def test_evaluate_partial_fit_augmented():
@@ -296,16 +295,68 @@ def test_evaluate_accepts_string_input_data_query():
         input_data_query=MOCK_SQL,
     )
 
-    with (
-        patch("inrules_data_agent.fit_assessment.assess_fit", return_value={
-            "verdict": "FIT",
-            "reason": "Matches.",
-            "missing_params": [],
-        }),
-        patch("inrules_data_agent.fit_assessment._validate_fit_sql", return_value=("VALIDATED", [])),
-    ):
+    with patch("inrules_data_agent.fit_assessment.assess_fit", return_value={
+        "verdict": "FIT",
+        "reason": "Matches.",
+        "missing_params": [],
+    }):
         result = evaluate_input_data_query(step, "Return the threshold.")
 
     assert result is not None
     assert result["reuse_decision"] == "REUSE_INPUT_DATAQUERY"
     assert result["data_query"]["data_query_id"] is None
+    assert result["validation_status"] == "PRODUCTION_APPROVED"
+
+
+def test_evaluate_fit_with_string_query_params():
+    step = Step(
+        step_number=1,
+        business_meaning="Return the SNOMED codes.",
+        requires_data_query=True,
+        input_data_query={
+            "query_text": MOCK_SQL,
+            "data_query_name": "NdcparametersByParameter_nameEnddate_76",
+            "query_params": '{":output":"parameter_value", ":ParameterName":"SterileCompoundSnomedCodes"}',
+            "return_vals": ["SterileCompoundSnomedCodes"],
+        },
+    )
+
+    with patch("inrules_data_agent.fit_assessment.assess_fit", return_value={
+        "verdict": "FIT",
+        "reason": "Matches.",
+        "missing_params": [],
+    }):
+        result = evaluate_input_data_query(step, "Return the SNOMED codes.")
+
+    assert result is not None
+    assert result["reuse_decision"] == "REUSE_INPUT_DATAQUERY"
+    assert isinstance(result["data_query"]["query_params"], dict)
+    assert result["data_query"]["query_params"][":output"] == "parameter_value"
+    assert result["data_query"]["return_vals"] == ["SterileCompoundSnomedCodes"]
+
+
+def test_evaluate_partial_fit_still_validates():
+    step = Step(
+        step_number=1,
+        business_meaning="Return the active parameter.",
+        requires_data_query=True,
+        input_data_query={"query_text": MOCK_SQL},
+    )
+
+    with (
+        patch("inrules_data_agent.fit_assessment.assess_fit", return_value={
+            "verdict": "PARTIAL_FIT",
+            "reason": "Missing date window.",
+            "missing_params": ["DateOfService window"],
+        }),
+        patch("inrules_data_agent.fit_assessment.select_ddls", return_value=[MOCK_DDL]),
+        patch("inrules_data_agent.fit_assessment.augment_query", return_value={
+            "query_text": AUGMENTED_SQL,
+            "query_params": {"DateOfService": "{{DateOfService}}"},
+            "return_vals": ["PARAMETER_VALUE"],
+        }),
+        patch("inrules_data_agent.fit_assessment._validate_fit_sql", return_value=("DRAFT_REQUIRES_REVIEW", ["invalid table ref"])),
+    ):
+        result = evaluate_input_data_query(step, "Return the active parameter.")
+
+    assert result is None
