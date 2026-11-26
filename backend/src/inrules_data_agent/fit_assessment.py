@@ -25,14 +25,29 @@ from .generator.generate import (
 
 _FIT_SYSTEM_PROMPT = """\
 You are a SQL fitness assessor for a pharmacy claims processing system.
-Given a business meaning and an existing SQL query, determine whether the query
-retrieves the data described by the business meaning.
+
+IMPORTANT ARCHITECTURE CONTEXT:
+Data queries are DATA FETCHERS ONLY. They retrieve values or rows from SQL Server \
+tables. The business-logic layer (InRule expressions) separately evaluates the \
+fetched data — comparisons, containment checks, threshold evaluations, and date \
+arithmetic all happen OUTSIDE the SQL query. A query that fetches the right data \
+from the right table is FIT even if the business meaning describes a comparison or \
+containment check that the query does not perform.
+
+When the input contains an "ATOMIC DATA RETRIEVAL OBJECTIVE" section and a \
+"CURRENT BUSINESS FACT CONSTRAINTS" section, assess fitness against the RETRIEVAL \
+OBJECTIVE only. The constraints section describes what the expression layer does \
+with the fetched data — it is NOT a requirement for the SQL.
+
+Given a business context and an existing production-approved SQL query, determine \
+whether the query fetches the data needed by the step.
 
 Return JSON with exactly these keys:
-- verdict: "FIT" if the query fully satisfies the business meaning as-is.
-           "PARTIAL_FIT" if the query covers the right tables/logic but is missing
-           parameters, filters, or output columns that the business meaning requires.
-           "NOT_FIT" if the query retrieves fundamentally different data.
+- verdict: "FIT" if the query fetches the right data from the right tables as-is.
+           "PARTIAL_FIT" if the query targets the right tables but is missing \
+parameters, filters, or output columns needed by the retrieval objective.
+           "NOT_FIT" if the query fetches fundamentally different data from \
+unrelated tables or for an unrelated purpose.
 - reason: A one-sentence explanation of your verdict.
 - missing_params: A list of the missing parameter descriptions (empty unless PARTIAL_FIT).\
 """
@@ -201,6 +216,7 @@ def evaluate_input_data_query(
             original_query=original_query,
             input_dq=input_dq,
             business_meaning=business_meaning,
+            skip_validation=True,
         )
 
     if fit["verdict"] == "PARTIAL_FIT":
@@ -268,6 +284,19 @@ def _validate_fit_sql(
     return "DRAFT_REQUIRES_REVIEW", invalid_artifacts
 
 
+def _deserialize_query_params(raw: Any) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return {}
+
+
 def _build_result(
     *,
     reuse_decision: str,
@@ -276,22 +305,29 @@ def _build_result(
     original_query: str,
     input_dq: Any,
     business_meaning: str,
+    skip_validation: bool = False,
 ) -> dict | None:
-    ddl_statements = select_ddls(business_meaning)
-    ddl_context = "\n".join(ddl_statements) if ddl_statements else ""
-    validation_status, review_warnings = _validate_fit_sql(
-        query_text, business_meaning, ddl_context,
-    )
-    if validation_status != "VALIDATED":
-        print(
-            f"[fit_assessment] input SQL failed validation: "
-            f"{', '.join(review_warnings)}"
+    if skip_validation:
+        validation_status = "PRODUCTION_APPROVED"
+        review_warnings: list[str] = []
+    else:
+        ddl_statements = select_ddls(business_meaning)
+        ddl_context = "\n".join(ddl_statements) if ddl_statements else ""
+        validation_status, review_warnings = _validate_fit_sql(
+            query_text, business_meaning, ddl_context,
         )
-        return None
+        if validation_status != "VALIDATED":
+            print(
+                f"[fit_assessment] input SQL failed validation: "
+                f"{', '.join(review_warnings)}"
+            )
+            return None
 
     data_query_id = input_dq.get("data_query_id") if isinstance(input_dq, dict) else None
     data_query_name = input_dq.get("data_query_name") if isinstance(input_dq, dict) else None
-    query_params = input_dq.get("query_params", {}) if isinstance(input_dq, dict) else {}
+    query_params = _deserialize_query_params(
+        input_dq.get("query_params", {}) if isinstance(input_dq, dict) else {}
+    )
     return_vals = input_dq.get("return_vals", []) if isinstance(input_dq, dict) else []
     return {
         "reuse_decision": reuse_decision,
